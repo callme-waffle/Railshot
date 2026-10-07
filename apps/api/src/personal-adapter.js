@@ -294,11 +294,12 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
     register: (target) => gateway('register', target),
     async verify(target) {
       const result = await gateway('verify', target);
-      if (result.status !== 'succeeded' || !result.reachable) return { ...result, openstack_verified: false };
+      if (result.status !== 'succeeded' || !result.reachable) return { ...result, openstack_verified: false, server_list_verified: false };
       try {
         const response = await execute(target, { argv: ['server', 'list'] });
-        return { ...result, openstack_verified: response.ok && Array.isArray(response.result) };
-      } catch { return { ...result, openstack_verified: false }; }
+        const serverListVerified = response.ok === true && Array.isArray(response.result);
+        return { ...result, openstack_verified: serverListVerified, server_list_verified: serverListVerified };
+      } catch { return { ...result, openstack_verified: false, server_list_verified: false }; }
     },
     remove: async (target) => {
       const result = await gateway('remove', target);
