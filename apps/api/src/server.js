@@ -15,6 +15,7 @@ import { createJevClassifier } from './classifier.js';
 import { apiAccessConfig, allowsHost, allowsOrigin, allowsToken } from './access.js';
 import { createEnvironmentAdapter } from './environments.js';
 import { cookieToken, sessionCookie, SESSION_COOKIE, ownerCookie, ownerToken, OWNER_COOKIE } from './sessions.js';
+import { ACCOUNT_COOKIE, accountCookie, accountCookieToken } from './accounts.js';
 import { json, apiError, accepted } from './http/response.js';
 import { jsonInput, pagination, page, requestKey } from './http/request.js';
 import { uploadedSource, sourceArchive } from './http/source.js';
@@ -103,6 +104,14 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
   productReady.then(value => { productInitialized = Boolean(value); }, () => {});
   const traffic = observeTraffic || createTrafficObserver({ configPath: process.env.RAILSHOT_OBSERVER_PRODUCT_FILE || process.env.RAILSHOT_OBSERVER_CONFIG });
   let activeRequests = 0, release = null, draining = null, releaseTimer, productClosing, shuttingDown = false;
+  const accountLimits = new Map();
+  function limitAccount(request, route) {
+    const now = Date.now(), key = `${request.socket.remoteAddress}:${route}`;
+    const previous = accountLimits.get(key), value = previous && previous.expires > now ? previous : { count: 0, expires: now + 900000 };
+    if (++value.count > (route === 'login' ? 10 : 5)) throw new ServiceError('잠시 후 다시 시도하세요.', 429, 'RATE_LIMITED');
+    accountLimits.set(key, value);
+    if (accountLimits.size > 10000) for (const [entry, item] of accountLimits) if (item.expires <= now) accountLimits.delete(entry);
+  }
   const closeProduct = () => productClosing ||= productReady.then((value) => value?.close?.());
   const server = createServer(async (request, response) => {
     const requestId = randomUUID();
@@ -189,8 +198,10 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
         }
         activeRequests++; counted = true;
         if (request.headers['sec-fetch-site'] === 'cross-site') throw new ServiceError('다른 사이트에서 보낸 요청은 허용되지 않습니다.', 403);
-        const clientRoute = /^\/api\/v1\/(enrollments\/[A-Za-z0-9._-]+\/claims|targets\/[A-Za-z0-9._-]+\/(heartbeats|receipts|runtimes))$/.test(url.pathname);
+        const clientRoute = /^\/api\/v1\/(enrollments\/[A-Za-z0-9._-]+\/claims|targets\/[A-Za-z0-9._-]+\/(heartbeats|receipts|runtimes|vaults))$/.test(url.pathname);
         const prerequisiteRoute = url.pathname === '/api/v1/readiness';
+        const accountRoute = /^\/api\/v1\/(accounts(?:\/(?:verifications|resets|password))?|logins)$/.test(url.pathname);
+        const publicConnectionRoute = ['/api/v1/installers/personal', '/api/v1/keys/current'].includes(url.pathname);
         if (isTokenClaimRoute(url.pathname)) {
           if (!access.token) throw new ServiceError('등록 요청에는 운영자 API 토큰 설정이 필요합니다.', 503);
           let products;
@@ -198,7 +209,9 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
           await openstack.claimToken(request, response, url, products);
           return;
         }
-        if (!clientRoute && !prerequisiteRoute && !access.publicDemo && !allowsToken(request.headers.authorization, access.token)) {
+        const accountCookiePresent = (request.headers.cookie || '').includes(`${ACCOUNT_COOKIE}=`);
+        const accountTargetRoute = accountCookiePresent && /^\/api\/v1\/targets(?:\/|$)/.test(url.pathname);
+        if (!clientRoute && !prerequisiteRoute && !accountRoute && !publicConnectionRoute && !accountTargetRoute && !access.publicDemo && !allowsToken(request.headers.authorization, access.token)) {
           response.setHeader('www-authenticate', 'Bearer');
           throw new ServiceError('API authentication required', 401);
         }
@@ -213,11 +226,58 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
         if (versioned && await openstack.serveInstaller(request, response, url)) return;
         let products;
         try { products = await productReady; } catch { throw new ServiceError('제품 저장소 또는 서버 설정을 확인할 수 없습니다.', 503); }
+        if (accountRoute) {
+          if ([...url.searchParams].length) throw new ServiceError('지원하지 않는 조회 조건입니다.', 422);
+          const accounts = products.dashboard.accounts;
+          const sessionToken = accountCookieToken(request.headers.cookie), accountSession = accounts.session(sessionToken);
+          const csrf = () => {
+            if (!accountSession || request.headers['x-railshot-csrf'] !== accountSession.csrf_token) throw new ServiceError('계정 세션 또는 CSRF 자격을 확인하세요.', 403);
+          };
+          if (request.headers['sec-fetch-site'] === 'cross-site' || request.method !== 'GET' && request.headers['x-railshot-request'] !== 'dashboard') throw new ServiceError('계정 요청 헤더가 필요합니다.', 403);
+          if (url.pathname === '/api/v1/accounts' && request.method === 'POST') {
+            limitAccount(request, 'register'); json(response, 202, await accounts.register(await jsonInput(request))); return;
+          }
+          if (url.pathname === '/api/v1/accounts/verifications' && request.method === 'POST') {
+            limitAccount(request, 'verify'); json(response, 200, accounts.verify(await jsonInput(request))); return;
+          }
+          if (url.pathname === '/api/v1/accounts/resets' && request.method === 'POST') {
+            limitAccount(request, 'reset'); json(response, 202, await accounts.requestReset(await jsonInput(request))); return;
+          }
+          if (url.pathname === '/api/v1/accounts/password' && request.method === 'POST') {
+            limitAccount(request, 'password'); json(response, 200, await accounts.resetPassword(await jsonInput(request))); return;
+          }
+          if (url.pathname === '/api/v1/logins' && request.method === 'POST') {
+            limitAccount(request, 'login'); const result = await accounts.login(await jsonInput(request));
+            response.setHeader('Set-Cookie', accountCookie(result.token, access.remote));
+            const { token, ...visible } = result; json(response, 201, visible); return;
+          }
+          if (url.pathname === '/api/v1/logins' && request.method === 'GET') {
+            if (!accountSession) throw new ServiceError('로그인이 필요합니다.', 401);
+            json(response, 200, { account_id: accountSession.id, email: accountSession.email, csrf_token: accountSession.csrf_token,
+              expires_at: accountSession.expires_at }); return;
+          }
+          if (url.pathname === '/api/v1/logins' && request.method === 'DELETE') {
+            csrf(); accounts.logout(sessionToken); response.setHeader('Set-Cookie', accountCookie('', access.remote));
+            json(response, 200, { status: 'signed_out' }); return;
+          }
+          const error = new ServiceError('지원하지 않는 메서드입니다.', 405); error.allow = url.pathname === '/api/v1/logins' ? 'GET, POST, DELETE' : 'POST'; throw error;
+        }
+        if (publicConnectionRoute) {
+          if (request.method !== 'GET') { const error = new ServiceError('지원하지 않는 메서드입니다.', 405); error.allow = 'GET'; throw error; }
+          if ([...url.searchParams].length) throw new ServiceError('지원하지 않는 조회 조건입니다.', 422);
+          if (url.pathname === '/api/v1/keys/current') { json(response, 200, products.personal.vaultKey()); return; }
+          const { script, digest } = products.personal.installer();
+          response.writeHead(200, { 'Content-Type': 'text/x-shellscript; charset=utf-8', 'Content-Disposition': 'attachment; filename="railshot-openstack-install.sh"',
+            'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Script-SHA256': digest });
+          response.end(script); return;
+        }
         if (prerequisiteRoute) {
           if (request.method !== 'GET') { const error = new ServiceError('지원하지 않는 메서드입니다.', 405); error.allow = 'GET'; throw error; }
           if (url.searchParams.getAll('scope').length !== 1 || url.searchParams.get('scope') !== 'personal'
-              || [...url.searchParams].length !== 1) throw new ServiceError('조회 조건이 잘못되었습니다.', 422);
-          json(response, 200, await products.personal.readiness()); return;
+              || [...url.searchParams].some(([key, value]) => key !== 'scope' && !(key === 'phase' && value === 'connection'))
+              || url.searchParams.getAll('phase').length > 1) throw new ServiceError('조회 조건이 잘못되었습니다.', 422);
+          json(response, 200, await (url.searchParams.get('phase') === 'connection'
+            ? products.personal.connectionReadiness() : products.personal.readiness())); return;
         }
         // Public visitors are anonymous cookie sessions. Existing localhost maintenance clients
         // without a cookie retain their private maintenance channel and legacy contracts.
@@ -225,17 +285,19 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
         const scoped = !clientRoute && (access.remote || access.publicDemo || dashboardRoute || registrationRoute || (request.headers.cookie || '').includes(`${SESSION_COOKIE}=`) || (request.headers.cookie || '').includes(`${OWNER_COOKIE}=`) || /^\/api\/v1\/(owners|recoveries)$/.test(url.pathname));
         const session = scoped ? products.dashboard.session(cookieToken(request.headers.cookie)) : null;
         const owner = clientRoute ? null : products.dashboard?.owner?.(ownerToken(request.headers.cookie));
+        const account = clientRoute ? null : products.dashboard.accounts.session(accountCookieToken(request.headers.cookie));
         const sessionId = owner?.session_id ?? session?.id ?? null;
         if (session?.token) response.setHeader('Set-Cookie', sessionCookie(session.token, access.remote));
         response.setHeader('Vary', 'Cookie');
         if (versioned) {
           const method = (allowed) => { if (!allowed.includes(request.method)) { const error = new ServiceError('지원하지 않는 메서드입니다.', 405); error.allow = allowed.join(', '); throw error; } };
           const claimRoute = /^\/api\/v1\/enrollments\/([A-Za-z0-9._-]+)\/claims$/.exec(url.pathname);
-          const personalRoute = /^\/api\/v1\/targets(?:\/([A-Za-z0-9._-]+))?(?:\/(enrollments|heartbeats|receipts|runtimes|applications|instances|plans|operations|reconciliations))?$/.exec(url.pathname);
+          const personalRoute = /^\/api\/v1\/targets(?:\/([A-Za-z0-9._-]+))?(?:\/(enrollments|heartbeats|receipts|runtimes|vaults|applications|instances|plans|operations|reconciliations))?$/.exec(url.pathname);
           const ownerRoute = /^\/api\/v1\/(owners|recoveries)$/.exec(url.pathname);
           const personalHandled = claimRoute || ownerRoute || personalRoute && (personalRoute[2] || personalRoute[1] || request.method === 'POST' || url.searchParams.has('scope') || url.searchParams.has('provider'));
           if (personalHandled) {
             if (request.method !== 'GET' && !clientRoute && request.headers['x-railshot-request'] !== 'dashboard') throw new ServiceError('개인 환경 변경 요청 헤더가 필요합니다.', 403);
+            if (request.method !== 'GET' && !clientRoute && account && request.headers['x-railshot-csrf'] !== account.csrf_token) throw new ServiceError('CSRF 자격을 확인하세요.', 403);
             if ([...url.searchParams].length && !(personalRoute && !personalRoute[1] && request.method === 'GET')) throw new ServiceError('지원하지 않는 조회 조건입니다.', 422);
             if (ownerRoute) {
               method(ownerRoute[1] === 'owners' ? ['GET', 'POST'] : ['POST']);
@@ -256,7 +318,8 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
               return;
             }
             if (child === 'heartbeats' || child === 'receipts') { method(['POST']); json(response, 200, await products.personal[child === 'heartbeats' ? 'heartbeat' : 'receipt'](id, await jsonInput(request), request.headers.authorization)); return; }
-            const ownerId = owner?.session_id || null;
+            if (child === 'vaults') { method(['POST']); json(response, 201, await products.personal.registerVault(id, await jsonInput(request), request.headers.authorization)); return; }
+            const ownerId = account ? `account:${account.id}` : owner?.session_id || null;
             if (!id) {
               method(['GET', 'POST']);
               if (request.method === 'POST') { const result = await products.personal.create(await jsonInput(request), ownerId); json(response, 201, result, { Location: `/api/v1/targets/${result.id}` }); return; }
