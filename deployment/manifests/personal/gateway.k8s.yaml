@@ -84,6 +84,20 @@ spec:
   ports: [{name: rpc, port: 4184, targetPort: rpc, protocol: TCP}]
 ---
 apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: railshot-personal-gateway, namespace: railshot-system}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: railshot-personal-wireguard, namespace: railshot-system}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
 kind: Service
 metadata: {name: railshot-personal-wireguard, namespace: railshot-system}
 spec:

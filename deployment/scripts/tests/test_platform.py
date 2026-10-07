@@ -193,20 +193,23 @@ class PlatformTests(unittest.TestCase):
         api = next(item for item in output['items'] if item['kind'] == 'Deployment'
                    and item['metadata']['name'] == 'railshot-api')
         pod = api['spec']['template']['spec']
-        gateway = next(item for item in pod['initContainers'] if item['name'] == 'personal-gateway')
+        gateway_pod = next(item for item in output['items'] if item['kind'] == 'Deployment'
+                           and item['metadata']['name'] == 'railshot-personal-gateway')['spec']['template']['spec']
+        gateway = gateway_pod['containers'][0]
         application = pod['containers'][0]
         self.assertEqual(gateway['securityContext']['capabilities'], {'drop': ['ALL'], 'add': ['NET_ADMIN']})
-        self.assertEqual(gateway['securityContext']['runAsUser'], 0)
-        self.assertEqual(gateway['securityContext']['runAsGroup'], 1000)
+        self.assertEqual(gateway_pod['securityContext']['runAsUser'], 0)
+        self.assertNotIn('personal-gateway', {item['name'] for item in pod['initContainers']})
         self.assertEqual(application['securityContext']['capabilities'], {'drop': ['ALL']})
         self.assertEqual(application['securityContext']['allowPrivilegeEscalation'], False)
         self.assertNotIn('personal-gateway-key', {item['name'] for item in application['volumeMounts']})
         private_config = next(item for item in pod['initContainers'] if item['name'] == 'private-config')
         self.assertIn('personal-gateway-ipc', {item['name'] for item in private_config['volumeMounts']})
+        self.assertIn('personal-vault-key', {item['name'] for item in private_config['volumeMounts']})
         self.assertIn('railshot-personal-gateway', {item['metadata']['name'] for item in output['items']
                                                     if item['kind'] == 'PersistentVolumeClaim'})
         policy = next(item for item in output['items'] if item['kind'] == 'NetworkPolicy'
-                      and item['metadata']['name'] == 'railshot-api-private')
+                      and item['metadata']['name'] == 'railshot-personal-gateway')
         self.assertTrue(any({'port': 51820, 'protocol': 'UDP'} in row.get('ports', [])
                             for row in policy['spec']['ingress']))
 

@@ -25,7 +25,7 @@ class PlatformReleaseTests(unittest.TestCase):
         self.artifacts = self.home / "platform-published"
         self.artifacts.mkdir()
         for name in ("deployment/scripts/publish-platform.py", "deployment/scripts/render-platform.py",
-                     "deployment/manifests/platform.yaml"):
+                     "deployment/manifests/platform.yaml", "deployment/manifests/personal/gateway.k8s.yaml"):
             destination = self.repo / name
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / name, destination)
@@ -253,8 +253,10 @@ class PlatformReleaseTests(unittest.TestCase):
         declaration = json.loads(self.git('show', f'{self.remote_revision()}:{WORKLOAD}').stdout)
         api = next(item for item in declaration['items'] if item['kind'] == 'Deployment'
                    and item['metadata']['name'] == 'railshot-api')
-        self.assertTrue(any(item['name'] == 'personal-gateway'
-                            for item in api['spec']['template']['spec']['initContainers']))
+        self.assertTrue(any(item['metadata']['name'] == 'railshot-personal-gateway' and item['kind'] == 'Deployment'
+                            for item in declaration['items']))
+        self.assertFalse(any(item['name'] == 'personal-gateway'
+                             for item in api['spec']['template']['spec']['initContainers']))
         self.git('switch', '--detach', self.source_sha)
         (self.artifacts / 'api.json').unlink()
         (self.artifacts / 'personal-gateway.json').unlink()
@@ -265,8 +267,10 @@ class PlatformReleaseTests(unittest.TestCase):
         declaration = json.loads(self.git('show', f'{self.remote_revision()}:{WORKLOAD}').stdout)
         api = next(item for item in declaration['items'] if item['kind'] == 'Deployment'
                    and item['metadata']['name'] == 'railshot-api')
-        self.assertTrue(any(item['name'] == 'personal-gateway'
-                            for item in api['spec']['template']['spec']['initContainers']))
+        self.assertTrue(any(item['metadata']['name'] == 'railshot-personal-gateway' and item['kind'] == 'Deployment'
+                            for item in declaration['items']))
+        self.assertFalse(any(item['name'] == 'personal-gateway'
+                             for item in api['spec']['template']['spec']['initContainers']))
         self.git('switch', '--detach', self.source_sha)
         (self.artifacts / 'dashboard.json').write_text(json.dumps({'dashboard':
             'ghcr.io/jasmin-softbank/railshot-dashboard@sha256:' + 'd' * 64}))
