@@ -166,6 +166,12 @@ spec:
             - {name: RAILSHOT_MAX_CONCURRENT_DEPLOYMENTS, value: "3"}
             - {name: RAILSHOT_CD_CONFIG, value: /var/lib/railshot/config/cd.json}
             - {name: RAILSHOT_PERSONAL_CONFIG, value: /var/lib/railshot/config/personal.json}
+            - name: RAILSHOT_ACCOUNT_MAIL_URL
+              valueFrom:
+                configMapKeyRef: {name: railshot-account-mail, key: url, optional: true}
+            - name: RAILSHOT_ACCOUNT_MAIL_TOKEN
+              valueFrom:
+                secretKeyRef: {name: railshot-account-mail, key: token, optional: true}
             - name: RAILSHOT_APPLICATIONS_FILE
               valueFrom:
                 configMapKeyRef: {name: railshot-environments, key: applications_file, optional: true}

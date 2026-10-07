@@ -37,6 +37,9 @@ docker compose -f deployment/manifests/personal/production.compose.yaml exec api
 `personal.production.example.json`은 필드 설명용이며 그대로 적용할 수 없습니다. 먼저 대시보드 이미지가 생성한 `/personal/manifest.json`에서 배포 해시와 설치기 해시를 확인하고, 같은 해시 디렉터리의 두 URL을 실제 `personal.json`에 기록합니다. `runtime` 설정이 아직 없으면 해당 항목을 생략할 수 있지만 서버 readiness는 `RUNTIME_OPERATOR_NOT_CONFIGURED`로 차단됩니다.
 
 운영 값은 출력하지 말고 운영자 소유의 절대경로 파일로 준비한 뒤 다음처럼 이름만 연결합니다.
+`personal-vault-private.pem`은 RSA 3072비트 이상의 새 개인키여야 하며, 예를 들어
+`openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /absolute/private/personal-vault-private.pem`으로 생성합니다.
+이미 등록한 클라이언트의 키를 임의로 교체하면 저장된 자격을 풀 수 없으므로 키를 별도 안전한 저장소에 백업합니다.
 
 ```sh
 kubectl -n railshot-system create secret generic railshot-personal-config \
@@ -49,6 +52,10 @@ kubectl -n railshot-system create secret generic railshot-personal-vault \
   --from-file=private.pem=/absolute/private/personal-vault-private.pem --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n railshot-system create configmap railshot-personal-settings \
   --from-literal=gateway_endpoint='<reviewed-public-host>:51820' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n railshot-system create configmap railshot-account-mail \
+  --from-literal=url='https://<reviewed-mail-gateway>/send' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n railshot-system create secret generic railshot-account-mail \
+  --from-file=token=/absolute/private/mail-gateway-token --dry-run=client -o yaml | kubectl apply -f -
 ```
 
 게이트웨이 개인키 Secret은 게이트웨이에만 마운트됩니다. IPC(프로세스 사이 통신) 토큰과 vault 개인키는 `private-config` 초기 컨테이너가 API 소유 0600 파일로 복사합니다. vault 개인키는 게이트웨이에 전달되지 않습니다. 게이트웨이와 WireGuard 상태는 각각 1GiB `ReadWriteOnce` 영속 볼륨에 남습니다. UDP 51820은 `railshot-personal-wireguard` LoadBalancer Service로 열리므로 `gateway_endpoint`의 호스트가 그 서비스의 고정 공개 주소를 가리켜야 합니다.
