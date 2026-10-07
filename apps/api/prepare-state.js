@@ -24,6 +24,12 @@ if (existsSync(gatewayToken)) {
   writeFileSync(destination, readFileSync(gatewayToken), { mode: 0o600 });
   chmodSync(destination, 0o600);
 }
+const vaultKey = '/run/personal-vault/private.pem';
+if (existsSync(vaultKey)) {
+  const destination = `${config}/personal-vault-private.pem`;
+  writeFileSync(destination, readFileSync(vaultKey), { mode: 0o600 });
+  chmodSync(destination, 0o600);
+}
 const repository = '/var/lib/railshot/repository';
 const git = (...args) => execFileSync('git', args, { stdio: ['ignore', 'pipe', 'pipe'], timeout: 120_000 }).toString().trim();
 if (!existsSync(repository)) {

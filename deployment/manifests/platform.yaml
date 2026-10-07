@@ -130,49 +130,6 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
         seccompProfile: {type: RuntimeDefault}
       initContainers:
-        - name: personal-gateway
-          image: BUILD_REQUIRED/personal-gateway
-          restartPolicy: Always
-          env:
-            - name: PERSONAL_GATEWAY_ENDPOINT
-              valueFrom:
-                configMapKeyRef: {name: railshot-personal-settings, key: gateway_endpoint}
-          securityContext:
-            runAsNonRoot: false
-            runAsUser: 0
-            # The socket is born root:1000, avoiding CAP_CHOWN in this sidecar.
-            runAsGroup: 1000
-            allowPrivilegeEscalation: false
-            readOnlyRootFilesystem: true
-            capabilities: {drop: [ALL], add: [NET_ADMIN]}
-          ports:
-            - {name: wireguard, containerPort: 51820, hostPort: 51820, protocol: UDP}
-          resources:
-            requests: {cpu: 25m, memory: 32Mi}
-            limits: {cpu: 250m, memory: 128Mi}
-          volumeMounts:
-            - {name: personal-gateway-socket, mountPath: /run/railshot-personal-gateway}
-            - {name: personal-gateway-key, mountPath: /run/secrets/personal-gateway-key, readOnly: true}
-            - {name: personal-gateway-ipc, mountPath: /run/secrets/personal-gateway-ipc, readOnly: true}
-            - {name: personal-gateway-state, mountPath: /var/lib/railshot-personal-gateway}
-            - {name: personal-wireguard-state, mountPath: /etc/wireguard}
-            - {name: tmp, mountPath: /tmp}
-          startupProbe:
-            exec:
-              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
-            periodSeconds: 2
-            timeoutSeconds: 2
-            failureThreshold: 30
-          readinessProbe:
-            exec:
-              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
-            periodSeconds: 10
-            timeoutSeconds: 5
-          livenessProbe:
-            exec:
-              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
-            periodSeconds: 30
-            timeoutSeconds: 5
         - name: private-config
           image: BUILD_REQUIRED/api
           command: [node, /app/apps/api/prepare-state.js]
@@ -195,6 +152,7 @@ spec:
             - {name: dns-config, mountPath: /run/dns, readOnly: true}
             - {name: personal-config, mountPath: /run/personal-config, readOnly: true}
             - {name: personal-gateway-ipc, mountPath: /run/personal-gateway-ipc, readOnly: true}
+            - {name: personal-vault-key, mountPath: /run/personal-vault, readOnly: true}
       containers:
         - name: api
           image: BUILD_REQUIRED/api
@@ -251,7 +209,6 @@ spec:
             - {name: api-token, mountPath: /run/secrets/api, readOnly: true}
             - {name: state, mountPath: /var/lib/railshot}
             - {name: kubernetes-api, mountPath: /run/railshot-kubernetes, readOnly: true}
-            - {name: personal-gateway-socket, mountPath: /run/railshot-personal-gateway}
           livenessProbe:
             httpGet: {path: /healthz, port: http, httpHeaders: [{name: Host, value: localhost}]}
             initialDelaySeconds: 10
@@ -275,22 +232,15 @@ spec:
           secret: {secretName: railshot-cloudflare, defaultMode: 288, optional: true}
         - name: personal-config
           secret: {secretName: railshot-personal-config, defaultMode: 256}
-        - name: personal-gateway-key
-          secret:
-            secretName: railshot-personal-gateway-key
-            items:
-              - {key: private-key, path: private-key, mode: 256}
         - name: personal-gateway-ipc
           secret:
             secretName: railshot-personal-gateway-ipc
             items:
               - {key: ipc-token, path: ipc-token, mode: 288}
-        - name: personal-gateway-socket
-          emptyDir: {sizeLimit: 1Mi}
-        - name: personal-gateway-state
-          persistentVolumeClaim: {claimName: railshot-personal-gateway}
-        - name: personal-wireguard-state
-          persistentVolumeClaim: {claimName: railshot-personal-wireguard}
+        - name: personal-vault-key
+          secret:
+            secretName: railshot-personal-vault
+            items: [{key: private.pem, path: private.pem, mode: 288}]
         - name: state
           persistentVolumeClaim: {claimName: railshot-api}
         - name: kubernetes-api
@@ -309,20 +259,6 @@ spec:
   accessModes: [ReadWriteOnce]
   resources: {requests: {storage: 4Gi}}
 ---
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: {name: railshot-personal-gateway, namespace: railshot-system}
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: {requests: {storage: 1Gi}}
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata: {name: railshot-personal-wireguard, namespace: railshot-system}
-spec:
-  accessModes: [ReadWriteOnce]
-  resources: {requests: {storage: 1Gi}}
----
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata: {name: railshot-api-private, namespace: railshot-system}
@@ -333,9 +269,6 @@ spec:
     - from:
         - podSelector: {matchLabels: {railshot.io/api-client: 'true'}}
       ports: [{port: 4173, protocol: TCP}]
-    - from:
-        - ipBlock: {cidr: 0.0.0.0/0}
-      ports: [{port: 51820, protocol: UDP}]
 ---
 apiVersion: v1
 kind: Service

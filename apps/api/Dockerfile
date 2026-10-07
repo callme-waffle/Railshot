@@ -55,8 +55,7 @@ RUN cd /app/gitops && python3 -c 'import credentials' \
 USER 1000:1000
 ENTRYPOINT ["python3", "/app/gitops/credentials.py"]
 
-# Root-only WireGuard sidecar. The general API remains a separate non-root
-# container and can reach this image only through the Pod-local Unix socket.
+# Root-only WireGuard gateway. Kubernetes runs this image in a separate Pod.
 FROM ${PYTHON_IMAGE} AS personal-gateway
 USER root
 RUN apt-get update \
@@ -68,7 +67,7 @@ COPY --chmod=0555 deployment/manifests/personal/gateway-service-entrypoint.sh /u
 RUN python3 deployment/scripts/personal_wireguard.py --help >/dev/null \
     && python3 deployment/scripts/personal_gateway_service.py --help >/dev/null
 ENV PYTHONDONTWRITEBYTECODE=1
-EXPOSE 51820/udp
+EXPOSE 4184/tcp 51820/udp
 ENTRYPOINT ["/usr/local/bin/railshot-personal-gateway-service"]
 
 FROM base AS api

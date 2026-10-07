@@ -41,14 +41,16 @@ def render(images, target_id, dashboard_node_port=None, provider_targets=None, p
         image_ref(images, "mcp")
     source = Path(__file__).resolve().parents[1] / "manifests/platform.yaml"
     documents = list(yaml.safe_load_all(source.read_text()))
-    if not personal:
-        documents = [document for document in documents if document.get('metadata', {}).get('name') not in {
-            'railshot-personal-gateway', 'railshot-personal-wireguard'}]
+    if personal:
+        gateway_source = source.parent / 'personal/gateway.k8s.yaml'
+        documents.extend(yaml.safe_load_all(gateway_source.read_text()))
+        gateway = next(item for item in documents if item['kind'] == 'Deployment'
+                       and item['metadata']['name'] == 'railshot-personal-gateway')
+        gateway['spec']['template']['spec']['containers'][0]['image'] = images['personal-gateway']
+    else:
         api = next(document for document in documents
                    if document['kind'] == 'Deployment' and document['metadata']['name'] == 'railshot-api')
         pod = api['spec']['template']['spec']
-        pod['initContainers'] = [item for item in pod.get('initContainers', [])
-                                 if item['name'] != 'personal-gateway']
         for container in pod['containers'] + pod.get('initContainers', []):
             container['env'] = [item for item in container.get('env', [])
                                 if item['name'] != 'RAILSHOT_PERSONAL_CONFIG']
@@ -56,10 +58,6 @@ def render(images, target_id, dashboard_node_port=None, provider_targets=None, p
                                          if not item['name'].startswith('personal-')]
         pod['volumes'] = [item for item in pod.get('volumes', [])
                           if not item['name'].startswith('personal-')]
-        policy = next(document for document in documents
-                      if document['kind'] == 'NetworkPolicy' and document['metadata']['name'] == 'railshot-api-private')
-        policy['spec']['ingress'] = [item for item in policy['spec']['ingress']
-                                     if not any(port.get('port') == 51820 for port in item.get('ports', []))]
     if "mcp" not in images:
         documents = [document for document in documents if not
                      (document['metadata']['name'] == 'railshot-mcp' and document['kind'] == 'Deployment')
@@ -76,7 +74,7 @@ def render(images, target_id, dashboard_node_port=None, provider_targets=None, p
             continue
         containers = document["spec"]["template"]["spec"]["containers"]
         for container in containers:
-            container["image"] = images[container["name"]]
+            container["image"] = images['personal-gateway' if container['name'] == 'gateway' else container['name']]
         for init in document["spec"]["template"]["spec"].get("initContainers", []):
             init["image"] = images[init["name"]] if init["name"] in images else images["api"]
         container = containers[0]
