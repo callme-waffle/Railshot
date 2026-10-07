@@ -4,7 +4,7 @@
 private TCP Service, and one public UDP LoadBalancer Service. The gateway is a
 separate Pod from `railshot-api`; only this container has `NET_ADMIN` and the
 WireGuard private key. Its peer ledger and interface configuration use distinct
-durable PVCs already declared in `deployment/manifests/platform.yaml`.
+durable PVCs declared in the gateway manifest.
 
 Before applying the manifest, build the `personal-gateway` target in
 `apps/api/Dockerfile`, replace `BUILD_REQUIRED/personal-gateway` with the pinned
@@ -19,8 +19,11 @@ image reference, and provision these operator-owned resources in
   public `HOST:51820` that routes UDP to `railshot-personal-wireguard`. Reserve
   the LoadBalancer address before issuing installer links. The address advertised
   to customers must match the provisioned Service.
-- `railshot-personal-gateway` and `railshot-personal-wireguard` PVCs as declared
-  by the platform manifest. They must be retained during a rollout or restart.
+- `railshot-personal-vault` Secret: key `private.pem`, an RSA private key of at
+  least 3072 bits. Mount it only in the API Pod; its init container copies it to
+  private API state before the API process starts.
+- `railshot-personal-gateway` and `railshot-personal-wireguard` PVCs from the
+  gateway manifest. Retain them during a rollout or restart.
 
 The gateway listens for internal RPC on its Pod IP only. The private Service is
 `railshot-personal-gateway.railshot-system.svc.cluster.local:4184`. A
@@ -37,12 +40,12 @@ volume, and use a private config like this:
     "token_file": "/var/lib/railshot/config/personal-gateway-token"
   },
   "vault": {
-    "private_key_file": "/run/secrets/personal-vault/private.pem"
+    "private_key_file": "/var/lib/railshot/config/personal-vault-private.pem"
   }
 }
 ```
 
-Mount the `personal-vault` RSA private-key Secret **only** in the API Pod. The
+Mount the `railshot-personal-vault` RSA private-key Secret **only** in the API Pod. The
 gateway does not need or receive OpenStack credentials or the vault key.
 
 The authenticated internal protocol is:
