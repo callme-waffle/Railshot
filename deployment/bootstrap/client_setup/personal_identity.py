@@ -130,7 +130,8 @@ def _save(path, data):
 
 def prepare_personal_identity(config_dir, state_dir, *, project_id=None, test_allow_http=False,
                               input_fn=input, password_fn=getpass.getpass,
-                              keystone_factory=Keystone, cli_factory=OpenStackCLI):
+                              keystone_factory=Keystone, cli_factory=OpenStackCLI,
+                              control_vault=None, owner_control_vault=None):
     """Prepare encrypted auth and return auth/project_id/non-secret ownership.
 
     Caller holds the installation lock. Administrator passwords are never saved.
@@ -145,8 +146,8 @@ def prepare_personal_identity(config_dir, state_dir, *, project_id=None, test_al
         raise ValueError('Unsupported identity state version')
     if progress.get('status') == 'pending':
         raise ProviderError('identity_prior_outcome_unknown')
-    vault = CredentialStore(config_dir)
-    owner_vault = CredentialStore(config_dir / 'identity-owner')
+    vault = control_vault if control_vault is not None else CredentialStore(config_dir)
+    owner_vault = owner_control_vault if owner_control_vault is not None else CredentialStore(config_dir / 'identity-owner')
 
     if vault.path.exists() or vault.path.is_symlink():
         auth = vault.load()
@@ -261,6 +262,10 @@ def revoke_personal_identity(config_dir, state_dir, *, test_allow_http=False, ke
         raise ProviderError('identity_revocation_binding_changed')
     if receipt.get('status') == 'revoked':
         return {'application_credential': 'revoked', 'retained': ['service_user', 'role_assignment', 'shared_project']}
+    if (config_dir / 'credentials.vault').exists() or (config_dir / 'identity-owner' / 'credentials.vault').exists():
+        # Revocation must wait for a backend-authorized unlock command. Never
+        # fall back to a locally stored key or delete unreconciled identity.
+        raise ProviderError('identity_revocation_unlock_required')
     auth = CredentialStore(config_dir).load()
     owner = CredentialStore(config_dir / 'identity-owner').load()
     if (auth.get('application_credential_id') != credential['id']

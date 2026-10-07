@@ -13,16 +13,24 @@ class ProviderError(RuntimeError):
 
 
 class OpenStackCLI:
-    def __init__(self, auth, runner=subprocess.run, timeout=60):
+    def __init__(self, auth, runner=subprocess.run, timeout=60, temp_parent=None):
         self.auth = dict(auth)
         self.runner = runner
         self.timeout = timeout
+        self.temp_parent = temp_parent
 
     def run(self, args, *, json_output=True):
         if not isinstance(args, list) or not all(isinstance(a, str) for a in args):
             raise ValueError('CLI arguments must be a list of strings')
         env = {k: v for k, v in os.environ.items() if not k.startswith('OS_')}
-        with tempfile.TemporaryDirectory(prefix='railshot-openstack-') as directory:
+        if self.temp_parent is not None:
+            # The forced SSH command never places a decrypted clouds.yaml on
+            # persistent storage. Refuse execution if the private tmpfs is lost.
+            parent = Path(self.temp_parent)
+            if not parent.is_dir() or not any(line.split()[1:3] == [str(parent), 'tmpfs']
+                    for line in Path('/proc/mounts').read_text().splitlines()):
+                raise ProviderError('private_tmpfs_unavailable')
+        with tempfile.TemporaryDirectory(prefix='railshot-openstack-', dir=self.temp_parent) as directory:
             path = Path(directory) / 'clouds.yaml'
             auth = dict(self.auth)
             options = {k: auth.pop(k) for k in ('region_name', 'interface', 'cacert') if k in auth}

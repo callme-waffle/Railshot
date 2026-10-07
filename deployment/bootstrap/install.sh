@@ -69,7 +69,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
         raise RuntimeError('redirect rejected')
 
-url = base.rstrip('/') + '/api/v1/readiness?scope=personal'
+url = base.rstrip('/') + '/api/v1/readiness?scope=personal&phase=connection'
 request = urllib.request.Request(url, method='GET', headers={'Accept': 'application/json'})
 try:
     with urllib.request.build_opener(NoRedirect).open(request, timeout=30) as response:

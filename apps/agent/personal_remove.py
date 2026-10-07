@@ -200,14 +200,14 @@ def inspect(config):
         safe(CONFIG / 'client.json')
         stored = json.loads((CONFIG / 'client.json').read_text())
         require(all(stored.get(k) == config.get(k) for k in ('target_id', 'generation', 'client_token')))
-        require(set(p.name for p in CONFIG.iterdir()) <= {'client.json', 'credentials.key', 'credentials.enc', 'identity-owner', 'wireguard.key', 'runtime_host_key', 'runtime_host_key.pub', 'runtime_authorized_keys', 'runtime_sshd_config', 'cli-account.json',
+        require(set(p.name for p in CONFIG.iterdir()) <= {'client.json', 'credentials.key', 'credentials.enc', 'credentials.vault', 'identity-owner', 'wireguard.key', 'runtime_host_key', 'runtime_host_key.pub', 'runtime_authorized_keys', 'runtime_sshd_config', 'cli-account.json',
                 'runtime-plan.json', 'runtime-create.json', 'runtime-cloud-init.json', 'runtime.json', 'runtime-evidence.json', 'runtime_id_ed25519', 'runtime_id_ed25519.pub', 'runtime_known_hosts',
                 'runtime-access-account.json', 'runtime_access_host_key', 'runtime_access_host_key.pub', 'runtime_access_sshd_config',
                 'runtime-access-objects.json', 'runtime-access.lock'})
         for path in CONFIG.iterdir():
             safe(path, path.is_dir())
             if path.name == 'identity-owner':
-                require(set(child.name for child in path.iterdir()) <= {'credentials.key', 'credentials.enc'})
+                require(set(child.name for child in path.iterdir()) <= {'credentials.key', 'credentials.enc', 'credentials.vault'})
                 for child in path.iterdir():
                     safe(child)
     marker = CONFIG / 'cli-account.json'
@@ -219,8 +219,8 @@ def inspect(config):
                 and account.pw_uid != 0 and account.pw_dir == str(CLI_HOME))
         if CLI_HOME.exists():
             safe(CLI_HOME, True, account.pw_uid)
-            require(all(p.name in ('credentials.key', 'credentials.enc', 'control.json', 'authorized_keys', 'resources.json', 'jobs.lock', '.cache')
-                        or p.name.startswith('job-') and p.suffix == '.json' for p in CLI_HOME.iterdir()))
+            require(all(p.name in ('credentials.key', 'credentials.enc', 'credentials.vault', 'control.json', 'authorized_keys', 'resources.json', 'jobs.lock', '.cache')
+                        or p.name.startswith(('job-', 'unlock-job-')) and p.suffix == '.json' for p in CLI_HOME.iterdir()))
             inspect_cli_cache(account.pw_uid)
             for path in CLI_HOME.iterdir():
                 if path.name != '.cache':

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Project-bound structured OpenStack CLI, invoked only by a fixed SSH command."""
 import fcntl
+import base64
 import hashlib
 import json
 import os
@@ -14,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'deployment/bootstrap'))
 from apps.agent.protocol import MAX_REQUEST_BYTES, ProtocolError, _unique_object, success_response, error_response
 from apps.agent.runner import _read_bounded
-from client_setup.credentials import CredentialStore
+from client_setup.credentials import AssistedCredentialStore
 from client_setup.state import private_directory, read_private, atomic_private_write
 from infrastructure.providers.openstack.cli import OpenStackCLI, ProviderError
 
@@ -64,9 +65,16 @@ def decode(raw):
                              parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
     except (ValueError, UnicodeError, RecursionError):
         raise ProtocolError('invalid_request') from None
-    require(isinstance(request, dict) and set(request) == {'version', 'job_id', 'action', 'params'})
+    require(isinstance(request, dict) and set(request) == {'version', 'job_id', 'action', 'params',
+                                                        'target_id', 'generation', 'unlock_key'})
     require(type(request['version']) is int and request['version'] == 1 and request['action'] == 'openstack.execute')
     require(isinstance(request['job_id'], str) and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', request['job_id']))
+    require(isinstance(request['target_id'], str) and IDENT.fullmatch(request['target_id']))
+    require(type(request['generation']) is int and request['generation'] > 0)
+    try:
+        require(len(base64.b64decode(request['unlock_key'], validate=True)) == 32)
+    except (TypeError, ValueError, base64.binascii.Error):
+        raise ProtocolError('command_rejected') from None
     params = request['params']
     require(isinstance(params, dict) and 'argv' in params and set(params) <= {'argv', 'delete_data', 'public_key'})
     require('delete_data' not in params or type(params['delete_data']) is bool)
@@ -275,9 +283,21 @@ def execute_raw(raw, original_command, credential_loader, config, cli_factory=Op
     try:
         require(original_command == COMMAND)
         request = decode(raw)
-        auth = credential_loader()
+        require(request['target_id'] == config['target_id'] and request['generation'] == config['generation'])
+        require(isinstance(config['project_id'], str) and IDENT.fullmatch(config['project_id']))
+        # Persist replay state before handling the unlock key. A crashed job is
+        # unknown; repeating its ID cannot start another provider operation.
+        private_directory(home)
+        replay = home / ('unlock-job-' + request['job_id'] + '.json')
+        fd = os.open(replay, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, 'w') as stream:
+            json.dump({'target_id': request['target_id'], 'generation': request['generation'],
+                       'action': request['action']}, stream)
+            stream.flush(); os.fsync(stream.fileno())
+        auth = credential_loader(request['unlock_key'], target_id=config['target_id'],
+                                 generation=config['generation'], project_id=config['project_id'])
         require(isinstance(auth, dict))
-        secrets = tuple(v for k, v in auth.items() if any(word in k for word in ('secret', 'password', 'token')) and isinstance(v, str))
+        secrets = (request['unlock_key'], *(v for k, v in auth.items() if any(word in k for word in ('secret', 'password', 'token')) and isinstance(v, str)))
         result = execute(request, config, cli_factory(auth), home, secrets)
         return success_response(request, result)
     except Exception as exc:
@@ -305,7 +325,8 @@ def main():
         os.environ.update(PATH='/usr/bin:/bin', HOME=str(HOME), LANG='C.UTF-8')
         config = load(HOME / 'control.json', {})
         response = execute_raw(_read_bounded(sys.stdin.buffer), original,
-                               lambda: CredentialStore(HOME).load(), config)
+                               AssistedCredentialStore(HOME).unlock, config,
+                               cli_factory=lambda auth: OpenStackCLI(auth, temp_parent='/dev/shm'))
     except Exception:
         response = error_response('execution_failed')
     print(json.dumps(response))

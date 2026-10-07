@@ -144,4 +144,4 @@ ARGS=(enroll --api-url "$API_URL" --enrollment-id "$ENROLLMENT_ID")
 [[ -z "$RUNTIME_CONFIG" ]] || ARGS+=(--runtime-config "$RUNTIME_CONFIG")
 RAILSHOT_ENROLLMENT_TOKEN="$ENROLLMENT_SECRET" /opt/railshot/personal/.venv/bin/python /opt/railshot/personal/apps/agent/personal.py "${ARGS[@]}"
 unset ENROLLMENT_SECRET
-echo 'RailShot 등록과 별도 VM 실행환경의 접속·인증·배포 권한 확인을 마쳤습니다. 테스트 앱은 배포하지 않았습니다.'
+echo 'RailShot 온프레미스 터널과 OpenStack 제어 연결을 확인했습니다. 별도 VM 배포 준비는 수행하지 않았습니다.'
