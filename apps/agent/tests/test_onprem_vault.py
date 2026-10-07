@@ -101,6 +101,13 @@ class VaultTests(unittest.TestCase):
         self.assertFalse(result['ok'])
         self.assertFalse(called)
         self.assertFalse((self.home / 'unlock-job-legacy-job.json').exists())
+        missing_vault = self.home / 'missing-vault'
+        missing_vault.mkdir(mode=0o700)
+        marked = openstack_control.execute_raw(json.dumps(request).encode(),
+            openstack_control.COMMAND, lambda: called.append(True) or AUTH,
+            {**BINDING, 'vault_version': 2}, home=missing_vault)
+        self.assertFalse(marked['ok'])
+        self.assertFalse(called)
 
     def test_legacy_request_still_serves_an_existing_legacy_store(self):
         legacy = self.home / 'legacy'

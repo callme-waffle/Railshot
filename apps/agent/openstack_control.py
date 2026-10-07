@@ -302,7 +302,9 @@ def execute_raw(raw, original_command, credential_loader, config, cli_factory=Op
         else:
             # The old request is valid only for an installation that predates
             # the assisted vault. Presence of v2 state is an irreversible gate.
-            require(not (home / 'credentials.vault').exists() and not (home / 'credentials.vault').is_symlink())
+            require(config.get('vault_version') != 2
+                    and not (home / 'credentials.vault').exists()
+                    and not (home / 'credentials.vault').is_symlink())
             auth = credential_loader()
         require(isinstance(auth, dict))
         secrets = tuple(v for k, v in auth.items()
@@ -339,7 +341,7 @@ def main():
         if vault.exists() or vault.is_symlink():
             from client_setup.credentials import AssistedCredentialStore
             credential_loader = AssistedCredentialStore(HOME).unlock
-        elif (HOME / 'credentials.key').exists() and (HOME / 'credentials.enc').exists():
+        elif config.get('vault_version') != 2 and (HOME / 'credentials.key').exists() and (HOME / 'credentials.enc').exists():
             credential_loader = CredentialStore(HOME).load
         else:
             raise ValueError('CREDENTIAL_STORE_MISSING')

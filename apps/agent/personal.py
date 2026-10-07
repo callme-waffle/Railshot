@@ -337,6 +337,7 @@ def install_cli_account(config):
     require(owned == {'user': CLI_USER, 'uid': account.pw_uid, 'gid': account.pw_gid}
             and account.pw_uid != 0 and account.pw_dir == str(CLI_HOME) and account.pw_shell == '/bin/sh', 'CLI_ACCOUNT_NOT_OWNED')
     control = {key: config[key] for key in ('project_id', 'target_id', 'generation')}
+    control['vault_version'] = 2
     if CLI_HOME.exists():
         require(not CLI_HOME.is_symlink() and CLI_HOME.stat().st_uid == account.pw_uid
                 and not CLI_HOME.stat().st_mode & 0o077, 'CLI_HOME_UNSAFE')
