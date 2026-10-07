@@ -7,9 +7,11 @@ import { fileURLToPath } from 'node:url';
 import { request as httpRequest } from 'node:http';
 import { privateJson, privateDirectory, savePrivate, runEnvironmentCommand } from './environments.js';
 import { createApplicationAdapter } from './applications.js';
+import { createPersonalVault } from './personal-vault.js';
 
 const run = promisify(execFile);
 const gatewayScript = fileURLToPath(new URL('../../../deployment/scripts/personal_wireguard.py', import.meta.url));
+const gatewayProxy = fileURLToPath(new URL('./personal-gateway-proxy.js', import.meta.url));
 const runtimeScript = fileURLToPath(new URL('../../../deployment/scripts/personal_runtime.py', import.meta.url));
 const MAX_RESPONSE = 1024 * 1024;
 
@@ -44,8 +46,16 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
   if (!/^[a-f0-9]{64}$/.test(config.artifact_sha256 || '')) throw new Error('Pinned personal artifact required');
   if (config.gateway.command && !config.gateway.command.startsWith('/')) throw new Error('Absolute privileged gateway wrapper required');
   if (config.gateway.socket_path !== undefined || config.gateway.token_file !== undefined) {
-    if (config.gateway.command || !config.gateway.socket_path?.startsWith('/') || !config.gateway.token_file?.startsWith('/')) throw new Error('Invalid gateway socket configuration');
+    if (config.gateway.command || !config.gateway.token_file?.startsWith('/')
+        || !(config.gateway.socket_path?.startsWith('/') || config.gateway.service_host)) throw new Error('Invalid gateway socket configuration');
   }
+  if (config.gateway.service_host !== undefined && (!/^[a-z0-9.-]+$/i.test(config.gateway.service_host)
+      || !Number.isSafeInteger(config.gateway.service_port) || config.gateway.service_port < 1 || config.gateway.service_port > 65535
+      || config.gateway.socket_path || config.gateway.command)) throw new Error('Invalid gateway service configuration');
+  if (config.vault !== undefined && (Object.keys(config.vault).length !== 1 || !config.vault.private_key_file?.startsWith('/'))) {
+    throw new Error('Invalid personal vault configuration');
+  }
+  const vault = config.vault ? await createPersonalVault(config.vault.private_key_file) : null;
   if (config.runtime && (Object.keys(config.runtime).length !== 1 || !config.runtime.config_path?.startsWith('/'))) throw new Error('Invalid runtime operator configuration');
   const accessKeys = new Map();
   const dynamicApplications = new Map();
@@ -77,10 +87,11 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
   };
   async function readiness() {
     const codes = [];
-    if (config.gateway.socket_path) {
+    if (config.gateway.socket_path || config.gateway.service_host) {
       try { if ((await gateway('health')).status !== 'ready') codes.push('PERSONAL_GATEWAY_UNAVAILABLE'); }
       catch { codes.push('PERSONAL_GATEWAY_UNAVAILABLE'); }
     }
+    if (!vault) codes.push('PERSONAL_VAULT_NOT_CONFIGURED');
     if (!config.runtime) codes.push('RUNTIME_OPERATOR_NOT_CONFIGURED');
     if (!service?.identity || typeof service.publishedFiles !== 'function') codes.push('APPLICATION_CI_NOT_CONFIGURED');
     if (config.runtime) {
@@ -100,14 +111,16 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
       blockers: unique.map((code) => ({ code, message: blockerMessage[code] || '개인 환경 운영 설정을 확인해야 합니다.' })) };
   }
   async function gateway(action, target) {
-    if (config.gateway.socket_path) {
+    if (config.gateway.socket_path || config.gateway.service_host) {
       const tokenPath = config.gateway.token_file, info = await lstat(tokenPath);
       if (!info.isFile() || info.size > 513 || info.uid !== process.getuid() || info.mode & 0o077) throw new Error('Private gateway token required');
       const token = (await readFile(tokenPath, 'utf8')).trim();
       if (!/^[A-Za-z0-9._~-]{32,512}$/.test(token)) throw new Error('Invalid gateway token');
       const body = action === 'health' ? '' : JSON.stringify({ action, target_id: target.id, generation: target.generation, public_key: target.public_key });
       return new Promise((resolve, reject) => {
-        const request = httpRequest({ socketPath: config.gateway.socket_path, path: action === 'health' ? '/healthz' : '/requests', method: action === 'health' ? 'GET' : 'POST',
+        const request = httpRequest({ ...(config.gateway.socket_path ? { socketPath: config.gateway.socket_path }
+            : { host: config.gateway.service_host, port: config.gateway.service_port }),
+          path: action === 'health' ? '/healthz' : '/requests', method: action === 'health' ? 'GET' : 'POST',
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, (response) => {
           let raw = '';
           response.on('data', (chunk) => { raw += chunk.toString(); if (Buffer.byteLength(raw) > 16384) request.destroy(new Error('Gateway response too large')); });
@@ -136,15 +149,20 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
     if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(address || '') || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(source || '')) throw new Error('Registered gateway route required');
     const gatewayState = await gateway('verify', target);
     if (gatewayState.status !== 'succeeded' || gatewayState.reachable !== true) throw new Error('OpenStack gateway is not connected');
-    const folder = join(stateDirectory, target.id), request = { version: 1, job_id, action: 'openstack.execute', params: {
+    if (target.account_id && (!vault || !target.vault || target.vault.project_id !== target.project_id)) throw new Error('Personal vault not ready');
+    const folder = join(stateDirectory, target.id), request = { version: 1, job_id, action: 'openstack.execute',
+      ...(target.account_id ? { target_id: target.id, generation: target.generation, unlock_key: vault.unwrap(target.vault) } : {}), params: {
       argv, ...(delete_data !== undefined ? { delete_data } : {}), ...(public_key !== undefined ? { public_key } : {}),
     } };
     const encoded = JSON.stringify(request);
     if (Buffer.byteLength(encoded) > 16384) throw new Error('OpenStack operation too large');
+    const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
+    const proxyCommand = `${quote(process.execPath)} ${quote(gatewayProxy)} ${quote(target.id)} ${quote(target.generation)}`;
     const args = ['-F', '/dev/null', '-T', '-o', 'BatchMode=yes', '-o', 'IdentitiesOnly=yes', '-o', 'IdentityAgent=none',
       '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null', '-o', 'ConnectTimeout=10',
       '-o', `UserKnownHostsFile=${join(folder, 'known_hosts')}`, '-i', join(folder, 'runtime_ed25519'),
-      '-b', source, '-p', '2222', `railshot-openstack@${address}`, 'railshot-openstack-v1'];
+      ...(config.gateway.service_host ? ['-o', `ProxyCommand=${proxyCommand}`] : ['-b', source]),
+      '-p', '2222', `railshot-openstack@${address}`, 'railshot-openstack-v1'];
     const response = await transport('ssh', args, { input: encoded, timeout: 120000 });
     const raw = typeof response === 'string' ? response : response.stdout;
     const code = typeof response === 'string' ? 0 : response.code;
@@ -224,6 +242,21 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
   return {
     config, application, execute,
     readiness,
+    vaultPublicKey: () => {
+      if (!vault) throw new Error('Personal vault not configured');
+      return vault.publicKey();
+    },
+    validateVault: (metadata) => {
+      if (!vault) throw new Error('Personal vault not configured');
+      return vault.validate(metadata);
+    },
+    async connectionReadiness() {
+      const blockers = [];
+      if (!vault) blockers.push({ code: 'PERSONAL_VAULT_NOT_CONFIGURED' });
+      try { if ((await gateway('health')).status !== 'ready') blockers.push({ code: 'PERSONAL_GATEWAY_UNAVAILABLE' }); }
+      catch { blockers.push({ code: 'PERSONAL_GATEWAY_UNAVAILABLE' }); }
+      return { ready: blockers.length === 0, blockers };
+    },
     prepareRuntime: (target, evidence) => runtime('prepare', target, evidence),
     verifyRuntime: (target, evidence) => runtime('verify', target, evidence),
     reconcileRuntime: (target, evidence) => runtime('reconcile', target, evidence),
