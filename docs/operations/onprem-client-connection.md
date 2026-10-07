@@ -10,6 +10,8 @@ For each backend-approved job, the backend sends a new job ID, target ID, genera
 
 Connection readiness requires a backend-initiated `server list` over the tunnel. The client heartbeat alone cannot assert OpenStack readiness because it cannot unlock the vault locally. The installer does not create the later deployment runtime VM.
 
+Existing installations with `credentials.key` and `credentials.enc` continue to accept the earlier four-field SSH request. A `credentials.vault` installation rejects that request before loading credentials; its forced command requires target ID, generation, job ID, action, and a per-job unlock key. New enrollment never creates the legacy key files.
+
 ## Current removal limit
 
 New installations also protect the service user's revocation password with the server-assisted key. The existing local removal helper cannot decrypt that password by itself and therefore stops with `identity_revocation_unlock_required`, leaving the credential and local state in place. A backend-authorized revocation job must be added before unattended removal of these new installations is enabled. This fail-closed behavior avoids storing a second locally usable OpenStack credential.

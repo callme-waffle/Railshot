@@ -91,6 +91,32 @@ class VaultTests(unittest.TestCase):
         self.assertFalse(call(wrong_target)['ok'])
         self.assertFalse((self.home / 'unlock-job-job2.json').exists())
 
+    def test_v2_vault_rejects_legacy_request_without_loading_credentials(self):
+        request = {'version': 1, 'job_id': 'legacy-job', 'action': 'openstack.execute',
+                   'params': {'argv': ['server', 'list']}}
+        called = []
+        result = openstack_control.execute_raw(json.dumps(request).encode(),
+            openstack_control.COMMAND, lambda: called.append(True) or AUTH,
+            BINDING, home=self.home)
+        self.assertFalse(result['ok'])
+        self.assertFalse(called)
+        self.assertFalse((self.home / 'unlock-job-legacy-job.json').exists())
+
+    def test_legacy_request_still_serves_an_existing_legacy_store(self):
+        legacy = self.home / 'legacy'
+        legacy.mkdir(mode=0o700)
+        request = {'version': 1, 'job_id': 'legacy-read', 'action': 'openstack.execute',
+                   'params': {'argv': ['server', 'list']}}
+        class Cloud:
+            def run(self, argv):
+                if argv == ['token', 'issue']:
+                    return {'project_id': 'project1', 'id': 'scoped-token'}
+                return [{'ID': 'server1', 'Name': 'web', 'Status': 'ACTIVE'}]
+        result = openstack_control.execute_raw(json.dumps(request).encode(),
+            openstack_control.COMMAND, lambda: AUTH, BINDING,
+            cli_factory=lambda auth: Cloud() if auth == AUTH else None, home=legacy)
+        self.assertTrue(result['ok'])
+
     def test_openstack_cli_secret_file_is_only_on_tmpfs_forced_command(self):
         if not Path('/dev/shm').is_dir():
             self.skipTest('tmpfs unavailable')
