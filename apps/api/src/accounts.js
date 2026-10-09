@@ -50,13 +50,16 @@ function accountMailTokenFile(path) {
 export function accountMailSender(env = process.env) {
   const url = env.RAILSHOT_ACCOUNT_MAIL_URL;
   const inline = env.RAILSHOT_ACCOUNT_MAIL_TOKEN;
+  const tokenFile = env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE;
   // Only this sender closure retains an inline credential. CI/CD child tools
-  // must not inherit it through their default process environment.
+  // must not inherit credentials or their private file paths through the
+  // default process environment.
   delete env.RAILSHOT_ACCOUNT_MAIL_TOKEN;
-  if (inline !== undefined && env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE !== undefined) {
+  delete env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE;
+  if (inline !== undefined && tokenFile !== undefined) {
     throw new Error('Set only one of RAILSHOT_ACCOUNT_MAIL_TOKEN and RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE');
   }
-  const bearer = env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE === undefined ? inline : accountMailTokenFile(env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE);
+  const bearer = tokenFile === undefined ? inline : accountMailTokenFile(tokenFile);
   if (bearer !== undefined && (typeof bearer !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(bearer))) throw new Error('Account mail token must contain 1-4096 non-whitespace ASCII characters');
   if (!url || !bearer) return null;
   const protocol = new URL(url).protocol;

@@ -18,7 +18,7 @@
 
 운영 환경에는 `RAILSHOT_ACCOUNT_MAIL_URL`과 `RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE`을 설정한다. 토큰 파일은 절대 경로의 정규 파일이어야 하고 API 프로세스 UID가 소유하며 권한은 정확히 `0600`이어야 한다. 심볼릭 링크·하드 링크는 허용하지 않는다. 내용은 공백 없는 ASCII 1–4096자와 선택적인 마지막 줄바꿈 하나로 제한한다. 단일 노드 검증 배포의 경로는 `/var/lib/railshot/config/personal-mail-token`이며 API UID/GID `1000:1000`으로 설치한다.
 
-기존 `RAILSHOT_ACCOUNT_MAIL_TOKEN` 환경 변수도 지원하지만 파일 설정과 동시에 사용하면 시작을 거부한다. API는 환경 변수에서 읽은 토큰을 즉시 제거해 자식 CI/CD 프로세스에 상속하지 않고, 메일 발송 closure에만 보관한다. 파일은 API 시작 때 읽으므로 토큰을 교체한 뒤 API를 재시작해야 한다. API는 HTTPS 메일 게이트웨이에 `{to,purpose,token}` JSON을 Bearer 인증으로 전송한다. 게이트웨이는 실제 이메일 전송과 메일 본문 내 확인/재설정 링크 작성을 담당한다. 메일 게이트웨이가 없으면 신규 가입은 `503 MAIL_UNAVAILABLE`이다. 격리된 로컬 테스트 네트워크에서만 `RAILSHOT_ACCOUNT_TEST_ALLOW_HTTP=1`로 HTTP를 허용한다. 검증용 수신기는 비공개 파일에 확인/재설정 토큰을 저장하며 실제 이메일을 보내지 않는다.
+기존 `RAILSHOT_ACCOUNT_MAIL_TOKEN` 환경 변수도 지원하지만 파일 설정과 동시에 사용하면 시작을 거부한다. API는 읽은 뒤 토큰과 비공개 파일 경로 환경 변수를 즉시 제거해 자식 CI/CD 프로세스에 상속하지 않고, 메일 발송 closure에만 토큰을 보관한다. 파일은 API 시작 때 읽으므로 토큰을 교체한 뒤 API를 재시작해야 한다. API는 HTTPS 메일 게이트웨이에 `{to,purpose,token}` JSON을 Bearer 인증으로 전송한다. 게이트웨이는 실제 이메일 전송과 메일 본문 내 확인/재설정 링크 작성을 담당한다. 메일 게이트웨이가 없으면 신규 가입은 `503 MAIL_UNAVAILABLE`이다. 격리된 로컬 테스트 네트워크에서만 `RAILSHOT_ACCOUNT_TEST_ALLOW_HTTP=1`로 HTTP를 허용한다. 검증용 수신기는 비공개 파일에 확인/재설정 토큰을 저장하며 실제 이메일을 보내지 않는다.
 
 ## 연결 등록
 

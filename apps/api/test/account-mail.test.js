@@ -32,6 +32,7 @@ test('account mail sends a private token file through the sender closure', async
   f.env.RAILSHOT_ACCOUNT_TEST_ALLOW_HTTP = '1';
   const sender = accountMailSender(f.env);
   assert.equal(f.env.RAILSHOT_ACCOUNT_MAIL_TOKEN, undefined);
+  assert.equal(f.env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE, undefined);
   // The sender uses its startup snapshot; rotating an operator file requires a restart.
   await writeFile(f.path, 'replacement-test-fixture');
   await sender(message);
@@ -75,11 +76,31 @@ test('account mail consumes inline tokens before child processes can inherit the
   assert.equal(child.status, 0); assert.equal(child.stdout, 'true');
 });
 
+test('account mail consumes private token file paths before child processes can inherit them', async (t) => {
+  const f = await fixture(t);
+  const previous = process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN;
+  const previousUrl = process.env.RAILSHOT_ACCOUNT_MAIL_URL;
+  const previousFile = process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE;
+  delete process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN;
+  process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE = f.path;
+  process.env.RAILSHOT_ACCOUNT_MAIL_URL = 'https://mail.example.test/messages';
+  t.after(() => {
+    if (previous === undefined) delete process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN; else process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN = previous;
+    if (previousUrl === undefined) delete process.env.RAILSHOT_ACCOUNT_MAIL_URL; else process.env.RAILSHOT_ACCOUNT_MAIL_URL = previousUrl;
+    if (previousFile === undefined) delete process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE; else process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE = previousFile;
+  });
+  assert.equal(typeof accountMailSender(), 'function');
+  assert.equal(process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE, undefined);
+  const child = spawnSync(process.execPath, ['-e', 'process.stdout.write(String(process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN === undefined && process.env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE === undefined))'], { encoding: 'utf8' });
+  assert.equal(child.status, 0); assert.equal(child.stdout, 'true');
+});
+
 test('account mail requires one credential source and explicit test HTTP opt-in', async (t) => {
   const f = await fixture(t);
   const simultaneous = { ...f.env, RAILSHOT_ACCOUNT_MAIL_TOKEN: token };
   assert.throws(() => accountMailSender(simultaneous), /only one/);
   assert.equal(simultaneous.RAILSHOT_ACCOUNT_MAIL_TOKEN, undefined);
+  assert.equal(simultaneous.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE, undefined);
   assert.equal(accountMailSender({}), null);
   assert.equal(accountMailSender({ RAILSHOT_ACCOUNT_MAIL_URL: 'https://mail.example.test/messages' }), null);
   assert.throws(() => accountMailSender({ RAILSHOT_ACCOUNT_MAIL_URL: 'https://mail.example.test/messages', RAILSHOT_ACCOUNT_MAIL_TOKEN: 'invalid token' }), /non-whitespace ASCII/);
