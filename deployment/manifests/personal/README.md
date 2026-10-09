@@ -46,7 +46,9 @@ docker compose -p railshot-onprem-e2e \
   -f deployment/manifests/personal/e2e.compose.yaml build
 ```
 
-fixture에는 7일 유효한 시험 CA와 e2e.railshot.test/localhost/127.0.0.1 인증서가 들어 있습니다. 이 시험 이름은 Compose 안에서 TLS 서비스의 DNS alias를 가리키고 API에는 공개 CA 인증서만 추가 신뢰합니다. 원격 관리 호스트에는 `tls-ca.pem` 공개 인증서만 전달해 명시적으로 신뢰하게 하며, 개인키는 복사하지 않습니다. 원격 hosts에 e2e.railshot.test를 127.0.0.1로 지정하고 승인된 SSH reverse forward로 원격 localhost:18443을 검증 호스트 localhost:8443에 연결하면 API와 설치기가 같은 URL에서 HTTPS·artifact 검증을 수행합니다. 이는 공개 HTTPS 및 공개 UDP 경로의 인수검증과 다르므로 결과에 사용한 전송 경로를 적습니다. UDP 접근이 가능한 경우 `RAILSHOT_PERSONAL_UDP_BIND`와 `PERSONAL_GATEWAY_ENDPOINT`는 승인된 주소로 설정합니다. 호스트 방화벽이나 기존 자원은 이 Compose에서 변경하지 않습니다.
+fixture에는 7일 유효한 시험 CA와 e2e.railshot.test/localhost/127.0.0.1 인증서가 들어 있습니다. 이 시험 이름은 Compose 안에서 TLS 서비스의 DNS alias를 가리키고 API에는 공개 CA 인증서만 추가 신뢰합니다. 원격 관리 호스트에는 `tls-ca.pem` 공개 인증서만 전달해 명시적으로 신뢰하게 하며, 개인키는 복사하지 않습니다. 원격 hosts에 e2e.railshot.test를 127.0.0.1로 지정하고 승인된 SSH reverse forward로 원격 localhost:18443을 검증 호스트 localhost:8443에 연결하면 API와 설치기가 같은 URL에서 HTTPS·artifact 검증을 수행합니다. E2E overlay는 단일 노드 DevStack의 현장 Keystone HTTP를 허용하려고 `RAILSHOT_PERSONAL_TEST_ALLOW_HTTP=1`을 명시합니다. 설치 API와 공개 artifact의 실제 URL은 HTTPS를 유지하며, 이 시험 opt-in을 운영 기본값으로 쓰지 않습니다. 이는 공개 HTTPS 및 공개 UDP 경로의 인수검증과 다르므로 결과에 사용한 전송 경로를 적습니다. UDP 접근이 가능한 경우 `RAILSHOT_PERSONAL_UDP_BIND`와 `PERSONAL_GATEWAY_ENDPOINT`는 승인된 주소로 설정합니다. 호스트 방화벽이나 기존 자원은 이 Compose에서 변경하지 않습니다.
+
+직접 UDP가 막힌 시험 환경에서는 `personal-e2e-udp-relay.py`를 기존 SSH TCP 역포워드 양끝에 실행할 수 있습니다. work-vm 쪽은 `tcp --port 8444 --destination-port 51920`, 현장 쪽은 `udp --port 51821 --destination-port 18444`를 사용하며, listener와 destination은 모두 127.0.0.1로 제한됩니다. 이 단일 peer 진단 경로는 데이터그램 경계를 보존하고 키·패킷을 출력하지 않습니다. 공개 UDP 인수조건의 통과로 집계하지 않습니다.
 
 ## Kubernetes 운영 연결
 

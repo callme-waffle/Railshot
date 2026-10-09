@@ -124,4 +124,6 @@ volumes:
 networks:
   default:
     ipam:
-      config: [{subnet: 172.29.253.0/24}]
+      # Keep .2 outside the dynamic range so API startup cannot claim the
+      # gateway's fixed private RPC address before that container starts.
+      config: [{subnet: 172.29.253.0/24, ip_range: 172.29.253.128/25}]

@@ -157,7 +157,10 @@ def probe(project, fixture, restart):
         if restart:
             docker('restart', gateway_id)
             wait_for(lambda: rpc(host, token, 'health', {}) == {'status': 'ready'})
-            wait_for(lambda: rpc(host, token, 'verify', target).get('reachable') is True)
+            # A gateway namespace restart loses ephemeral WireGuard sessions.
+            # The unchanged client must reach its normal rekey interval before
+            # the stable server key can accept fresh encrypted traffic again.
+            wait_for(lambda: rpc(host, token, 'verify', target).get('reachable') is True, seconds=180)
             connect(host, token, route, echo=True)
         removed = rpc(host, token, 'remove', target)
         if removed.get('status') != 'succeeded':
@@ -169,10 +172,12 @@ def probe(project, fixture, restart):
                 'gateway_restart': restart, 'probe_peer_removed': True,
                 'scope': 'local_docker_transport_only'}
     finally:
-        if registered:
-            rpc(host, token, 'remove', target)
-        if created:
-            docker('rm', '-f', peer_name)
+        try:
+            if registered:
+                rpc(host, token, 'remove', target)
+        finally:
+            if created:
+                docker('rm', '-f', peer_name)
 
 
 def main():

@@ -11,7 +11,9 @@ services:
       RAILSHOT_ACCOUNT_MAIL_URL: http://mail:4186/messages
       RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE: /var/lib/railshot/config/personal-mail-token
       RAILSHOT_ACCOUNT_TEST_ALLOW_HTTP: "1"
-      RAILSHOT_PERSONAL_TEST_ALLOW_HTTP: "0"
+      # The isolated DevStack Keystone API uses HTTP. Public installer/artifact
+      # URLs still use the explicit test CA and HTTPS endpoint below.
+      RAILSHOT_PERSONAL_TEST_ALLOW_HTTP: "1"
       RAILSHOT_ALLOWED_HOSTS: localhost,127.0.0.1,dashboard,api,e2e.railshot.test
       RAILSHOT_ALLOWED_ORIGINS: https://e2e.railshot.test:18443,https://localhost:18443,https://127.0.0.1:18443,https://localhost:8443,https://127.0.0.1:8443
       NODE_EXTRA_CA_CERTS: /var/lib/railshot/config/personal-tls-ca.pem
