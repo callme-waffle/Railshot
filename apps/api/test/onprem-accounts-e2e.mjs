@@ -12,6 +12,15 @@ class AcceptanceError extends Error {
 const ensure = (condition, stage, code) => { if (!condition) throw new AcceptanceError(stage, code); };
 const sha256 = (text) => createHash('sha256').update(text).digest('hex');
 const privateFailure = (stage) => new AcceptanceError(stage, 'PRIVATE_FILE_INVALID');
+function publicServers(items) {
+  const statuses = new Set(['ACTIVE', 'BUILD', 'SHUTOFF', 'ERROR']);
+  return items.map((item) => {
+    const id = item?.ID ?? item?.id, status = item?.Status ?? item?.status;
+    // Names, networks, metadata and arbitrary strings are deliberately omitted.
+    return { id: typeof id === 'string' && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id) ? id : null,
+      status: statuses.has(status) ? status : null };
+  });
+}
 
 async function privateJson(path, stage, uid = process.getuid()) {
   let file;
@@ -199,10 +208,10 @@ export async function runAccountAcceptance(mode, configPath, statePath) {
     ensure(replay.status === 401, 'claimed_enrollment_replay');
     const report = { status: 'succeeded', checked_at: new Date().toISOString(), target_id: state.target_id,
       account_id: state.primary.account_id, connection_status: target.data.connection_status, deployable: target.data.deployable,
-      server_count: instances.data.items.length,
+      connection_ready: true, server_count: instances.data.items.length, servers: publicServers(instances.data.items),
       checks: ['connected_target', 'connected_target_list', 'connected_target_isolation', 'openstack_server_list', 'openstack_command_isolation', 'claimed_enrollment_replay'] };
     await privateWrite(join(config.output_directory, `connection-report-${Date.now()}.json`), JSON.stringify(report, null, 2) + '\n');
-    return { status: 'succeeded', stage: 'connection', checks: report.checks.length };
+    return { status: 'succeeded', stage: 'connection', checks: report.checks.length, connection_ready: true, server_count: report.server_count };
   }
   ensure(mode === 'setup', 'arguments', 'INVALID_ARGUMENTS');
   const ready = await client(config).request('/api/v1/readiness?scope=personal&phase=connection');

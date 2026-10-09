@@ -59,6 +59,8 @@ node apps/api/test/onprem-accounts-e2e.mjs check /private/configuration.json
 
 OpenStack 설치가 오래 걸리면 실제 클라이언트 설치 직전에 `refresh`를 실행한다. 기존 계정 세션·타깃을 사용해 새 등록 토큰을 발급하고 이전 토큰 거부·30분 만료·스크립트 해시를 확인한 뒤 `account-state.json`을 `0600`으로 원자적으로 교체한다. 기존 메타데이터 보고서는 보존하고 새로운 `enrollment-report-*.json`을 작성한다. 이미 claim한 타깃에는 새 등록을 발급하지 않으며 API의 `409`를 오류로 기록한다.
 
-클라이언트가 연결된 뒤 `check`는 같은 계정 쿠키로 `connection_status=ready`, `deployable=false`, 소유 목록과 다른 계정의 접근 거부를 확인하고 `GET /api/v1/targets/{id}/instances`를 실제 실행한다. 이 요청은 백엔드가 터널 SSH로 수행한 OpenStack `server list` 결과가 배열인지 확인한다. 이미 등록에 사용한 토큰으로 다시 claim하면 `401`인지도 검사한다. 표준 출력에 서버 목록은 포함하지 않는다. 검증 결과와 서버 수는 타임스탬프가 붙은 `connection-report-*.json` 비공개 파일로 기록한다. 계정 세션이 12시간 후 만료되면 새 검증 실행이 필요하다.
+클라이언트가 연결된 뒤 `check`는 같은 계정 쿠키로 `connection_status=ready`, `deployable=false`, 소유 목록과 다른 계정의 접근 거부를 확인하고 `GET /api/v1/targets/{id}/instances`를 실제 실행한다. 이 요청은 백엔드가 터널 SSH로 수행한 OpenStack `server list` 결과가 배열인지 확인한다. 빈 배열과 `server_count=0`도 성공한 조회다. 이미 등록에 사용한 토큰으로 다시 claim하면 `401`인지도 검사한다. 표준 출력에는 서버 목록을 포함하지 않고 `connection_ready`와 `server_count`만 추가한다. 검증 결과·서버 수·검증된 UUID 및 제한된 상태는 타임스탬프가 붙은 `connection-report-*.json` 비공개 파일로 기록한다. 서버 이름·네트워크·임의 메타데이터 문자열은 기록하지 않는다. 계정 세션이 12시간 후 만료되면 새 검증 실행이 필요하다.
 
 2026-10-10(Asia/Seoul) 지정 검증 VM의 Docker Compose API에 `setup`을 실제 실행해 18개 검사를 통과했다. 검증용 CA로 `https://e2e.railshot.test:18443`를 확인했고, 비공개 메일 수신 볼륨을 읽기 전용으로 마운트한 별도 Node runner를 사용했다. 생성한 계정 비밀번호는 메모리에만 두었으며 표준 출력에는 상태와 검사 개수만 표시했다. 비공개 출력은 VM의 `/tmp/railshot-onprem-e2e-account-output/`에 실행 UID/GID `1000:1000`, 디렉터리 `0700`, 파일 `0600`으로 기록했다. 이 결과는 계정·등록 API의 실제 HTTP 검증이며 WireGuard·OpenStack 명령 검증은 연결 후 별도 `check` 결과로 판단한다.
+
+같은 날 02:17 KST에 OpenStack 설치 정상 종료 후 기존 타깃의 `refresh`를 실제 Compose API에서 실행해 5개 검사를 통과했다. `account-state.json`을 UID/GID `1000:1000`, `0600`으로 원자적으로 갱신했고 새 만료 시각은 02:47:52 KST다. 토큰·쿠키·비밀번호는 출력하지 않았다.

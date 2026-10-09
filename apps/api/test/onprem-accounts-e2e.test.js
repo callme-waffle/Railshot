@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -27,11 +27,11 @@ test('live account harness preserves private enrollment artifacts and verifies r
   });
   const state = { applications: {}, operations: {}, plans: {}, personal: { targets: {}, enrollments: {} } };
   const store = { read: () => state, transaction: async (mutation) => mutation(state) };
-  let peerMutations = 0, commands = 0;
+  let peerMutations = 0, commands = 0, commandResult = [];
   const adapter = { config: { public_url: '', artifact_url: 'https://releases.example.test/pinned.tgz', artifact_sha256: 'a'.repeat(64) },
     connectionReadiness: async () => ({ ready: true, blockers: [] }),
     register: async () => { peerMutations++; throw new Error('A revoked token must not register a peer'); },
-    execute: async () => { commands++; return { ok: true, result: [] }; },
+    execute: async () => { commands++; return { ok: true, result: commandResult }; },
   };
   const personal = createPersonalEnvironments({ store, adapter, launch: () => {}, publicApplication: () => {} });
   const product = { dashboard: { accounts, owner: () => null,
@@ -73,6 +73,17 @@ test('live account harness preserves private enrollment artifacts and verifies r
   Object.assign(state.personal.targets[saved.target_id], { connection_status: 'ready', last_seen_at: new Date().toISOString(), status: 'connecting' });
   state.personal.enrollments[refreshed.enrollment.id].used = true;
   const checked = await runAccountAcceptance('check', configPath);
-  assert.deepEqual(checked, { status: 'succeeded', stage: 'connection', checks: 6 });
+  assert.deepEqual(checked, { status: 'succeeded', stage: 'connection', checks: 6, connection_ready: true, server_count: 0 });
+  const reportPath = (await readdir(outputDirectory)).find((name) => name.startsWith('connection-report-'));
+  const report = JSON.parse(await readFile(join(outputDirectory, reportPath), 'utf8'));
+  assert.deepEqual(report.servers, []);
+  assert.equal(report.connection_ready, true);
   assert.equal(commands, 1); assert.equal(peerMutations, 0);
+  const privateText = 'sensitive-runtime-string-fixture';
+  commandResult = [{ ID: '123e4567-e89b-42d3-a456-426614174000', Status: 'ACTIVE', Name: privateText, Networks: privateText },
+    { ID: privateText, Status: privateText }];
+  assert.equal((await runAccountAcceptance('check', configPath)).server_count, 2);
+  const reports = (await readdir(outputDirectory)).filter((name) => name.startsWith('connection-report-'));
+  for (const filename of reports) assert.equal((await readFile(join(outputDirectory, filename), 'utf8')).includes(privateText), false);
+  assert.equal(commands, 2); assert.equal(peerMutations, 0);
 });
