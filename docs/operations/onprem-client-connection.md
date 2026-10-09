@@ -12,6 +12,53 @@ Connection readiness requires a backend-initiated `server list` over the tunnel.
 
 Existing installations with `credentials.key` and `credentials.enc` continue to accept the earlier four-field SSH request. A `credentials.vault` installation rejects that request before loading credentials; its forced command requires target ID, generation, job ID, action, and a per-job unlock key. New enrollment never creates the legacy key files.
 
+## Running a designated OpenStack connection test
+
+The downloaded short installer reads the enrollment ID and token from `/dev/tty`.
+Run it through an interactive terminal or an SSH session with a PTY. Do not put
+the token or administrator password in command arguments, shell history, or a
+captured terminal transcript. The installer must finish before its terminal is
+closed; later heartbeats run through the installed systemd service.
+
+After the token claim, the client asks for an OpenStack v3 authentication URL if
+it cannot discover one, then the administrator ID, user domain (`Default`),
+administrator project (`admin`), administrator project domain, Railshot project
+domain, dedicated service user name, compute member role (`member`), and finally
+the administrator password through a hidden terminal prompt. Endpoint discovery
+reads the literal URL from known `clouds.yaml` or openrc paths; it never sources
+an openrc file. `sudo` can remove `OS_AUTH_URL`, so use the prompt or a private
+known configuration file when the endpoint is not discoverable after elevation.
+
+For an explicitly designated development cloud with HTTP Keystone, the test
+installer must use `--test-allow-http`. The API's installer configuration needs
+`test_allow_http: true` to generate that option in its short script. This setting
+is persisted in the local client binding so that reruns and the daemon retain
+the same explicit choice. The default installer requires HTTPS.
+
+A failed vault upload can be retried with the same enrollment ID and installed
+payload: the saved client credential and encrypted vault are reused, the
+one-time token is not claimed again, and no service identity is recreated.
+Unknown OpenStack write outcomes require reconciliation before a rerun proceeds.
+
+The customer crypto, upload retry, replay protection, and existing installer
+regressions can be run without cloud or OS mutations:
+
+```bash
+umask 077
+python3 -m pytest \
+  apps/agent/tests/test_personal_connection.py \
+  apps/agent/tests/test_personal.py \
+  apps/agent/tests/test_openstack_control.py \
+  ci/tests/test_personal_identity.py -q
+```
+
+The installer uses this private umask. The fixtures intentionally undergo the
+same ownership and permission checks as production files; a permissive umask
+may cause them to fail before exercising their intended behavior. The connection
+tests use real RSA-OAEP and AES-GCM encryption and a private `/dev/shm` credential
+file, with fake provider calls. A passing result does not prove a live WireGuard
+handshake, SSH transport, or OpenStack authorization.
+
 ## Current removal limit
 
 New installations also protect the service user's revocation password with the server-assisted key. The existing local removal helper cannot decrypt that password by itself and therefore stops with `identity_revocation_unlock_required`, leaving the credential and local state in place. A backend-authorized revocation job must be added before unattended removal of these new installations is enabled. This fail-closed behavior avoids storing a second locally usable OpenStack credential.
