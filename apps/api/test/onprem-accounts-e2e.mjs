@@ -193,10 +193,14 @@ export async function runAccountAcceptance(mode, configPath, statePath) {
     const instances = await primary.request(`/api/v1/targets/${state.target_id}/instances`);
     ensure(instances.status === 200 && Array.isArray(instances.data.items), 'openstack_server_list');
     ensure((await secondary.request(`/api/v1/targets/${state.target_id}/instances`)).status === 404, 'openstack_command_isolation');
+    const replay = await primary.request(`/api/v1/enrollments/${state.enrollment.id}/claims`,
+      { public_key: 'A'.repeat(43) + '=', client_version: 'e2e-replay-probe', runtime: { ssh_host_key: 'ssh-ed25519 ' + 'A'.repeat(68) } },
+      { headers: { Authorization: `Bearer ${state.enrollment.token}` } });
+    ensure(replay.status === 401, 'claimed_enrollment_replay');
     const report = { status: 'succeeded', checked_at: new Date().toISOString(), target_id: state.target_id,
       account_id: state.primary.account_id, connection_status: target.data.connection_status, deployable: target.data.deployable,
       server_count: instances.data.items.length,
-      checks: ['connected_target', 'connected_target_list', 'connected_target_isolation', 'openstack_server_list', 'openstack_command_isolation'] };
+      checks: ['connected_target', 'connected_target_list', 'connected_target_isolation', 'openstack_server_list', 'openstack_command_isolation', 'claimed_enrollment_replay'] };
     await privateWrite(join(config.output_directory, `connection-report-${Date.now()}.json`), JSON.stringify(report, null, 2) + '\n');
     return { status: 'succeeded', stage: 'connection', checks: report.checks.length };
   }

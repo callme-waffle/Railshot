@@ -71,7 +71,8 @@ test('live account harness preserves private enrollment artifacts and verifies r
   assert.equal(state.personal.enrollments[saved.enrollment.id].revoked, true);
   await assert.rejects(runAccountAcceptance('check', configPath), (error) => error.stage === 'connected_target');
   Object.assign(state.personal.targets[saved.target_id], { connection_status: 'ready', last_seen_at: new Date().toISOString(), status: 'connecting' });
+  state.personal.enrollments[refreshed.enrollment.id].used = true;
   const checked = await runAccountAcceptance('check', configPath);
-  assert.deepEqual(checked, { status: 'succeeded', stage: 'connection', checks: 5 });
+  assert.deepEqual(checked, { status: 'succeeded', stage: 'connection', checks: 6 });
   assert.equal(commands, 1); assert.equal(peerMutations, 0);
 });
