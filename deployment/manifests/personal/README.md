@@ -2,7 +2,7 @@
 
 ## 운영과 같은 분리 컨테이너 로컬 검증
 
-`production.compose.yaml`은 일반 API, 공개 대시보드, root WireGuard 게이트웨이를 서로 다른 컨테이너로 실행합니다. API는 UID/GID 1000과 권한 없음으로 실행되고, 게이트웨이만 `NET_ADMIN`(네트워크 관리 권한)을 가집니다. 두 컨테이너는 API 네트워크 공간과 Unix 도메인 소켓만 공유합니다. 기본 호스트 포트는 API TCP 4193, 대시보드 TCP 4194, WireGuard UDP 51920이므로 기존 4173 서버를 바꾸지 않습니다.
+`production.compose.yaml`은 일반 API, 공개 대시보드, root WireGuard 게이트웨이를 서로 다른 컨테이너와 네트워크 공간에서 실행합니다. API는 UID/GID 1000과 권한 없음으로 실행되고, 게이트웨이만 `NET_ADMIN`(네트워크 관리 권한)을 가집니다. API는 사설 Docker 네트워크의 인증된 TCP 4184 RPC와 제한된 CONNECT 스트림을 이용합니다. WireGuard 인터페이스와 UDP 수신 포트는 게이트웨이에만 있습니다. 기본 호스트 포트는 API TCP 4193, 대시보드 TCP 4194, WireGuard UDP 51920이므로 기존 4173 서버를 바꾸지 않습니다. 사설 네트워크는 172.29.253.0/24이므로 사용 전 기존 경로와 충돌 여부를 확인합니다.
 
 아래 생성기는 외부 시스템에서 쓰지 않는 로컬 시험 전용 키와 토큰만 새 비공개 디렉터리에 만듭니다. 운영 Secret을 만들거나 추정하는 도구가 아니며, URL도 격리 Compose의 `dashboard` 이름만 허용합니다.
 
@@ -17,18 +17,36 @@ docker compose -f deployment/manifests/personal/production.compose.yaml up -d
 docker compose -f deployment/manifests/personal/production.compose.yaml ps
 ```
 
-one-shot `prepare` 컨테이너는 소켓 볼륨을 `root:1000`과 0770으로 만든 뒤 종료합니다. 게이트웨이는 시작할 때 이를 0750으로 제한하고 `root:1000`과 0660인 소켓을 만듭니다. API는 디렉터리를 통과해 소켓에 연결할 수 있지만 잠금 파일이나 소켓을 바꿀 수 없습니다. 실행 중인 실제 볼륨과 컨테이너 권한은 비밀값을 출력하지 않는 다음 검사로 확인합니다.
+one-shot `prepare` 컨테이너는 API 설정·RPC 토큰·RSA vault 개인키를 API 소유 0600 파일로 설치합니다. 게이트웨이에는 WireGuard 개인키와 RPC 토큰만 별도 볼륨으로 전달합니다. vault 개인키를 게이트웨이에 마운트하지 않습니다. 실행 중인 사전검사는 비밀값을 출력하지 않습니다.
 
 ```sh
-docker compose -f deployment/manifests/personal/production.compose.yaml run --rm --no-deps \
-  --entrypoint sh gateway -ec \
-  'test "$(stat -c %u:%g:%a /run/railshot-personal-gateway)" = 0:1000:750'
 docker compose -f deployment/manifests/personal/production.compose.yaml exec api \
   python3 /app/deployment/scripts/personal-production-preflight.py \
   --config /var/lib/railshot/config/personal.json --test-allow-http
 ```
 
-운영자 토큰과 다른 개인 클라이언트 bearer가 Nginx에서 그대로 전달되는지는 실제 대시보드 이미지의 `/api/v1/enrollments/<id>/claims`와 `/api/v1/targets/<id>/{heartbeats,receipts,runtimes}` 경로로 검사합니다. 그 밖의 `/api/` 경로는 대시보드의 중앙 토큰을 계속 사용합니다. 종료에는 `docker compose ... down`을 사용하며, 재시작 영속성 검증 전에는 `down -v`로 볼륨을 지우지 않습니다.
+운영자 토큰과 다른 개인 클라이언트 bearer가 Nginx에서 그대로 전달되는지는 실제 대시보드 이미지의 `/api/v1/enrollments/<id>/claims`와 `/api/v1/targets/<id>/{heartbeats,receipts,runtimes,vaults}` 경로로 검사합니다. 그 밖의 `/api/` 경로는 대시보드의 중앙 토큰을 계속 사용합니다. 종료에는 `docker compose ... down`을 사용하며, 재시작 영속성 검증 전에는 `down -v`로 볼륨을 지우지 않습니다.
+
+### HTTPS를 유지하는 연결 E2E
+
+연결만 검증하는 `connection-api` 이미지 target은 같은 REST API·SQLite·SSH 구현을 실행하며 CI와 클라우드 배포 도구는 포함하지 않습니다. 이 이미지에서 연결은 검증할 수 있지만 런타임·배포 준비를 확인했다고 주장하면 안 됩니다. `e2e.compose.yaml`은 인증된 시험 메일 수신기와 localhost TLS proxy를 추가합니다. 메일은 외부로 발송되지 않으며 token은 메일 전용 영속 볼륨 안의 0600 JSON으로만 저장됩니다.
+
+```sh
+fixture=/tmp/railshot-onprem-e2e-fixture
+python3 deployment/scripts/prepare-personal-local-fixture.py \
+  --output "$fixture" --public-url https://localhost:18443
+export RAILSHOT_PERSONAL_PRODUCTION_CONFIG_DIR="$fixture"
+export RAILSHOT_PERSONAL_API_TARGET=connection-api
+export RAILSHOT_PERSONAL_API_TAG=onprem-e2e
+docker compose -p railshot-onprem-e2e \
+  -f deployment/manifests/personal/production.compose.yaml \
+  -f deployment/manifests/personal/e2e.compose.yaml config --quiet
+docker compose -p railshot-onprem-e2e \
+  -f deployment/manifests/personal/production.compose.yaml \
+  -f deployment/manifests/personal/e2e.compose.yaml build
+```
+
+fixture에는 7일 유효한 시험 CA와 localhost/127.0.0.1 인증서가 들어 있습니다. 원격 관리 호스트에는 `tls-ca.pem` 공개 인증서만 전달해 명시적으로 신뢰하게 하며, 개인키는 복사하지 않습니다. 승인된 SSH reverse forward로 원격 localhost:18443을 검증 호스트 localhost:8443에 연결하면 설치기와 artifact의 HTTPS 검증을 유지할 수 있습니다. 이는 공개 HTTPS 및 공개 UDP 경로의 인수검증과 다르므로 결과에 사용한 전송 경로를 적습니다. UDP 접근이 가능한 경우 `RAILSHOT_PERSONAL_UDP_BIND`와 `PERSONAL_GATEWAY_ENDPOINT`는 승인된 주소로 설정합니다. 호스트 방화벽이나 기존 자원은 이 Compose에서 변경하지 않습니다.
 
 ## Kubernetes 운영 연결
 

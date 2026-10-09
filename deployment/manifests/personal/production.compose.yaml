@@ -5,8 +5,8 @@ services:
     build:
       context: ../../..
       dockerfile: apps/api/Dockerfile
-      target: api
-    image: railshot/api:personal-production-test
+      target: ${RAILSHOT_PERSONAL_API_TARGET:-api}
+    image: railshot/api:${RAILSHOT_PERSONAL_API_TAG:-personal-production-test}
     user: "0:0"
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
@@ -19,7 +19,6 @@ services:
       - dashboard-token:/output/dashboard-token
       - gateway-key:/output/gateway-key
       - gateway-ipc:/output/gateway-ipc
-      - gateway-socket:/output/gateway-socket
     tmpfs: [/tmp:mode=1777]
 
   api:
@@ -27,8 +26,8 @@ services:
     build:
       context: ../../..
       dockerfile: apps/api/Dockerfile
-      target: api
-    image: railshot/api:personal-production-test
+      target: ${RAILSHOT_PERSONAL_API_TARGET:-api}
+    image: railshot/api:${RAILSHOT_PERSONAL_API_TAG:-personal-production-test}
     user: "1000:1000"
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
@@ -45,11 +44,9 @@ services:
       RAILSHOT_PERSONAL_TEST_ALLOW_HTTP: "1"
     ports:
       - 127.0.0.1:${RAILSHOT_PERSONAL_API_PORT:-4193}:4173/tcp
-      - 127.0.0.1:${RAILSHOT_PERSONAL_UDP_PORT:-51920}:51820/udp
     volumes:
       - api-state:/var/lib/railshot
       - api-token:/run/secrets/api:ro
-      - gateway-socket:/run/railshot-personal-gateway
     tmpfs: [/tmp:mode=1777]
     healthcheck:
       test: [CMD, node, -e, "fetch('http://127.0.0.1:4173/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
@@ -69,14 +66,17 @@ services:
     cap_add: [NET_ADMIN]
     security_opt: [no-new-privileges:true]
     read_only: true
-    network_mode: service:api
     depends_on:
       prepare: {condition: service_completed_successfully}
-      api: {condition: service_started}
     environment:
-      PERSONAL_GATEWAY_ENDPOINT: "${PERSONAL_GATEWAY_ENDPOINT:-api:51820}"
+      PERSONAL_GATEWAY_ENDPOINT: "${PERSONAL_GATEWAY_ENDPOINT:-gateway:51820}"
+      PERSONAL_GATEWAY_RPC_BIND: 172.29.253.2
+    ports:
+      - ${RAILSHOT_PERSONAL_UDP_BIND:-127.0.0.1}:${RAILSHOT_PERSONAL_UDP_PORT:-51920}:51820/udp
+    networks:
+      default:
+        ipv4_address: 172.29.253.2
     volumes:
-      - gateway-socket:/run/railshot-personal-gateway
       - gateway-key:/run/secrets/personal-gateway-key:ro
       - gateway-ipc:/run/secrets/personal-gateway-ipc:ro
       - gateway-state:/var/lib/railshot-personal-gateway
@@ -118,6 +118,10 @@ volumes:
   dashboard-token:
   gateway-key:
   gateway-ipc:
-  gateway-socket:
   gateway-state:
   wireguard-state:
+
+networks:
+  default:
+    ipam:
+      config: [{subnet: 172.29.253.0/24}]

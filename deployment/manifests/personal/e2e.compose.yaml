@@ -1,0 +1,59 @@
+# Explicit local E2E additions. This receiver writes private test email files;
+# it does not deliver messages or replace a production mail provider.
+services:
+  prepare:
+    volumes:
+      - mail-token:/output/mail-token
+      - mail-state:/output/mail-state
+      - tls:/output/tls
+  api:
+    environment:
+      RAILSHOT_ACCOUNT_MAIL_URL: http://mail:4186/messages
+      RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE: /var/lib/railshot/config/personal-mail-token
+      RAILSHOT_ACCOUNT_TEST_ALLOW_HTTP: "1"
+      RAILSHOT_PERSONAL_TEST_ALLOW_HTTP: "0"
+      RAILSHOT_ALLOWED_HOSTS: localhost,127.0.0.1,dashboard,api
+      RAILSHOT_ALLOWED_ORIGINS: https://localhost:18443,https://127.0.0.1:18443,https://localhost:8443,https://127.0.0.1:8443
+  mail:
+    image: railshot/api:${RAILSHOT_PERSONAL_API_TAG:-personal-production-test}
+    user: "1000:1000"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+    entrypoint: [python3, /app/deployment/scripts/personal-e2e-mail.py]
+    command: [--token-file, /run/secrets/mail/token, --outbox, /var/lib/railshot-mail]
+    volumes:
+      - mail-token:/run/secrets/mail:ro
+      - mail-state:/var/lib/railshot-mail
+    tmpfs: [/tmp:mode=1777]
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4186/healthz', timeout=2)"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  tls:
+    image: nginx:stable-alpine@sha256:0985e772fb9f729e6fa0980da05fca5d9c468e870eed43071545afa9d2e27d94
+    user: "101:101"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+      dashboard: {condition: service_healthy}
+    entrypoint: [nginx, -g, "daemon off;"]
+    ports: ["127.0.0.1:${RAILSHOT_PERSONAL_TLS_PORT:-8443}:8443/tcp"]
+    volumes:
+      - ./e2e-tls.conf:/etc/nginx/nginx.conf:ro
+      - tls:/run/secrets/tls:ro
+    tmpfs: [/tmp:mode=1777]
+    healthcheck:
+      test: [CMD, nginx, -t]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+volumes:
+  mail-token:
+  mail-state:
+  tls:

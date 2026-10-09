@@ -70,6 +70,21 @@ ENV PYTHONDONTWRITEBYTECODE=1
 EXPOSE 4184/tcp 51820/udp
 ENTRYPOINT ["/usr/local/bin/railshot-personal-gateway-service"]
 
+# The connection acceptance image runs the same REST/SQLite/SSH code without
+# unrelated cloud provisioning tools. It cannot validate deployment readiness.
+FROM base AS connection-api
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates openssh-client openssl python3 \
+    && rm -rf /var/lib/apt/lists/*
+COPY deployment/manifests/personal/production-compose-prepare.py /app/deployment/manifests/personal/production-compose-prepare.py
+COPY deployment/scripts/personal-production-preflight.py /app/deployment/scripts/personal-production-preflight.py
+COPY deployment/scripts/personal-e2e-mail.py /app/deployment/scripts/personal-e2e-mail.py
+ENV PYTHONDONTWRITEBYTECODE=1
+USER 1000:1000
+EXPOSE 4173
+CMD ["node", "src/server.js"]
+
 FROM base AS api
 USER root
 ENV PATH=/opt/railshot-python/bin:${PATH}
