@@ -59,6 +59,78 @@ tests use real RSA-OAEP and AES-GCM encryption and a private `/dev/shm` credenti
 file, with fake provider calls. A passing result does not prove a live WireGuard
 handshake, SSH transport, or OpenStack authorization.
 
+## Checks before and after a live installer run
+
+Use the nested test cloud's Keystone endpoint, not the outer cloud that owns
+the test VM. Registration creates or reuses the shared `railshot` project in the
+selected domain, creates a new dedicated user, assigns the existing `member`
+role, and creates an Application Credential with `unrestricted: false`. It
+checks the role before cloud writes. An existing dedicated user name causes
+`existing_service_user`; the installer never adopts that user or resets its
+password. This connection phase creates no VM, network, floating IP, or runtime
+cluster and deletes no OpenStack resource.
+
+Before starting, record these non-secret checks:
+
+- `GET /api/v1/readiness?scope=personal&phase=connection` returns ready.
+- The login account owns the target; enrollment expiry is still in the future
+  and its generation matches the target. Do not print the enrollment token.
+- The downloaded API short script's SHA-256 matches `script_sha256` from the
+  enrollment response, and its pinned archive matches the release manifest.
+  The static release manifest records paths and hashes, not test options.
+- For this HTTP development cloud, the API process has
+  `RAILSHOT_PERSONAL_TEST_ALLOW_HTTP=1` and the generated short script passes
+  `--test-allow-http` through `install.sh` to the personal client.
+- The selected Keystone URL is the expected local `/identity/v3` endpoint;
+  administrator/domain/project names are correct and the dedicated service
+  name is unused. Endpoint discovery may skip the URL prompt when exactly one
+  valid endpoint exists. A driver must match actual prompts rather than send
+  answers by position. Discovery prints only the selected public URL.
+- The PTY is active, tracing and terminal capture are disabled, and the same
+  pinned release is used for any retry. Check that existing Railshot paths are
+  owned by the expected installation before proceeding.
+
+After the installer, verify status and permissions without dumping private
+configuration or decrypted credentials:
+
+- `wg-quick@railshot0`, `railshot-personal-runtime`, and `railshot-personal` are
+  active. `wg show railshot0 latest-handshakes` reports a recent handshake with
+  the expected public peer; do not use `wg showconf` or dump the WireGuard file.
+- SSH port 2222 listens only on the assigned tunnel address. The dedicated
+  SSH account has public-key authentication, a forced OpenStack command, and
+  no shell, PTY, forwarding, or root-login access through that listener.
+- Client configuration, identity state, both encrypted vaults, and the copied
+  SSH-account vault have their expected ownership and private permissions.
+  `credentials.key` and `credentials.enc` are absent. Inspect file metadata,
+  presence, and selected booleans instead of printing file contents.
+- Identity ownership contains the dedicated user, member role assignment, and
+  one Application Credential. Identity progress is `complete` after local
+  project/token and compute-list verification. Existing resources keep their
+  ownership; the shared project and service user are retained on removal.
+- The backend has registered the same target/generation/project vault binding
+  and executed `server list` through gateway SSH with server-assisted unlock.
+  An empty server array is a valid result. The backend verifies the token's
+  project before executing the command.
+- The owning account's target list shows `connection_status: ready` and
+  `deployable: false`; the overall status is normally `preparing` until the
+  separate runtime phase. A client heartbeat by itself cannot assert ready.
+  Verify a second account cannot read or command the target, and record the
+  actual command result without token, password, wrapped key, or unlock key.
+
+Retry according to the durable stage, rather than deleting state:
+
+| Observed failure | Required action |
+| --- | --- |
+| Claim was never accepted; no client configuration exists | Check expiry/revocation and use a fresh enrollment only if the target remains unclaimed. |
+| Claim response was lost after the server consumed the token, before local `client.json` persisted | Reconcile the server target and peer; replaying the token or issuing a replacement to that bound target is refused. Automatic recovery is not implemented. |
+| Client configuration exists; tunnel or local service setup failed | Retry the same enrollment ID, API URL, explicit HTTP setting, and pinned release. The stored client credential is reused. |
+| Identity intent is pending, or some identity writes succeeded before vault persistence | Reconcile the recorded resource IDs and cloud outcome. The installer blocks instead of repeating unknown writes or adopting an existing user. |
+| Encrypted identity is persisted but vault upload failed | Retry with the same configuration and vault. Upload is idempotent for identical metadata; no identity is recreated. |
+| Backend connection verification failed or timed out | Preserve state and inspect handshake, listener, forced-command, vault binding, and compute authorization. The daemon retries heartbeats; readiness requires the real backend command to succeed. |
+
+These are code-based expectations. Record observed live outcomes separately and
+do not infer tunnel or cloud success from a passing local test.
+
 ## Current removal limit
 
 New installations also protect the service user's revocation password with the server-assisted key. The existing local removal helper cannot decrypt that password by itself and therefore stops with `identity_revocation_unlock_required`, leaving the credential and local state in place. A backend-authorized revocation job must be added before unattended removal of these new installations is enabled. This fail-closed behavior avoids storing a second locally usable OpenStack credential.
