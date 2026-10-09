@@ -64,3 +64,7 @@ OpenStack 설치가 오래 걸리면 실제 클라이언트 설치 직전에 `re
 2026-10-10(Asia/Seoul) work-vm의 Docker Compose API에 `setup`을 실제 실행해 18개 검사를 통과했다. OpenStack 설치 현장은 별도의 지정 원격 VM이다. 검증용 CA로 `https://e2e.railshot.test:18443`를 확인했고, 비공개 메일 수신 볼륨을 읽기 전용으로 마운트한 별도 Node runner를 사용했다. 생성한 계정 비밀번호는 메모리에만 두었으며 표준 출력에는 상태와 검사 개수만 표시했다. 비공개 출력은 work-vm의 `/tmp/railshot-onprem-e2e-account-output/`에 실행 UID/GID `1000:1000`, 디렉터리 `0700`, 파일 `0600`으로 기록했다. 이 결과는 계정·등록 API의 실제 HTTP 검증이며 원격 VM의 WireGuard·OpenStack 명령 검증은 연결 후 별도 `check` 결과로 판단한다.
 
 같은 날 02:17 KST에 OpenStack 설치 정상 종료 후 기존 타깃의 `refresh`를 실제 Compose API에서 실행해 5개 검사를 통과했다. `account-state.json`을 UID/GID `1000:1000`, `0600`으로 원자적으로 갱신했고 새 만료 시각은 02:47:52 KST다. 토큰·쿠키·비밀번호는 출력하지 않았다.
+
+02:23:02 KST에는 원격 클라이언트 설치 후 work-vm의 별도 Node runner에서 실제 `check` 6개를 통과했다. `connection_ready=true`, `connection_status=ready`, `deployable=false`였고 소유 계정의 `GET /api/v1/targets/{id}/instances`는 `200`과 빈 서버 목록(`server_count=0`)을 반환했다. 다른 계정의 타깃·인스턴스 조회는 각각 `404`였고, 02:47:52 만료 이전에 이미 사용한 등록 토큰을 다시 claim한 요청은 `401`이었다. 보고서는 work-vm의 `/tmp/railshot-onprem-e2e-account-output/connection-report-1791566582482.json`에 UID/GID `1000:1000`, `0600`으로 저장했다. 이 검사는 새 클라우드 서버를 생성하지 않았다.
+
+API·gateway는 work-vm의 서로 다른 Docker network namespace에 있고 고객 클라이언트·단일 노드 OpenStack은 지정 원격 VM에 있다. 이 실행에서는 직접 공개 UDP에 도달하지 못해 승인된 SSH 역포워드와 단일 peer UDP 진단 릴레이를 사용했다. 실제 WireGuard와 gateway stream을 통한 SSH 명령·서버 지원 자격 잠금 해제·OpenStack 조회의 성공을 확인했지만 공개 native UDP 도달성이나 Kubernetes 배포의 인수 통과로 집계하지 않는다.
