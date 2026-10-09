@@ -30,3 +30,33 @@
 6. 클라이언트가 전용 OpenStack 제어 자격을 만든 뒤 `POST /api/v1/targets/{id}/vaults`에 지속 클라이언트 Bearer와 `{generation,project_id,key_id,wrapped_dek}`를 전달한다. 서버는 감싼 데이터 키가 유효한지 확인하고 프로젝트를 환경에 결속한다. 이 엔드포인트는 Application Credential 비밀값을 받지 않는다.
 
 `GET /api/v1/keys/current`는 클라이언트가 사용할 서버 공개키와 키 ID를 반환한다. `GET /api/v1/readiness?scope=personal&phase=connection`은 연결 선행 조건만 확인한다. 기존 `GET /api/v1/readiness?scope=personal`은 실행환경·CI 준비를 포함한 전체 운영 설정 검사다. WireGuard 등록 자체는 `connection_status=ready`를 만들지 않는다. 서버에서 터널 SSH로 `server list`를 성공적으로 실행한 뒤 준비 상태가 된다.
+
+## 실제 HTTP 인수 검증 도구
+
+`apps/api/test/onprem-accounts-e2e.mjs`는 Node 22 이상에서 명시적으로 실행하는 도구다. 두 개의 고유한 검증 계정을 생성하고 이메일 확인·일회용 확인 토큰·로그인·CSRF·환경 목록 및 계정 격리·등록 토큰 교체·30분 유효 기간·스크립트 해시를 실제 API로 확인한다. 폐기된 등록 토큰으로만 claim을 시도하므로 WireGuard peer를 생성하지 않는다. 마지막 유효한 등록 토큰은 클라이언트 설치에 사용한다. 생성한 계정 비밀번호는 프로세스 메모리에서만 사용한다.
+
+설정 파일은 실행 UID 소유의 `0600` 정규 파일로 준비한다. 예시 JSON의 값에는 자격 정보가 없다.
+
+```json
+{
+  "api_url": "https://e2e.railshot.test:18443",
+  "mail_directory": "/private/mail",
+  "output_directory": "/private/output",
+  "mail_uid": 1000,
+  "label": "railshot onprem acceptance"
+}
+```
+
+`output_directory`는 실행 UID 소유의 `0700` 디렉터리여야 하며 기존 결과 파일을 덮어쓰지 않는다. TLS 검증용 CA는 `NODE_EXTRA_CA_CERTS`에 인증서 경로로만 제공한다. 격리된 로컬 HTTP 테스트에 한해서 JSON의 `test_allow_http:true`를 추가한다.
+
+```bash
+node apps/api/test/onprem-accounts-e2e.mjs setup /private/configuration.json
+node apps/api/test/onprem-accounts-e2e.mjs refresh /private/configuration.json
+node apps/api/test/onprem-accounts-e2e.mjs check /private/configuration.json
+```
+
+`setup`은 `account-state.json`에 계정 쿠키·CSRF·타깃 ID·등록 ID·등록 토큰·스크립트 URL과 해시를 `0600`으로 기록한다. `account-report.json`에는 검증 메타데이터만, `personal-install.sh`에는 자격 정보가 없는 고정 설치 스크립트를 기록한다. 이 비공개 출력 디렉터리는 Git 저장소 밖에 둔다. 표준 출력은 성공 상태와 통과한 검사 개수만 표시하며 오류 출력도 단계·오류 코드만 표시한다.
+
+OpenStack 설치가 오래 걸리면 실제 클라이언트 설치 직전에 `refresh`를 실행한다. 기존 계정 세션·타깃을 사용해 새 등록 토큰을 발급하고 이전 토큰 거부·30분 만료·스크립트 해시를 확인한 뒤 `account-state.json`을 `0600`으로 원자적으로 교체한다. 기존 메타데이터 보고서는 보존하고 새로운 `enrollment-report-*.json`을 작성한다. 이미 claim한 타깃에는 새 등록을 발급하지 않으며 API의 `409`를 오류로 기록한다.
+
+클라이언트가 연결된 뒤 `check`는 같은 계정 쿠키로 `connection_status=ready`, `deployable=false`, 소유 목록과 다른 계정의 접근 거부를 확인하고 `GET /api/v1/targets/{id}/instances`를 실제 실행한다. 이 요청은 백엔드가 터널 SSH로 수행한 OpenStack `server list` 결과가 배열인지 확인한다. 표준 출력에 서버 목록은 포함하지 않는다. 검증 결과와 서버 수는 타임스탬프가 붙은 `connection-report-*.json` 비공개 파일로 기록한다. 계정 세션이 12시간 후 만료되면 새 검증 실행이 필요하다.
