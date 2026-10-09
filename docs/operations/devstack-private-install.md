@@ -1,0 +1,122 @@
+# Designated DevStack VM installation
+
+This helper applies to the designated `railshot-onprem-e2e` Ubuntu 24.04 host,
+fixed IP `172.28.102.160`, and the official DevStack `stable/2025.2` checkout at
+`92e864aa017f61e911a8ce3976e828fa5b750ded`. It is a test installation tool under
+`ci/scripts`, separate from the Railshot customer installer. It creates no VM,
+floating IP, security group, or external cloud resource.
+
+The original DevStack scripts include passwords in shell traces, several CLI
+arguments, INI-editing `sed` arguments, generated CLI files, and the final
+installation summary. Its shell also creates a broad sudoers rule. Running that
+unmodified script would violate this verification session's constraints.
+
+`ci/scripts/devstack-private-install.py` patches twelve files with exact SHA-256
+preimage checks and validates the resulting shell/Python syntax before writing
+them. It records hashes of the applied patch and its runtime helper. The `check`
+and `run` actions refuse a different Git revision, changed patched files, other
+tracked changes, custom `localrc`/`local.sh` hooks, additional configuration, an
+unreviewed service list, or a credential configuration without private ownership
+and 0600 permissions. The patch preserves the existing sudo authorization and
+creates no new sudoers or secure-path rule.
+
+The four generated installation passwords remain 48 hexadecimal characters in
+the locally prepared private `local.conf`. Do not use the VM's SSH password in
+that file. The helper accepts no password argument and does not read the SSH
+credential file. Keystone bootstrap receives its password through the supported
+`OS_BOOTSTRAP_PASSWORD` environment variable; service-user creation sends the
+password from standard input directly to the OpenStack SDK. The database client
+uses a private `.my.cnf`, and its password-setting SQL travels through standard
+input. INI editing also sends its program through standard input instead of
+`sed -e` process arguments. [Keystone bootstrap reference](https://docs.openstack.org/keystone/latest/admin/bootstrap.html)
+
+RabbitMQ receives a temporary private definitions file containing a salted
+SHA-256 password hash, with no plaintext password in that file or command
+arguments. Nova cell0 mapping receives a temporary 0600 config in `/dev/shm`;
+its database password does not appear in `nova-manage` arguments. Both temporary
+files are removed when their command finishes. Generated `.localrc.auto`,
+`.stackenv`, `clouds.yaml`, `.my.cnf`, and secret-bearing service configuration
+files are restricted before writing the secrets.
+[RabbitMQ password hash format](https://www.rabbitmq.com/docs/passwords#computing-password-hashes),
+[RabbitMQ definitions import](https://www.rabbitmq.com/docs/definitions)
+
+The required non-secret configuration matches the prepared host:
+
+```ini
+[[local|localrc]]
+DEST=/opt/stack
+HOST_IP=172.28.102.160
+SERVICE_HOST=172.28.102.160
+HOST_IPV6=
+IP_VERSION=4
+FIXED_RANGE=10.77.0.0/24
+FLOATING_RANGE=172.24.4.0/24
+PUBLIC_NETWORK_GATEWAY=172.24.4.1
+Q_USE_PROVIDERNET_FOR_PUBLIC=False
+LIBVIRT_TYPE=kvm
+LOGFILE=
+LOGDIR=/opt/stack/logs
+VERBOSE=True
+GLOBAL_VENV=True
+DEVSTACK_PARALLEL=False
+ENABLE_DEBUG_LOG_LEVEL=False
+DATABASE_QUERY_LOGGING=False
+MYSQL_GATHER_PERFORMANCE=False
+MYSQL_SERVICE_NAME=mariadb
+USE_JOURNAL=False
+LOG_SUDO=
+SYSLOG=False
+DEBUG_LIBVIRT=False
+DEBUG_LIBVIRT_COREDUMPS=False
+GIT_DEPTH=1
+DOWNLOAD_DEFAULT_IMAGES=False
+IMAGE_URLS=
+ENABLED_SERVICES=key,g-api,mysql,rabbit,n-api,n-api-meta,n-cond,n-cpu,n-sch,placement-api,placement-client,q-svc,ovn-controller,ovn-northd,ovs-vswitchd,ovsdb-server,q-ovn-agent,etcd3
+```
+
+The private configuration must additionally contain the four locally generated
+`ADMIN_PASSWORD`, `DATABASE_PASSWORD`, `SERVICE_PASSWORD`, and `RABBIT_PASSWORD`
+assignments. Populate them from the private credential file without printing
+them. The listing above is documentation, not a complete executable local.conf.
+The destination CIDRs describe the nested test cloud; they do not authorize
+changing the outer cloud's VM, networking, floating IP, or security group.
+
+Upload the helper without credentials and use these actions on the designated
+host, with its actual checkout path:
+
+```bash
+python3 /opt/railshot-onprem-e2e/devstack-private-install.py patch \
+  --source /opt/railshot-onprem-e2e/devstack
+python3 /opt/railshot-onprem-e2e/devstack-private-install.py check \
+  --source /opt/railshot-onprem-e2e/devstack
+python3 /opt/railshot-onprem-e2e/devstack-private-install.py run \
+  --source /opt/railshot-onprem-e2e/devstack \
+  --log /opt/stack/logs/railshot-private-install-1.log
+```
+
+Run the last command as the existing `railshot` user. Root execution is rejected.
+The output directory must be writable by that user. Each attempt requires a new
+log path; the file is created with 0600 permissions and exclusive creation. The
+runner captures raw stdout/stderr through a pipe, redacts the four exact
+generated password values even when split between reads, and then writes the
+sanitized bytes to that file and stdout. A systemd unit may capture this already
+sanitized stdout. Do not redirect `stack.sh` to a file, start it directly, enable
+shell tracing, or tee its output before the runner. Installation and failure
+worlddump logs are disabled, and the required synchronous mode avoids async
+worker log files. Existing sudo input/output logging causes execution to stop;
+the helper does not change that logging policy.
+
+Run the helper's acceptance tests with the pinned official source available:
+
+```bash
+umask 077
+RAILSHOT_DEVSTACK_AUDITED_SOURCE=/path/to/pinned/devstack \
+  python3 -m pytest ci/tests/test_devstack_private_install.py -q
+```
+
+These tests exercise real subprocess argument capture for the INI editor,
+private temporary files, the runner's sanitized log, cross-read redaction,
+source transformations, and refusal gates. Provider and RabbitMQ calls use
+fakes. They establish the helper contracts; installation success, service
+health, nested instance boot, live WireGuard, and Railshot `server list` require
+the subsequent designated-host test. Record those actual outcomes separately.
