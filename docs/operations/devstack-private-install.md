@@ -113,6 +113,43 @@ worlddump logs are disabled, and the required synchronous mode avoids async
 worker log files. Existing sudo input/output logging causes execution to stop;
 the helper does not change that logging policy.
 
+## Nova rootwrap executable lookup
+
+On the designated VM at 2026-10-09 16:47 UTC, the operator confirmed that
+`/opt/stack/data/venv/bin/nova-rootwrap` exists, but root's `command -v
+nova-rootwrap` failed and `/usr/local/bin/nova-rootwrap` did not exist. Nova's
+`get_root_helper()` uses the bare command `sudo nova-rootwrap`; its compute
+process passes that command to privilege separation. The original global-venv
+setup links `privsep-helper` into `/usr/local/bin` but omits `nova-rootwrap`.
+Keeping sudo's existing secure path therefore requires an executable lookup
+repair before the first privileged Nova operation.
+
+The operator may add this one link after confirming that the target is
+executable and the destination is absent. These commands contain no credential
+values and use the existing sudo authorization:
+
+```bash
+set -eu
+sudo -n test -x /opt/stack/data/venv/bin/nova-rootwrap
+if [ -e /usr/local/bin/nova-rootwrap ] || [ -L /usr/local/bin/nova-rootwrap ]; then
+  printf '%s\n' 'Existing nova-rootwrap path requires review; stopping.' >&2
+  exit 1
+fi
+sudo -n ln -sT /opt/stack/data/venv/bin/nova-rootwrap /usr/local/bin/nova-rootwrap
+test "$(readlink /usr/local/bin/nova-rootwrap)" = /opt/stack/data/venv/bin/nova-rootwrap
+sudo -n sh -c 'command -v nova-rootwrap'
+```
+
+GNU `ln -sT` without `--force` refuses an existing destination, including a
+directory or dangling symlink, and preserves it if a path appears after the
+absence check. Respect any existing path and stop for review; do not replace or
+remove it. Successful verification must show root resolves
+`/usr/local/bin/nova-rootwrap` and that it points to the designated venv
+executable. This host adjustment changes no sudoers rule, helper, audited
+DevStack source file, marker, or running installer. Record the actual link and
+lookup result separately; the observation above records the missing path,
+not completion of the repair.
+
 ## Upgrade the previously deployed runtime
 
 The `upgrade` action accepts only the earlier audited runtime whose SHA-256 is
