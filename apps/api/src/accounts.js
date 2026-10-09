@@ -1,4 +1,6 @@
 import { createHash, randomBytes, randomUUID, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { promisify } from 'node:util';
 import { DashboardError } from './sessions.js';
 
@@ -20,11 +22,45 @@ export function accountCookieToken(header) {
   const value = found.length === 1 ? found[0].slice(ACCOUNT_COOKIE.length + 1) : '';
   return tokenPattern.test(value) ? value : null;
 }
+
+function accountMailTokenFile(path) {
+  let fd;
+  try {
+    if (typeof path !== 'string' || !isAbsolute(path)) throw new Error();
+    const validFile = (info) => info.isFile() && info.uid === process.getuid() && info.nlink === 1
+      && (info.mode & 0o7777) === 0o600 && info.size >= 1 && info.size <= 4097;
+    const info = lstatSync(path);
+    if (!validFile(info) || info.isSymbolicLink()) throw new Error();
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const opened = fstatSync(fd);
+    if (!validFile(opened) || opened.dev !== info.dev || opened.ino !== info.ino) throw new Error();
+    // Bound the read even if the operator file changes after the size check.
+    const bytes = Buffer.alloc(4098);
+    let length = 0, count;
+    while (length < bytes.length && (count = readSync(fd, bytes, length, bytes.length - length, null)) !== 0) length += count;
+    const raw = bytes.subarray(0, length).toString('utf8');
+    const token = raw.endsWith('\n') ? raw.slice(0, -1) : raw;
+    if (!/^[\x21-\x7e]{1,4096}$/.test(token)) throw new Error();
+    return token;
+  } catch {
+    throw new Error('RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE must be a private operator-owned 0600 regular file');
+  } finally { if (fd !== undefined) closeSync(fd); }
+}
+
 export function accountMailSender(env = process.env) {
   const url = env.RAILSHOT_ACCOUNT_MAIL_URL;
-  const bearer = env.RAILSHOT_ACCOUNT_MAIL_TOKEN;
+  const inline = env.RAILSHOT_ACCOUNT_MAIL_TOKEN;
+  // Only this sender closure retains an inline credential. CI/CD child tools
+  // must not inherit it through their default process environment.
+  delete env.RAILSHOT_ACCOUNT_MAIL_TOKEN;
+  if (inline !== undefined && env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE !== undefined) {
+    throw new Error('Set only one of RAILSHOT_ACCOUNT_MAIL_TOKEN and RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE');
+  }
+  const bearer = env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE === undefined ? inline : accountMailTokenFile(env.RAILSHOT_ACCOUNT_MAIL_TOKEN_FILE);
+  if (bearer !== undefined && (typeof bearer !== 'string' || !/^[\x21-\x7e]{1,4096}$/.test(bearer))) throw new Error('Account mail token must contain 1-4096 non-whitespace ASCII characters');
   if (!url || !bearer) return null;
-  if (new URL(url).protocol !== 'https:' && !env.RAILSHOT_ACCOUNT_TEST_ALLOW_HTTP) throw new Error('Account mail endpoint must be HTTPS');
+  const protocol = new URL(url).protocol;
+  if (protocol !== 'https:' && !(protocol === 'http:' && env.RAILSHOT_ACCOUNT_TEST_ALLOW_HTTP === '1')) throw new Error('Account mail endpoint must be HTTPS');
   return async (message) => {
     const response = await fetch(url, { method: 'POST', headers: { Authorization: `Bearer ${bearer}`, 'Content-Type': 'application/json' },
       body: JSON.stringify(message), signal: AbortSignal.timeout(10000) });
