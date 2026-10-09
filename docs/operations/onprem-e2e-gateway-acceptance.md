@@ -9,7 +9,7 @@
 - Gateway: `railshot/personal-gateway:production-test`, 약 202MB, 별도 network namespace, `NET_ADMIN`만 추가.
 - Dashboard: 약 94MB. HTTPS proxy와 인증된 시험 메일 receiver를 E2E overlay로 추가했다.
 - Gateway 사설 RPC: `172.29.253.2:4184`. 동적 Docker 주소 풀을 `172.29.253.128/25`로 제한해 API가 gateway 주소를 먼저 받는 문제를 수정했다.
-- 공개 설치 URL: `https://e2e.railshot.test:18443`. Docker에서는 TLS 서비스 alias로 해석하고 원격 호스트에서는 승인된 SSH 역포워드와 hosts 항목으로 연결한다.
+- HTTPS 시험 설치 URL: `https://e2e.railshot.test:18443`. Docker에서는 TLS 서비스 alias로 해석하고 원격 호스트에서는 승인된 SSH 역포워드와 hosts 항목으로 연결한다.
 - 시험 CA 공개 인증서 SHA256: `832c97011c888f994bbd11a8f755d4b9f679b76707cbb43662d2b70f875dd0ca`. 개인키를 원격 호스트로 복사하지 않는다.
 - 기존 observability 3개와 proxmox-ctrl-mcp 컨테이너는 계속 실행된 상태를 확인했다.
 
