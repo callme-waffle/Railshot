@@ -22,6 +22,7 @@ import urllib.parse
 REVISION = '92e864aa017f61e911a8ce3976e828fa5b750ded'
 MARKER = '.railshot-private-install.json'
 RUNTIME = 'railshot-private-helper.py'
+UPGRADE_FROM = '9370684008f99b85f6ffc30f12dda7d6b0aabbe56b72a5fc9b64b9de0954fa90'
 PREIMAGES = {
     'stack.sh': 'ad487ea76f95d88eba0cfd76018b2917123a273d5a763e2e605d4562558e44bd',
     'functions-common': '7ed0895474ade7096fd8f6e61dc33e7769ced29dc9e19e9ce9e5e94b6dc5fc65',
@@ -261,6 +262,72 @@ def patch(source):
     (source / MARKER).write_text(json.dumps(marker, sort_keys=True, indent=2) + '\n')
 
 
+def atomic_replace(path, content):
+    """Publish a complete file; a failed marker publication leaves gates closed."""
+    mode = stat.S_IMODE(path.stat().st_mode)
+    descriptor, temporary = tempfile.mkstemp(prefix='.' + path.name + '-', dir=path.parent)
+    try:
+        with os.fdopen(descriptor, 'wb') as output:
+            os.fchmod(output.fileno(), mode)
+            output.write(content)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def upgrade(source):
+    """Upgrade the one audited runtime, without changing DevStack or settings."""
+    source_revision(source)
+    marker_path = source / MARKER
+    runtime_path = source / RUNTIME
+    for path in (marker_path, runtime_path):
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
+                'DEVSTACK_UPGRADE_FILE_INVALID')
+    marker = json.loads(marker_path.read_text())
+    require(marker.get('version') == 1 and marker.get('revision') == REVISION)
+    require(set(marker['files']) == set(PREIMAGES) | {RUNTIME})
+    originals = {}
+    for relative, expected in PREIMAGES.items():
+        original = subprocess.run(['git', '-c', f'safe.directory={source}',
+                                   'show', 'HEAD:' + relative], cwd=source,
+                                  capture_output=True, check=True).stdout
+        require(digest(original) == expected, 'DEVSTACK_SOURCE_PREIMAGE_CHANGED')
+        originals[relative] = original.decode()
+    # Recompute all twelve expected patches independently of the legacy marker.
+    for relative, content in transforms(originals).items():
+        expected = digest(content.encode())
+        path = source / relative
+        require(path.is_file() and not path.is_symlink()
+                and digest(path.read_bytes()) == expected
+                and marker['files'][relative] == expected, 'DEVSTACK_PATCH_CHANGED')
+    changed = subprocess.run(['git', '-c', f'safe.directory={source}',
+                              'diff', '--name-only', 'HEAD'], cwd=source,
+                             capture_output=True, text=True, check=True).stdout.splitlines()
+    require(set(changed) <= set(PREIMAGES), 'DEVSTACK_UNAUDITED_SOURCE_CHANGE')
+    current = digest(runtime_path.read_bytes())
+    replacement = Path(__file__).read_bytes()
+    require(marker['files'][RUNTIME] == current, 'DEVSTACK_PATCH_CHANGED')
+    if current == digest(replacement):
+        verify_patch(source)
+        return
+    require(current == UPGRADE_FROM, 'DEVSTACK_UPGRADE_VERSION_NOT_AUDITED')
+    compile(replacement, RUNTIME, 'exec')
+    atomic_replace(runtime_path, replacement)
+    marker['files'][RUNTIME] = digest(replacement)
+    # The runtime is complete before the marker allows subsequent check/run.
+    atomic_replace(marker_path, (json.dumps(marker, sort_keys=True, indent=2) + '\n').encode())
+    verify_patch(source)
+
+
 def config_gate(source):
     require(not (source / 'localrc').exists() and not (source / 'local.sh').exists(),
             'DEVSTACK_CUSTOM_HOOK_NOT_AUDITED')
@@ -374,10 +441,10 @@ def helper(command, args):
         password_hash = base64.b64encode(salt + hashlib.sha256(salt + secret).digest()).decode()
         document = {'users': [{'name': args[0], 'password_hash': password_hash,
                               'hashing_algorithm': 'rabbit_password_hashing_sha256', 'tags': []}]}
-        with tempfile.TemporaryDirectory(prefix='railshot-rabbit-', dir='/dev/shm') as folder:
-            path = Path(folder) / 'definitions.json'
-            path.write_text(json.dumps(document)); path.chmod(0o600)
-            subprocess.run(['sudo', '-n', 'rabbitmqctl', 'import_definitions', str(path)], check=True)
+        # Ubuntu's root CLI wrapper drops to rabbitmq before importing. The
+        # no-path form reads JSON from stdin and needs no cross-user file access.
+        subprocess.run(['sudo', '-n', 'rabbitmqctl', 'import_definitions'],
+                       input=json.dumps(document).encode(), check=True)
         return 0
     if command == 'map-cell0':
         require(len(args) == 2)
@@ -402,7 +469,7 @@ def main():
             print('DEVSTACK_PRIVATE_HELPER_FAILED', file=sys.stderr)
             return 1
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('patch', 'check', 'run'))
+    parser.add_argument('action', choices=('patch', 'upgrade', 'check', 'run'))
     parser.add_argument('--source', type=Path, required=True)
     parser.add_argument('--log', type=Path)
     args = parser.parse_args()
@@ -410,6 +477,8 @@ def main():
         source = args.source.resolve()
         if args.action == 'patch':
             patch(source)
+        elif args.action == 'upgrade':
+            upgrade(source)
         elif args.action == 'check':
             verify_patch(source); config_gate(source)
         else:

@@ -36,15 +36,14 @@ def test_redaction_handles_long_stream_with_multiple_passwords():
     assert result == raw.replace(SECRET, b'[REDACTED]').replace(another, b'[REDACTED]')
 
 
-def test_rabbit_password_is_hashed_in_memory_and_only_private_definition_path_is_in_argv(monkeypatch):
+def test_rabbit_password_hash_uses_stdin_without_cross_user_file_access(monkeypatch):
     calls = []
     monkeypatch.setattr(install.sys, 'stdin', SimpleNamespace(buffer=io.BytesIO(SECRET)))
     def execute(argv, **options):
         calls.append(argv)
-        path = Path(argv[-1])
-        assert path.stat().st_mode & 0o077 == 0
-        assert path.parent.stat().st_mode & 0o077 == 0
-        raw = path.read_bytes()
+        assert argv == ['sudo', '-n', 'rabbitmqctl', 'import_definitions']
+        raw = options['input']
+        assert options['check'] is True
         assert SECRET not in raw
         user = json.loads(raw)['users'][0]
         decoded = base64.b64decode(user['password_hash'])
@@ -53,9 +52,10 @@ def test_rabbit_password_is_hashed_in_memory_and_only_private_definition_path_is
         assert SECRET.decode() not in json.dumps(argv)
         return SimpleNamespace(returncode=0)
     monkeypatch.setattr(install.subprocess, 'run', execute)
+    monkeypatch.setattr(install.tempfile, 'TemporaryDirectory',
+                        lambda **kw: pytest.fail('RabbitMQ must not need a private file'))
     assert install.helper('rabbit-user', ['railshot']) == 0
-    assert calls[0][:4] == ['sudo', '-n', 'rabbitmqctl', 'import_definitions']
-    assert not Path(calls[0][-1]).exists()
+    assert len(calls) == 1
 
 
 def test_map_cell0_uses_tmpfs_config_without_password_argv(monkeypatch):
@@ -111,6 +111,99 @@ def patched_files(audited_source):
         assert install.digest(raw) == expected
         original[relative] = raw.decode()
     return install.transforms(original)
+
+
+@pytest.fixture
+def legacy_deployment(audited_source, patched_files, tmp_path, monkeypatch):
+    source = tmp_path / 'devstack'
+    subprocess.run(['git', '-c', f'safe.directory={audited_source}', 'clone',
+                    '--shared', '--quiet', str(audited_source), str(source)], check=True)
+    old_runtime = b'# synthetic legacy runtime; no credentials\n'
+    # Exercise the upgrade algorithm with a distinct known predecessor. The
+    # immutable production predecessor is asserted separately below.
+    monkeypatch.setattr(install, 'UPGRADE_FROM', install.digest(old_runtime))
+    contents = {relative: content.encode() for relative, content in patched_files.items()}
+    contents[install.RUNTIME] = old_runtime
+    for relative, content in contents.items():
+        (source / relative).write_bytes(content)
+    (source / install.RUNTIME).chmod(0o600)
+    marker = {'version': 1, 'revision': install.REVISION,
+              'files': {relative: install.digest(content) for relative, content in contents.items()}}
+    (source / install.MARKER).write_text(json.dumps(marker))
+    (source / install.MARKER).chmod(0o600)
+    (source / 'local.conf').write_bytes(b'private configuration must not be rewritten\n')
+    (source / 'local.conf').chmod(0o600)
+    return source
+
+
+def test_upgrade_predecessor_is_the_audited_installed_helper():
+    assert install.UPGRADE_FROM == '9370684008f99b85f6ffc30f12dda7d6b0aabbe56b72a5fc9b64b9de0954fa90'
+
+
+def test_upgrade_replaces_only_runtime_then_marker_and_is_idempotent(legacy_deployment, monkeypatch):
+    source = legacy_deployment
+    unchanged = {path: (source / path).read_bytes()
+                 for path in (*install.PREIMAGES, 'local.conf', '.git/HEAD', '.git/config')}
+    original_replace = install.atomic_replace
+    calls = []
+    def publish(path, content):
+        calls.append(path.name)
+        if path.name == install.MARKER:
+            assert (source / install.RUNTIME).read_bytes() == Path(install.__file__).read_bytes()
+        original_replace(path, content)
+    monkeypatch.setattr(install, 'atomic_replace', publish)
+    install.upgrade(source)
+    assert calls == [install.RUNTIME, install.MARKER]
+    install.verify_patch(source)
+    install.upgrade(source)
+    assert len(calls) == 2
+    for relative, content in unchanged.items():
+        assert (source / relative).read_bytes() == content
+    for relative in (install.RUNTIME, install.MARKER, 'local.conf'):
+        assert (source / relative).stat().st_mode & 0o777 == 0o600
+    assert not list(source.glob('.railshot-private-helper.py-*'))
+    assert not list(source.glob('..railshot-private-install.json-*'))
+
+
+@pytest.mark.parametrize('drift', ('runtime', 'patch', 'marker', 'tracked'))
+def test_upgrade_refuses_drift_before_any_replacement(legacy_deployment, monkeypatch, drift):
+    source = legacy_deployment
+    marker_path = source / install.MARKER
+    marker = json.loads(marker_path.read_text())
+    if drift == 'runtime':
+        (source / install.RUNTIME).write_bytes(b'unknown helper revision\n')
+        marker['files'][install.RUNTIME] = install.digest((source / install.RUNTIME).read_bytes())
+        marker_path.write_text(json.dumps(marker))
+    elif drift == 'patch':
+        (source / 'stack.sh').write_text('# source drift\n')
+        # Matching marker cannot bless an unreviewed source modification.
+        marker['files']['stack.sh'] = install.digest((source / 'stack.sh').read_bytes())
+        marker_path.write_text(json.dumps(marker))
+    elif drift == 'marker':
+        marker['files']['stack.sh'] = '0' * 64
+        marker_path.write_text(json.dumps(marker))
+    else:
+        with (source / 'README.rst').open('a') as stream:
+            stream.write('\nUnreviewed tracked change\n')
+    monkeypatch.setattr(install, 'atomic_replace', lambda *a: pytest.fail('Do not publish on failed gate'))
+    with pytest.raises(ValueError, match='DEVSTACK_'):
+        install.upgrade(source)
+
+
+def test_marker_publication_failure_keeps_check_gate_closed(legacy_deployment, monkeypatch):
+    source = legacy_deployment
+    original_replace = install.atomic_replace
+    def publish(path, content):
+        if path.name == install.MARKER:
+            raise OSError('synthetic marker publication failure')
+        original_replace(path, content)
+    monkeypatch.setattr(install, 'atomic_replace', publish)
+    with pytest.raises(OSError):
+        install.upgrade(source)
+    with pytest.raises(ValueError, match='DEVSTACK_HELPER_VERSION_CHANGED'):
+        install.verify_patch(source)
+    with pytest.raises(ValueError, match='DEVSTACK_PATCH_CHANGED'):
+        install.upgrade(source)
 
 
 def test_patch_disables_traces_internal_logs_password_argv_and_new_sudoers(patched_files):
