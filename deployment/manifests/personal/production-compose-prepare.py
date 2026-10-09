@@ -84,6 +84,7 @@ def main():
     if Path('/output/tls').exists():
         install('/output/tls', 'cert.pem', source('tls-cert.pem', 16 * 1024), 101, 101)
         install('/output/tls', 'key.pem', source('tls-key.pem', 16 * 1024), 101, 101)
+        install('/output/api-state/config', 'personal-tls-ca.pem', source('tls-ca.pem', 16 * 1024), 1000, 1000)
     print('Production-like Compose inputs materialized without printing credentials.')
 
 

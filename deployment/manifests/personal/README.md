@@ -34,7 +34,7 @@ docker compose -f deployment/manifests/personal/production.compose.yaml exec api
 ```sh
 fixture=/tmp/railshot-onprem-e2e-fixture
 python3 deployment/scripts/prepare-personal-local-fixture.py \
-  --output "$fixture" --public-url https://localhost:18443
+  --output "$fixture" --public-url https://e2e.railshot.test:18443
 export RAILSHOT_PERSONAL_PRODUCTION_CONFIG_DIR="$fixture"
 export RAILSHOT_PERSONAL_API_TARGET=connection-api
 export RAILSHOT_PERSONAL_API_TAG=onprem-e2e
@@ -46,7 +46,7 @@ docker compose -p railshot-onprem-e2e \
   -f deployment/manifests/personal/e2e.compose.yaml build
 ```
 
-fixture에는 7일 유효한 시험 CA와 localhost/127.0.0.1 인증서가 들어 있습니다. 원격 관리 호스트에는 `tls-ca.pem` 공개 인증서만 전달해 명시적으로 신뢰하게 하며, 개인키는 복사하지 않습니다. 승인된 SSH reverse forward로 원격 localhost:18443을 검증 호스트 localhost:8443에 연결하면 설치기와 artifact의 HTTPS 검증을 유지할 수 있습니다. 이는 공개 HTTPS 및 공개 UDP 경로의 인수검증과 다르므로 결과에 사용한 전송 경로를 적습니다. UDP 접근이 가능한 경우 `RAILSHOT_PERSONAL_UDP_BIND`와 `PERSONAL_GATEWAY_ENDPOINT`는 승인된 주소로 설정합니다. 호스트 방화벽이나 기존 자원은 이 Compose에서 변경하지 않습니다.
+fixture에는 7일 유효한 시험 CA와 e2e.railshot.test/localhost/127.0.0.1 인증서가 들어 있습니다. 이 시험 이름은 Compose 안에서 TLS 서비스의 DNS alias를 가리키고 API에는 공개 CA 인증서만 추가 신뢰합니다. 원격 관리 호스트에는 `tls-ca.pem` 공개 인증서만 전달해 명시적으로 신뢰하게 하며, 개인키는 복사하지 않습니다. 원격 hosts에 e2e.railshot.test를 127.0.0.1로 지정하고 승인된 SSH reverse forward로 원격 localhost:18443을 검증 호스트 localhost:8443에 연결하면 API와 설치기가 같은 URL에서 HTTPS·artifact 검증을 수행합니다. 이는 공개 HTTPS 및 공개 UDP 경로의 인수검증과 다르므로 결과에 사용한 전송 경로를 적습니다. UDP 접근이 가능한 경우 `RAILSHOT_PERSONAL_UDP_BIND`와 `PERSONAL_GATEWAY_ENDPOINT`는 승인된 주소로 설정합니다. 호스트 방화벽이나 기존 자원은 이 Compose에서 변경하지 않습니다.
 
 ## Kubernetes 운영 연결
 

@@ -41,7 +41,7 @@ def tls_fixture(output):
             '-out', str(output / 'tls-ca.pem'))
     openssl('req', '-newkey', 'rsa:3072', '-nodes', '-subj', '/CN=localhost',
             '-keyout', str(output / 'tls-key.pem'), '-out', str(output / 'tls.csr'))
-    private(output / 'tls.ext', 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n')
+    private(output / 'tls.ext', 'subjectAltName=DNS:localhost,DNS:e2e.railshot.test,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nextendedKeyUsage=serverAuth\n')
     openssl('x509', '-req', '-in', str(output / 'tls.csr'), '-CA', str(output / 'tls-ca.pem'),
             '-CAkey', str(output / 'tls-ca-key.pem'), '-CAcreateserial', '-days', '7',
             '-extfile', str(output / 'tls.ext'), '-out', str(output / 'tls-cert.pem'))
@@ -58,7 +58,7 @@ def main():
     parser.add_argument('--gateway-endpoint', default='gateway:51820')
     args = parser.parse_args()
     parsed = urlsplit(args.public_url)
-    if parsed.scheme not in {'http', 'https'} or parsed.hostname not in {'dashboard', 'localhost', '127.0.0.1'} \
+    if parsed.scheme not in {'http', 'https'} or parsed.hostname not in {'dashboard', 'localhost', '127.0.0.1', 'e2e.railshot.test'} \
             or parsed.username or parsed.password or parsed.query or parsed.fragment:
         parser.error('the local fixture only accepts the isolated Compose dashboard URL')
     output = args.output.resolve()
