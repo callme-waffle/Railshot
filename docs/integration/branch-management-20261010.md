@@ -54,3 +54,25 @@
 - 최종 변경 검증 결과와 실행하지 못한 검사
 
 이 항목에 실제 결과가 기록되기 전에는 원격 게시나 PR 생성을 완료로 취급하지 않는다.
+
+## 후속 게시 경로 — 원형 Git 이력 보존
+
+사용자가 GitHub App 쓰기 권한을 설정한 뒤 관리 세션에서 `dev/v1.0.0`을 승인 baseline `645e28a`에 실제 생성했다. 기존 Git 인증 경로는 여전히 확보되지 않았다. Connector의 commit 생성 도구는 기존 커밋의 author/time 원형을 지정할 수 없어 해당 도구로 기능 39개 커밋을 다시 만들면 SHA가 달라진다. 따라서 이력 보존을 위한 일회성 Git bundle importer를 준비했다. 원격 개발 기준 생성과 통합 브랜치 게시·PR 생성은 각각 별도 결과다.
+
+1. 관리 세션이 담당 커밋을 모두 통합한 후 최종 HEAD를 확정하고 baseline을 prerequisite로 하는 `refactor/onprem-integration` Git bundle을 생성한다. bundle SHA-256도 별도로 계산한다.
+2. 승인 baseline에서 임시 원격 `chore/publish-onprem-integration`을 생성한다. 그 브랜치에만 `.github/workflows/publish-onprem-integration.yml`과 `.github/publication/onprem-integration.bundle.b64` 두 파일을 API로 게시한다. helper commit은 통합 브랜치 또는 PR의 commit 이력에 포함하지 않는다.
+3. workflow는 해당 저장소·임시 branch의 push에만 실행되며 `contents: write` 권한만 사용한다. Normal clone의 `dev/v1.0.0` HEAD가 baseline인지 확인하고, event commit에서 bundle을 읽어 base64 decode·SHA-256·`git bundle verify`를 검사한다.
+4. bundle이 선언한 통합 ref와 fetch한 ref가 모두 확정 HEAD인지, baseline이 최종 HEAD의 조상인지 확인한다. 원격 통합 branch가 있으면 기존 HEAD가 새 HEAD의 조상인지 먼저 확인한다. force 옵션 없이 Git push하고 원격 ref가 확정 HEAD와 동일한지 다시 조회한다.
+5. GitHub token은 workflow 환경의 `github.token`으로만 전달한다. credential helper 코드가 환경 값을 읽어 Git 내부 파이프에 응답하며, 토큰을 명령 인자·파일 내용·workflow 로그에 기록하지 않는다. shell tracing은 꺼 둔다.
+6. workflow가 성공한 원격 ref와 원형 SHA를 확인한 후 임시 helper branch의 HEAD가 event commit과 정확히 일치할 때만 해당 branch를 삭제한다. 삭제에는 해당 ref·commit에 한정한 lease를 사용해 확인 이후 remote 변경도 보호하고, 삭제 후 ref가 없는지 재확인한다. 불일치 시 삭제하지 않고 실패하며 알려지지 않은 branch를 삭제하지 않는다. 관리 세션이 PR을 만들고 base/head 및 최종 SHA를 확인한다.
+
+| 후속 게이트 | 확인 방법 | 준비 시점 상태 |
+| --- | --- | --- |
+| 원격 개발 기준 | 관리 세션의 create-branch 성공 및 baseline 확인 | 생성 성공 보고; 최종 원격 조회는 관리 세션 담당 |
+| helper 구문 | Bash syntax와 YAML parse·branch/permission 검사 | 준비 코드 검사 통과 |
+| bundle 원형 보존 | baseline prerequisite·declared ref·fetch HEAD 비교 | baseline prerequisite bundle의 로컬 verify·fetch가 기준 SHA와 원형 checkpoint HEAD를 보존함; 실제 최종 bundle은 통합 완료 후 생성 |
+| workflow 쓰기 권한 | 임시 branch의 workflow commit API 결과 | 아직 실행하지 않음; scope 부족 시 실제 `403`을 기록하고 연결 권한 입력 필요 |
+| Actions 실행 | run 성공과 원격 통합 HEAD 확인 | 아직 실행하지 않음 |
+| cleanup·PR | workflow의 일치·lease 보호 삭제와 관리 세션 PR URL 조회 | 아직 실행하지 않음 |
+
+워크플로는 GitHub Actions 실행 허용과 branch 쓰기 정책의 영향을 받는다. 기대하지 않은 원격 분기, SHA 불일치, bundle 손상 또는 권한 거부는 실패로 끝내고 force push로 우회하지 않는다. 준비 코드의 성공을 실제 원격 게시 성공으로 취급하지 않는다.
