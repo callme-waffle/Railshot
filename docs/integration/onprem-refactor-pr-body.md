@@ -14,7 +14,8 @@
 - 지정 VM 설치·운영: 기존 지정 VM에서 nested KVM과 고정 DevStack 설치를 검증했습니다. 비밀번호 노출 경로를 다루는 설치 도구, RabbitMQ stdin 정의 입력, absent-only Nova rootwrap 경로 보완과 승인된 loopback 진단 UDP relay의 독립 서비스 운영을 기록합니다.
 - 레거시·브랜치 관리: baseline `645e28a`와 기존 경로를 보존하는 담당 변경 및 브랜치/PR 지침을 통합합니다. 원본 blob·mode 보존 검증을 완료했습니다.
 - CI 변경 범위: API 관련 Docker stage의 실제 root COPY 의존성을 변경 경로 판정에 반영해 `connection-api` 메일 검사 파일의 API 빌드·HTTP 검사 누락을 수정합니다. 기존 동적 COPY 커버리지 검사를 유지하고 relay·probe·레거시 경계를 확인합니다.
-- PR 범위: base `dev/v1.0.0` (`645e28aefa7f3d3996c57ea6853c6e2f67c5bcc4`), head `refactor/onprem-integration`. 기능 작업 39개 커밋의 마지막은 `96e6f3c4258d1c6527a4090d7a205882b67922f5`이며 이후 레거시·지침·게시 문서 커밋도 포함합니다. 최종 head SHA는 게시 직전 확정합니다.
+- 사용자 작성자 규칙: 모든 작업 commit의 author/committer를 검증한 사용자 `Kim Hwagyun <58645920+callme-waffle@users.noreply.github.com>`로 기록하고 author/committer 및 `Co-work-author`/`Co-authored-by`에 AI 프로필을 기재하지 않습니다. 사용자가 요청한 기존 PR의 48개 commit과 이 정책 commit을 합친 49개에 소급 적용하며, 기능 tree·날짜·부모 순서를 보존합니다.
+- PR 범위: base `dev/v1.0.0` (`645e28aefa7f3d3996c57ea6853c6e2f67c5bcc4`), head `refactor/onprem-integration`. 재작성 전 최종 HEAD는 `d83849164a773cd8382c49872877e3537cb47908`(48개 commit)이었고 기능 작업 39개의 마지막은 `96e6f3c4258d1c6527a4090d7a205882b67922f5`였습니다. 이 SHA와 아래 게시·CI SHA는 과거 checkpoint이며 작성자 소급 적용으로 새 SHA가 생성됩니다. baseline과 원격 `main`/`dev/v1.0.0`은 그대로 유지합니다. 최종 head SHA는 실제 게시 후 확인합니다.
 
 ### #Endpoints
 
@@ -100,4 +101,10 @@
 
 - 목적: 신규 API 이미지 COPY 파일 변경이 API 빌드·HTTP 검사에서 누락되지 않도록 합니다.
 - 진행과정: 원격 run `38054555832`의 scope 검사 13개 중 1개 실패 확인 -> 같은 로컬 13개 검사로 e2e mail 누락 재현 -> 실제 API stage COPY source 경로 판정 보완 -> 기존 Dockerfile 동적 커버리지 및 비복사 relay·probe·레거시 경계 검증
-- 결과: 수정 후 로컬 13개 검사 PASS, `git diff --check` PASS. 기존 테스트를 삭제하거나 완화하지 않았습니다. 관리 세션이 같은 tree `df8b9a`의 수정 결과를 원격 commit `bfdeb4b0ec6ea8304a66375f5b818c280687d343`으로 게시했습니다. 기존 46개 원형 SHA를 보존해 공개 checkpoint는 총 47개 commit입니다. 소스 HEAD `bfdeb4b0ec6ea8304a66375f5b818c280687d343`의 [CI run 38055197104](https://github.com/callme-waffle/Railshot/actions/runs/38055197104)는 completed/success입니다. scope, 5종 이미지(API·dashboard·MCP·personal gateway·CI runner) build/smoke와 Railshot CI gate 모두 PASS. full-checks/manual 및 Deploy platform은 조건에 따라 skip되어 전체 수동 검사 또는 배포 성공으로 집계하지 않습니다. 후속 문서 게시 commit의 CI 결과는 별도입니다.
+- 결과: 수정 후 로컬 13개 검사 PASS, `git diff --check` PASS. 기존 테스트를 삭제하거나 완화하지 않았습니다. 관리 세션이 같은 tree `df8b9a`의 수정 결과를 원격 commit `bfdeb4b0ec6ea8304a66375f5b818c280687d343`으로 게시했습니다. 이 당시에는 기존 46개 원형 SHA를 보존해 공개 checkpoint가 총 47개 commit이었습니다. 이번 작성자 재작성 이전의 과거 기록입니다. 소스 HEAD `bfdeb4b0ec6ea8304a66375f5b818c280687d343`의 [CI run 38055197104](https://github.com/callme-waffle/Railshot/actions/runs/38055197104)는 completed/success입니다. scope, 5종 이미지(API·dashboard·MCP·personal gateway·CI runner) build/smoke와 Railshot CI gate 모두 PASS. full-checks/manual 및 Deploy platform은 조건에 따라 skip되어 전체 수동 검사 또는 배포 성공으로 집계하지 않습니다. 후속 문서 게시 commit의 CI 결과는 별도입니다.
+
+#### case#11) 사용자 작성자 규칙 및 기존 PR 소급 적용
+
+- 목적: 사용자 요청대로 기존 PR과 이후 작업의 commit author/committer를 사용자 계정으로 기록하고 AI 공동저자 표기를 제거합니다. 이번 변경 자체의 신규 endpoint는 해당없음입니다.
+- 진행과정: 인증된 GitHub 사용자 identity 확인 -> 독립 `docs/commit-attribution` worktree에서 문서 3개 수정 및 사용자 commit -> 기존 48개와 정책 commit 1개를 재작성 -> old-to-new mapping 및 49개 tree·부모 순서·날짜·메시지·identity·AI trailer 검사 -> 공백 검사 및 원본 레거시 비교 -> 관리 세션의 PR head·본문 게시 및 원격 재조회
+- 결과: 로컬 완료 기준은 49개 author/committer가 모두 `Kim Hwagyun <58645920+callme-waffle@users.noreply.github.com>`, AI 공동저자 trailer 0건, commit별 tree·부모 순서·날짜와 허용 범위 메시지 동일, 문서 3개 이외 내용 변경 없음 및 `git diff --check` 통과입니다. 실제 재작성·게시 결과는 관리 세션이 확인해 최종 PR에 기록합니다. 앱·클라우드 테스트는 이번 문서·Git metadata 작업에서 재실행하지 않았고 새 HEAD의 CI 결과는 과거 run 성공과 별도입니다. 원본 레거시 832개 blob·mode와 실행 파일 30개는 보존합니다.

@@ -28,6 +28,14 @@ During implementation, actively delegate code writing and edits to sub-agents, a
 
 Use an independent worktree for each task and commit the completed changes on its task branch. Do not include unrelated changes in the task commit.
 
+## Commit Attribution
+
+Record every task commit's author and committer as the authenticated user. For this repository, the verified GitHub account is `callme-waffle`: `Kim Hwagyun <58645920+callme-waffle@users.noreply.github.com>`. Set repository-local `user.name` and `user.email` to that identity, and verify the actual author and committer before publication; environment overrides must not substitute an AI or tool account.
+
+Do not put AI or tool profiles in commit author, committer, `Co-work-author`, or `Co-authored-by` fields. Delegated work is committed under the user's account. The main manager coordinates, reviews, verifies, integrates, and publishes the work, following the delegation rule above.
+
+The user explicitly requested retroactive application to the 48 commits in PR #1 after baseline `645e28aefa7f3d3996c57ea6853c6e2f67c5bcc4`, plus the commit introducing this rule. Rewrite those commits to the verified user identity and remove any AI attribution trailers. Preserve each commit's tree, parent order, author and committer dates, and message except for removed AI trailers; remove invalidated commit signatures. Record and verify the old-to-new commit mapping. The rewritten history has new SHAs; prior publication SHAs remain historical checkpoints. Keep the baseline and remote `main`/`dev/v1.0.0` unchanged. This specific request does not authorize rewriting other branches or unrelated history.
+
 ## Repository Preservation
 
 Continue to follow `AGENT.md`'s repository structure and ownership rules. Do not make arbitrary structural changes. The user-approved legacy archive may preserve the code from remote `main` at `645e28a`; keep the currently verified on-premises path in place. These specific approved activities do not authorize other restructuring or moving code.

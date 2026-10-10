@@ -59,7 +59,7 @@
 
 이 항목에 실제 결과가 기록되기 전에는 원격 게시나 PR 생성을 완료로 취급하지 않는다.
 
-## 후속 게시 경로 — 원형 Git 이력 보존
+## 과거 게시 경로 checkpoint — 원형 Git 이력 보존
 
 사용자가 GitHub App 쓰기 권한을 설정한 뒤 관리 세션에서 `dev/v1.0.0`을 승인 baseline `645e28a`에 실제 생성했다. 기존 Git 인증 경로는 여전히 확보되지 않았다. Connector의 commit 생성 도구는 기존 커밋의 author/time 원형을 지정할 수 없어 해당 도구로 기능 39개 커밋을 다시 만들면 SHA가 달라진다. 따라서 이력 보존을 위한 일회성 Git bundle importer를 준비했다. 원격 개발 기준 생성과 통합 브랜치 게시·PR 생성은 각각 별도 결과다.
 
@@ -79,7 +79,7 @@
 | Actions 실행 | run 성공과 원격 통합 HEAD 확인 | 아직 실행하지 않음 |
 | cleanup·PR | workflow의 일치·lease 보호 삭제와 관리 세션 PR URL 조회 | 아직 실행하지 않음 |
 
-워크플로는 GitHub Actions 실행 허용과 branch 쓰기 정책의 영향을 받는다. 기대하지 않은 원격 분기, SHA 불일치, bundle 손상 또는 권한 거부는 실패로 끝내고 force push로 우회하지 않는다. 준비 코드의 성공을 실제 원격 게시 성공으로 취급하지 않는다.
+이 절은 최초 게시의 이력 보존 정책을 기록한 과거 checkpoint다. 아래 작성자 소급 적용은 이후 사용자가 별도로 승인한 변경이며, 최초 게시의 force push 금지 정책과 구분한다. 워크플로는 GitHub Actions 실행 허용과 branch 쓰기 정책의 영향을 받는다. 기대하지 않은 원격 분기, SHA 불일치, bundle 손상 또는 권한 거부는 실패로 끝내고 force push로 우회하지 않는다. 준비 코드의 성공을 실제 원격 게시 성공으로 취급하지 않는다.
 
 ## 기록 시점과 최종 공개 확인
 
@@ -101,8 +101,27 @@
 
 ## CI 수정 공개 checkpoint — 47개 commit
 
-관리 세션이 로컬 작업 commit `14addd47004c0474814be993764b1a5ef7b8fd2d`과 같은 tree `df8b9a`의 CI 수정 결과를 App API commit `bfdeb4b0ec6ea8304a66375f5b818c280687d343`으로 원격에 게시했다. 이 공개 checkpoint의 HEAD는 `bfdeb4b0ec6ea8304a66375f5b818c280687d343`이고 baseline 이후 총 47개 commit이다. 기존 46개의 원형 SHA는 보존했다.
+관리 세션이 로컬 작업 commit `14addd47004c0474814be993764b1a5ef7b8fd2d`과 같은 tree `df8b9a`의 CI 수정 결과를 App API commit `bfdeb4b0ec6ea8304a66375f5b818c280687d343`으로 원격에 게시했다. 이 공개 checkpoint의 HEAD는 `bfdeb4b0ec6ea8304a66375f5b818c280687d343`이고 baseline 이후 총 47개 commit이다. 이 당시 게시에서는 기존 46개의 원형 SHA를 보존했다. 이 SHA들은 아래 작성자 소급 적용 전의 과거 checkpoint다.
 
 소스 HEAD `bfdeb4b0ec6ea8304a66375f5b818c280687d343`의 [CI run 38055197104](https://github.com/callme-waffle/Railshot/actions/runs/38055197104)는 completed/success로 확인됐다. scope, 5종 이미지(API·dashboard·MCP·personal gateway·CI runner) build/smoke 및 Railshot CI gate가 모두 PASS다. full-checks/manual과 Deploy platform은 조건에 따라 skip됐으므로 전체 수동 검사와 배포 성공을 주장하지 않는다. 추가 문서 게시 commit의 CI는 이 소스 checkpoint의 성공과 별도이며 최종 공개 HEAD를 이 기록에서 예측하지 않는다.
 
 레거시 검증 수치는 동일한 원본 832개와 새 메타데이터 3개를 합친 전체 835개다. 원본 832개의 blob·mode 및 실행 파일 30개 보존을 검증한 결과이며 835개 전부가 원본과 같다는 의미가 아니다. pytest 제외 설정은 확인했으나 pytest가 설치되지 않아 collection은 실행하지 않았다.
+
+## 사용자 커밋 작성자 소급 적용 — 49개 commit
+
+### 작업 명세 및 완료 기준
+
+사용자는 PR #1의 commit author 및 AI 공동저자 표기를 사용자 계정으로 소급 정리하고, 이후 모든 작업도 사용자 계정으로 기록하도록 요청했다. 재작성 전 PR HEAD는 `d83849164a773cd8382c49872877e3537cb47908`이며 baseline 이후 48개 commit이었다. 이 중 46개의 author/committer는 AI 계정이고 2개는 사용자 계정이었다. 앞 절의 원형 SHA 보존 및 CI 성공 기록은 해당 시점의 과거 checkpoint이며, 이번 재작성 이후의 최종 HEAD나 CI 결과를 뜻하지 않는다.
+
+범위는 기존 48개와 이 규칙·기록 변경 commit을 합친 49개다. 검증한 GitHub 계정 `callme-waffle`의 identity `Kim Hwagyun <58645920+callme-waffle@users.noreply.github.com>`를 author와 committer 모두에 사용한다. 원본 레거시 832개 파일, 현행 기능 소스, baseline, 원격 `main` 및 `dev/v1.0.0`의 변경은 포함하지 않는다.
+
+완료 기준은 49개 commit의 사용자 author/committer, AI 공동저자 trailer 0건, commit별 동일 tree·parent 순서·날짜·허용 범위의 메시지 보존, old-to-new mapping 확보 및 `git diff --check` 통과다. 실제 PR head 갱신과 원격 조회·PR 본문 갱신은 관리 세션이 수행하고 별도로 확인한다.
+
+### 작업 계획 및 검증 범위
+
+1. 독립 `docs/commit-attribution` worktree에서 `AGENTS.md`와 이 게시 기록·PR 본문을 수정하고 사용자 identity로 commit한다.
+2. baseline 이후 49개 commit을 부모 순서대로 재작성한다. author/committer를 사용자 identity로 바꾸고, AI 공동저자 trailer 및 재작성으로 무효화되는 commit signature를 제거한다.
+3. old-to-new mapping과 commit별 tree·parent 순서·날짜·메시지를 대조한다. 49개 identity와 AI trailer 0건, 문서 3개 이외의 내용 변경 없음, clean worktree 및 공백 검사를 확인한다.
+4. 관리 세션이 승인된 PR head만 기존 원격 SHA에 대한 lease로 갱신하고 실제 head 및 PR 본문을 재조회한다. 재작성으로 달라진 최종 SHA를 게시 결과에 기록한다.
+
+문서와 Git metadata 변경이므로 앱·클라우드 테스트는 재실행하지 않는다. 기존 CI run의 성공은 해당 과거 소스 SHA의 결과이며 새 HEAD의 CI 성공으로 집계하지 않는다. 레거시 원본 832개 blob·mode와 실행 파일 30개 보존은 별도 비교로 확인한다. 원격 게시 결과는 관리 세션의 실제 조회 증거를 따른다.
