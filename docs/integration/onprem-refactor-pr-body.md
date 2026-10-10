@@ -13,6 +13,7 @@
 - 실검증 도구: 비공개 상태·메일 수신기·테스트 HTTPS proxy·계정 E2E runner 및 게이트웨이 재시작 검사를 추가합니다. 출력은 검사 개수와 제한된 상태로 한정합니다.
 - 지정 VM 설치·운영: 기존 지정 VM에서 nested KVM과 고정 DevStack 설치를 검증했습니다. 비밀번호 노출 경로를 다루는 설치 도구, RabbitMQ stdin 정의 입력, absent-only Nova rootwrap 경로 보완과 승인된 loopback 진단 UDP relay의 독립 서비스 운영을 기록합니다.
 - 레거시·브랜치 관리: baseline `645e28a`와 기존 경로를 보존하는 담당 변경 및 브랜치/PR 지침을 통합합니다. 원본 blob·mode 보존 검증을 완료했습니다.
+- CI 변경 범위: API 관련 Docker stage의 실제 root COPY 의존성을 변경 경로 판정에 반영해 `connection-api` 메일 검사 파일의 API 빌드·HTTP 검사 누락을 수정합니다. 기존 동적 COPY 커버리지 검사를 유지하고 relay·probe·레거시 경계를 확인합니다.
 - PR 범위: base `dev/v1.0.0` (`645e28aefa7f3d3996c57ea6853c6e2f67c5bcc4`), head `refactor/onprem-integration`. 기능 작업 39개 커밋의 마지막은 `96e6f3c4258d1c6527a4090d7a205882b67922f5`이며 이후 레거시·지침·게시 문서 커밋도 포함합니다. 최종 head SHA는 게시 직전 확정합니다.
 
 ### #Endpoints
@@ -87,10 +88,16 @@
 
 - 목적: 사용자 PR 형식과 개발 기준·게시 상태를 확인합니다.
 - 진행과정: 명세·계획·검증 게이트 문서 작성 -> 로컬 ref 확인 -> PR 템플릿 섹션 대조 -> diff 공백 검사 -> 인증 경로 존재 여부 확인
-- 결과: 개발 기준 SHA와 통합 브랜치 이름 확인. 관리 세션의 AGENTS 및 PR template 사용자 규칙 검증 PASS, `git diff --check` PASS. App 권한 설정 뒤 개발 기준 branch 게시는 성공했습니다. 원형 이력 보존 helper는 준비 및 로컬 검증 완료, 실제 실행과 PR 생성은 아직 진행하지 않았습니다. 최종 공개 결과는 실제 생성한 PR 본문과 관리 세션 최종 응답에서 확인합니다.
+- 결과: 개발 기준 SHA와 통합 브랜치 이름 확인. 관리 세션의 AGENTS 및 PR template 사용자 규칙 검증 PASS, `git diff --check` PASS. App 권한 설정 뒤 개발 기준 branch 게시는 성공했습니다. 원형 이력 보존 helper 실행으로 46개 commit을 `0e5aa74f954c3659001b4375e5c9b68be633f19d`에 게시했고 임시 helper branch 삭제 성공. [Draft PR #1](https://github.com/callme-waffle/Railshot/pull/1) 생성 및 본문 첨부 완료. 최초 원격 CI 실패와 후속 로컬 수정 검증은 case#10에 기록합니다.
 
 #### case#9) 남은 인수 범위
 
 - 목적: 연결 성공과 제품 배포 인수의 범위를 명확히 기록합니다.
 - 진행과정: 실행된 진단 경로 확인 -> 미실행 인수 항목 분리 -> 후속 공개 endpoint와 배포 검증 입력 확인
 - 결과: 공개 native UDP, 고객 Kubernetes 설치, Nova 생성·삭제, 운영 메일 전달 및 production ingress 인수는 미완료입니다. 이번 연결 검증을 해당 항목의 통과로 집계하지 않습니다.
+
+#### case#10) API Docker COPY 의존성 CI 회귀 수정
+
+- 목적: 신규 API 이미지 COPY 파일 변경이 API 빌드·HTTP 검사에서 누락되지 않도록 합니다.
+- 진행과정: 원격 run `38054555832`의 scope 검사 13개 중 1개 실패 확인 -> 같은 로컬 13개 검사로 e2e mail 누락 재현 -> 실제 API stage COPY source 경로 판정 보완 -> 기존 Dockerfile 동적 커버리지 및 비복사 relay·probe·레거시 경계 검증
+- 결과: 수정 후 로컬 13개 검사 PASS, `git diff --check` PASS. 기존 테스트를 삭제하거나 완화하지 않았습니다. 이 수정 commit의 원격 게시 및 원격 CI 재실행 결과는 아직 검증하지 않았습니다.

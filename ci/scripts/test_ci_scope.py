@@ -155,6 +155,9 @@ class ScopeTests(unittest.TestCase):
             'apps/dashboard/styles.css': {'dashboard'},
             'apps/dashboard/package.json': {'dashboard', 'api', 'mcp'},
             'apps/api/src/server.js': {'api'},
+            'deployment/scripts/personal-e2e-mail.py': {'api'},
+            'deployment/scripts/personal-e2e-udp-relay.py': set(),
+            'deployment/scripts/personal-e2e-gateway-probe.py': set(),
             'apps/api/Dockerfile': {'api', 'mcp', 'personal-gateway'},
             'apps/agent/src/mcp.js': {'mcp'},
             'apps/agent/test/agent.test.js': {'mcp'},
@@ -192,6 +195,11 @@ class ScopeTests(unittest.TestCase):
 
     def test_api_native_copy_sources_select_api_image_and_http_checks(self):
         # Audit the actual Dockerfile: a new COPY source must not silently bypass API validation.
+        for path in ('deployment/scripts/personal-e2e-udp-relay.py',
+                     'deployment/scripts/personal-e2e-gateway-probe.py',
+                     'legacy/main-645e28a/deployment/scripts/personal-e2e-mail.py'):
+            with self.subTest(not_api_copy=path):
+                self.assertFalse(ci_scope.api_native_dependency(path))
         root = Path(__file__).resolve().parents[2]
         for line in (root / 'apps/api/Dockerfile').read_text().splitlines():
             if not line.startswith('COPY ') or '--from=' in line:

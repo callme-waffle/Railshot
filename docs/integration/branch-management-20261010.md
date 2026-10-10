@@ -88,3 +88,13 @@
 관리 세션은 통합 HEAD `bb838ad`에서 baseline 원본 832개 blob·mode와 실행 파일 30개의 보존을 독립 검증하여 PASS를 확인했다. 현행 기능 소스 변경 없음, AGENTS 및 PR template 사용자 규칙 검증 PASS, `git diff --check` PASS도 확인했다. 이 문서의 후속 보완 commit은 공개 직전 확정 HEAD에 포함한다.
 
 최종 GitHub 공개 결과는 실제 PR 본문 및 관리 세션 최종 응답의 원격 SHA·PR URL로 확인한다. 아직 기록되지 않은 실제 공개 결과를 이 준비 문서가 완료로 주장하지 않는다.
+
+## 실제 공개 checkpoint 및 CI 후속 수정
+
+관리 세션에서 baseline 이후 46개 commit의 원형 이력을 원격 `refactor/onprem-integration`에 게시했다. 확인한 원격 HEAD는 `0e5aa74f954c3659001b4375e5c9b68be633f19d`이고, 실행 commit 일치 및 lease 보호를 거쳐 임시 `chore/publish-onprem-integration` branch 삭제도 성공했다. [Draft PR #1](https://github.com/callme-waffle/Railshot/pull/1)을 base `dev/v1.0.0`, head `refactor/onprem-integration`으로 생성하고 본문을 첨부했다. 앞 절의 미실행 상태는 공개 준비 시점의 기록이다.
+
+최초 [CI run 38054555832](https://github.com/callme-waffle/Railshot/actions/runs/38054555832)의 scope 검사 job `114220237359`는 13개 검사 중 한 개 실패했다. `test_api_native_copy_sources_select_api_image_and_http_checks`가 `deployment/scripts/personal-e2e-mail.py`에서 API image 선택 누락을 발견했다. API Dockerfile의 `connection-api` COPY 의존성이 CI 고정 목록에 반영되지 않은 것이 원인이다.
+
+독립 `fix/ci-api-copy-scope` 작업은 API 관련 stage의 실제 root COPY sources를 읽어 file·directory·glob 범위를 판정에 보완한다. 이미지 간 `--from` COPY, 별도 MCP/gateway stage, 기존 FE 전용 fallback asset 정책은 해당 API native 범위에 포함하지 않는다. 현재 API 이미지가 복사하지 않는 진단 relay/probe 및 `legacy/` 보존 경로도 native dependency로 추가하지 않는다. 기존 Dockerfile 동적 COPY 커버리지 검사는 유지했고 비복사·레거시 경계 검사를 추가했다.
+
+수정 전 로컬에서도 동일한 13개 중 한 개 실패를 재현했고, 수정 후 `python3 -m unittest discover -s ci/scripts -p test_ci_scope.py -v`의 13개 검사가 모두 통과했다. `git diff --check`도 통과했다. 이 기록은 로컬 결과이며 수정 commit의 원격 게시와 CI 재실행 성공은 아직 검증하지 않았다. 관리 세션이 기존 원형 이력에 수정 commit을 추가 게시하고 원격 CI 결과를 확인한다.
