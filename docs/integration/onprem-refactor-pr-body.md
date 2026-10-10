@@ -81,8 +81,8 @@
 #### case#7) 레거시 원본 blob 보존 검증
 
 - 목적: 사용자 확정 baseline `645e28a`의 레거시 원본과 기존 경로가 보존되는지 확인합니다.
-- 진행과정: 담당 변경 완료 -> baseline 원본 832개와 실행 파일 30개 검증 -> legacy 835개 hash/mode 비교 -> Docker·검색·pytest 격리 및 현재 npm workspace 확인
-- 결과: 통합 HEAD `bb838ad`에서 관리 세션의 독립 검증 PASS: 원본 832개 blob·mode 및 실행 파일 30개 보존. 담당 검증의 legacy 835개 hash/mode 동일, `.dockerignore`·`.ignore`·pytest 격리와 현행 npm workspace 3개 확인 결과도 포함합니다. 현행 기능 소스 변경 없음 확인.
+- 진행과정: 담당 변경 완료 -> baseline 원본 832개와 실행 파일 30개 검증 -> 원본 832개 hash/mode 비교 및 신규 메타데이터 3개 확인(전체 835개) -> Docker·검색·pytest 격리 및 현재 npm workspace 확인
+- 결과: 통합 HEAD `bb838ad`에서 관리 세션의 독립 검증 PASS: 원본 832개 blob·mode 및 실행 파일 30개 보존. legacy는 동일한 원본 832개와 신규 메타데이터 3개를 합친 전체 835개입니다. `.dockerignore`·`.ignore` 및 pytest 제외 설정과 현행 npm workspace 3개를 확인했습니다. pytest가 설치되지 않아 collection은 실행하지 않았습니다. 현행 기능 소스 변경 없음 확인.
 
 #### case#8) 브랜치·문서 형식 및 게시 게이트
 
@@ -100,4 +100,4 @@
 
 - 목적: 신규 API 이미지 COPY 파일 변경이 API 빌드·HTTP 검사에서 누락되지 않도록 합니다.
 - 진행과정: 원격 run `38054555832`의 scope 검사 13개 중 1개 실패 확인 -> 같은 로컬 13개 검사로 e2e mail 누락 재현 -> 실제 API stage COPY source 경로 판정 보완 -> 기존 Dockerfile 동적 커버리지 및 비복사 relay·probe·레거시 경계 검증
-- 결과: 수정 후 로컬 13개 검사 PASS, `git diff --check` PASS. 기존 테스트를 삭제하거나 완화하지 않았습니다. 이 수정 commit의 원격 게시 및 원격 CI 재실행 결과는 아직 검증하지 않았습니다.
+- 결과: 수정 후 로컬 13개 검사 PASS, `git diff --check` PASS. 기존 테스트를 삭제하거나 완화하지 않았습니다. 관리 세션이 같은 tree `df8b9a`의 수정 결과를 원격 commit `bfdeb4b0ec6ea8304a66375f5b818c280687d343`으로 게시했습니다. 기존 46개 원형 SHA를 보존해 공개 checkpoint는 총 47개 commit입니다. 소스 HEAD `bfdeb4b0ec6ea8304a66375f5b818c280687d343`의 [CI run 38055197104](https://github.com/callme-waffle/Railshot/actions/runs/38055197104)는 completed/success입니다. scope, 5종 이미지(API·dashboard·MCP·personal gateway·CI runner) build/smoke와 Railshot CI gate 모두 PASS. full-checks/manual 및 Deploy platform은 조건에 따라 skip되어 전체 수동 검사 또는 배포 성공으로 집계하지 않습니다. 후속 문서 게시 commit의 CI 결과는 별도입니다.

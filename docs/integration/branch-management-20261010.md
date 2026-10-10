@@ -97,4 +97,12 @@
 
 독립 `fix/ci-api-copy-scope` 작업은 API 관련 stage의 실제 root COPY sources를 읽어 file·directory·glob 범위를 판정에 보완한다. 이미지 간 `--from` COPY, 별도 MCP/gateway stage, 기존 FE 전용 fallback asset 정책은 해당 API native 범위에 포함하지 않는다. 현재 API 이미지가 복사하지 않는 진단 relay/probe 및 `legacy/` 보존 경로도 native dependency로 추가하지 않는다. 기존 Dockerfile 동적 COPY 커버리지 검사는 유지했고 비복사·레거시 경계 검사를 추가했다.
 
-수정 전 로컬에서도 동일한 13개 중 한 개 실패를 재현했고, 수정 후 `python3 -m unittest discover -s ci/scripts -p test_ci_scope.py -v`의 13개 검사가 모두 통과했다. `git diff --check`도 통과했다. 이 기록은 로컬 결과이며 수정 commit의 원격 게시와 CI 재실행 성공은 아직 검증하지 않았다. 관리 세션이 기존 원형 이력에 수정 commit을 추가 게시하고 원격 CI 결과를 확인한다.
+수정 전 로컬에서도 동일한 13개 중 한 개 실패를 재현했고, 수정 후 `python3 -m unittest discover -s ci/scripts -p test_ci_scope.py -v`의 13개 검사가 모두 통과했다. `git diff --check`도 통과했다. 이 결과는 로컬 검사다. 수정 직후에는 원격 게시와 CI 재실행 성공을 검증하지 않은 상태였으며, 후속 공개 checkpoint는 아래에 기록한다.
+
+## CI 수정 공개 checkpoint — 47개 commit
+
+관리 세션이 로컬 작업 commit `14addd47004c0474814be993764b1a5ef7b8fd2d`과 같은 tree `df8b9a`의 CI 수정 결과를 App API commit `bfdeb4b0ec6ea8304a66375f5b818c280687d343`으로 원격에 게시했다. 이 공개 checkpoint의 HEAD는 `bfdeb4b0ec6ea8304a66375f5b818c280687d343`이고 baseline 이후 총 47개 commit이다. 기존 46개의 원형 SHA는 보존했다.
+
+소스 HEAD `bfdeb4b0ec6ea8304a66375f5b818c280687d343`의 [CI run 38055197104](https://github.com/callme-waffle/Railshot/actions/runs/38055197104)는 completed/success로 확인됐다. scope, 5종 이미지(API·dashboard·MCP·personal gateway·CI runner) build/smoke 및 Railshot CI gate가 모두 PASS다. full-checks/manual과 Deploy platform은 조건에 따라 skip됐으므로 전체 수동 검사와 배포 성공을 주장하지 않는다. 추가 문서 게시 commit의 CI는 이 소스 checkpoint의 성공과 별도이며 최종 공개 HEAD를 이 기록에서 예측하지 않는다.
+
+레거시 검증 수치는 동일한 원본 832개와 새 메타데이터 3개를 합친 전체 835개다. 원본 832개의 blob·mode 및 실행 파일 30개 보존을 검증한 결과이며 835개 전부가 원본과 같다는 의미가 아니다. pytest 제외 설정은 확인했으나 pytest가 설치되지 않아 collection은 실행하지 않았다.
