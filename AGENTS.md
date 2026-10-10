@@ -22,9 +22,9 @@ For each work request, proceed in this order:
 
 1. Turn the request into a concrete work specification, including scope and completion criteria.
 2. Make a plan based on that specification.
-3. Carry out the work: implement or edit code, run relevant tests, and prepare the pull request description.
+3. Carry out the work: implement or edit code, run relevant tests, write the pull request description, and create and publish the pull request.
 
-During implementation, delegate bounded work to sub-agents when available and useful. The main agent coordinates assignments, reviews and integrates their changes, runs integration tests, and verifies the reported results. Choose models according to task difficulty and use token budgets efficiently.
+During implementation, actively delegate code writing and edits to sub-agents, assigning them clear, bounded tasks. The main agent handles coordination, task assignment, review, integration, integration testing, and verification of results; code implementation is the sub-agents' responsibility. Select models according to task difficulty and use token budgets efficiently. If authentication or permissions prevent creating or publishing the pull request, report that exact step as incomplete and state the blocking reason; do not claim the work is complete.
 
 Use an independent worktree for each task and commit the completed changes on its task branch. Do not include unrelated changes in the task commit.
 
