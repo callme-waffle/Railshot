@@ -1,0 +1,55 @@
+---
+# Load into an existing Prometheus installation. Scrape Patroni HTTPS /metrics
+# using trusted CA certificates. These rules do not install monitoring.
+groups:
+  - name: patroni
+    rules:
+      - alert: PatroniEndpointUnavailable
+        expr: up{job="patroni"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Patroni endpoint {{ $labels.instance }} cannot be scraped'
+      - alert: PatroniNoTargets
+        expr: absent(up{job="patroni"})
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: No Patroni scrape targets configured
+      - alert: PatroniInvalidPrimaryCount
+        expr: sum by (scope) (patroni_primary) != 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'Cluster {{ $labels.scope }} does not report exactly one primary'
+      - alert: PatroniPostgresStopped
+        expr: patroni_postgres_running == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: 'PostgreSQL is stopped on {{ $labels.name }}'
+      - alert: PatroniReplicaNotStreaming
+        expr: (patroni_replica == 1) and on (instance, scope, name) (patroni_postgres_streaming == 0)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'Replica {{ $labels.name }} is not streaming'
+      - alert: PatroniDcsConnectionStale
+        expr: time() - patroni_dcs_last_seen > 30
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: 'DCS contact is stale on {{ $labels.name }}'
+      - alert: PatroniPendingRestart
+        expr: patroni_pending_restart == 1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: 'PostgreSQL maintenance restart is pending on {{ $labels.name }}'

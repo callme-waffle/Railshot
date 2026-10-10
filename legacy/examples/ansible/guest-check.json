@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "request_id": "example-guest-001",
+  "operation": "guest.check",
+  "target": {
+    "id": "demo-cloud",
+    "provider": "aws",
+    "placement": "demo-region",
+    "os": "linux",
+    "architecture": "amd64",
+    "initialization": "cloud-init"
+  },
+  "inventory": {
+    "control_plane": [
+      {
+        "id": "demo-cp",
+        "resource_id": "example-vm-id",
+        "private_ipv4": "10.77.0.10",
+        "ssh": {
+          "user": "ubuntu",
+          "port": 22,
+          "identity_file": "/secure/railshot/identity_ed25519",
+          "known_hosts_file": "/secure/railshot/known_hosts"
+        }
+      }
+    ],
+    "workers": []
+  },
+  "timeout_seconds": 90
+}

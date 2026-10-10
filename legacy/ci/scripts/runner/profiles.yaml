@@ -1,0 +1,31 @@
+# Agent API layer: instructions and settings for every agent role live here.
+# Agents only read. Files they want to create or change come back inside the JSON output;
+# run_agent.py checks each path against `writable` and writes it. The L0 gate checks again.
+version: 0
+
+providers:
+  claude:            # Claude Agent SDK (Python), drives Claude Code headless
+    model: sonnet
+    max_turns: 40
+    max_budget_usd: 2.0
+  codex:             # Codex Python SDK 0.159.3, exact read roots, approval deny_all
+    model: gpt-6.1-sol  # explicit user selection
+    reasoning_effort: medium
+    permission_profile: railshot_read
+
+instructions_prefix: agents/SAFETY.md
+skills: [agents/skills/prepare-deployment/SKILL.md]
+# Enforced before SDK launch and on directory searches; Codex also gets native deny-read globs.
+read_deny: ["**/.env*", "**/*.pem", "**/*.key", "**/id_rsa*", "**/id_ed25519*", "**/id_ecdsa*"]
+# Loop checkpoints, not provider conversation replay, own restart/resume.
+conversation_resume: unsupported
+
+roles:
+  adapter:
+    instructions: agents/adapter/INSTRUCTION.md
+    schema: schemas/report.schema.json
+    writable: contract/paths.yaml        # uses its `writable` and `protected` lists
+  fixer:
+    instructions: agents/fixer/INSTRUCTION.md
+    schema: schemas/report.schema.json
+    writable: contract/paths.yaml

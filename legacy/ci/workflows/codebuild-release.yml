@@ -1,0 +1,11 @@
+# Administrator-pinned public platform source. Uploaded buildspec/source is never run.
+version: 0.2
+phases:
+  install:
+    commands:
+      - test "$CODEBUILD_RESOLVED_SOURCE_VERSION" = "$RAILSHOT_SOURCE_REF"
+      - python3 -m pip install --disable-pip-version-check PyYAML==6.0.3 jsonschema==4.26.0
+      - apt-get update -qq && apt-get install -y --no-install-recommends skopeo
+  build:
+    commands:
+      - python3 ci/scripts/codebuild_release.py

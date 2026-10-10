@@ -1,0 +1,49 @@
+# Initial control-plane bootstrap input; namespaces must already exist.
+# Create the registrations Role only if absent. On repeat, preserve and verify
+# its existing exact-name rules; applying this empty seed would revoke targets.
+# Renewal resources are owned by gitops/credentials.py render, not this List.
+apiVersion: v1
+kind: List
+items:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata: {name: railshot-product, namespace: railshot-system}
+    automountServiceAccountToken: false
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata: {name: railshot-product-registration-bootstrap, namespace: argocd}
+    rules:
+      - apiGroups: [rbac.authorization.k8s.io]
+        resources: [roles]
+        resourceNames: [railshot-product-registrations, railshot-credentials]
+        verbs: [get, update, escalate]
+      - apiGroups: [""]
+        resources: [configmaps]
+        resourceNames: [railshot-credentials]
+        verbs: [get, update]
+      - apiGroups: [batch]
+        resources: [cronjobs]
+        resourceNames: [railshot-credentials]
+        verbs: [get]
+      # Native create cannot be restricted by resourceNames. Read/patch access
+      # comes only from the registrations Role after validated names are added.
+      - apiGroups: [""]
+        resources: [secrets]
+        verbs: [create]
+      - apiGroups: [argoproj.io]
+        resources: [appprojects, applications]
+        verbs: [create]
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata: {name: railshot-product-registration-bootstrap, namespace: argocd}
+    subjects: [{kind: ServiceAccount, name: railshot-product, namespace: railshot-system}]
+    roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: railshot-product-registration-bootstrap}
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: Role
+    metadata: {name: railshot-product-registrations, namespace: argocd}
+    rules: []
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: RoleBinding
+    metadata: {name: railshot-product-registrations, namespace: argocd}
+    subjects: [{kind: ServiceAccount, name: railshot-product, namespace: railshot-system}]
+    roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: railshot-product-registrations}

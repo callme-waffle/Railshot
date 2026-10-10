@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "request_id": "example-patroni-blocked",
+  "operation": "patroni.install",
+  "target": {
+    "id": "demo-cloud",
+    "provider": "aws",
+    "placement": "demo-region",
+    "os": "linux",
+    "architecture": "amd64",
+    "initialization": "cloud-init"
+  },
+  "timeout_seconds": 90,
+  "patroni": {
+    "placements": [
+      {
+        "provider": "aws",
+        "site": "cloud-a",
+        "database_nodes": 1,
+        "dcs_voters": 1
+      },
+      {
+        "provider": "openstack",
+        "site": "onprem-a",
+        "database_nodes": 1,
+        "dcs_voters": 0
+      }
+    ]
+  }
+}

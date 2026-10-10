@@ -1,0 +1,54 @@
+---
+- name: Create configuration and data directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /etc/patroni, mode: '0750'}
+    - {path: /etc/patroni/tls, mode: '0700'}
+    - {path: "{{ postgres_data_dir }}", mode: '0700'}
+- name: Install TLS material
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "/etc/patroni/tls/{{ item.name }}"
+    owner: postgres
+    group: postgres
+    mode: '0600'
+  loop:
+    - {src: "{{ patroni_api_ca_src }}", name: api-ca.crt}
+    - {src: "{{ patroni_api_cert_src }}", name: api.crt}
+    - {src: "{{ patroni_api_key_src }}", name: api.key}
+    - {src: "{{ etcd_ca_src }}", name: etcd-ca.crt}
+    - {src: "{{ patroni_etcd_cert_src }}", name: etcd-client.crt}
+    - {src: "{{ patroni_etcd_key_src }}", name: etcd-client.key}
+    - {src: "{{ postgres_tls_ca_src }}", name: postgres-ca.crt}
+    - {src: "{{ postgres_tls_cert_src }}", name: postgres.crt}
+    - {src: "{{ postgres_tls_key_src }}", name: postgres.key}
+  no_log: true
+  notify: Reload Patroni
+- name: Render Patroni configuration
+  ansible.builtin.template:
+    src: patroni.yml.j2
+    dest: /etc/patroni/patroni.yml
+    owner: postgres
+    group: postgres
+    mode: '0600'
+  no_log: true
+  notify: Reload Patroni
+- name: Record cluster ownership
+  ansible.builtin.copy:
+    content: "{{ cluster_name }}\n"
+    dest: /etc/patroni/cluster-identity
+    owner: root
+    group: postgres
+    mode: '0640'
+- name: Install Patroni service
+  ansible.builtin.template:
+    src: patroni.service.j2
+    dest: /etc/systemd/system/patroni.service
+    owner: root
+    group: root
+    mode: '0644'

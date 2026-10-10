@@ -1,0 +1,19 @@
+{
+  "name": "railshot-api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "test": "node --test",
+    "cli": "node src/cli.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "dependencies": {
+    "yauzl": "^3.4.0",
+    "yazl": "^3.3.1"
+  }
+}

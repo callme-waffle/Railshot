@@ -1,0 +1,45 @@
+{
+  "platform": "linux/amd64",
+  "verified_at": "2026-10-03",
+  "tools": {
+    "terraform": {
+      "version": "1.7.5",
+      "filename": "terraform.zip",
+      "url": "https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_linux_amd64.zip",
+      "sha256": "3ff056b5e8259003f67fd0f0ed7229499cfb0b41f3ff55cc184088589994f7a5",
+      "verification": "https://releases.hashicorp.com/terraform/1.7.5/terraform_1.7.5_SHA256SUMS"
+    },
+    "kubectl": {
+      "version": "v1.34.11",
+      "filename": "kubectl",
+      "url": "https://dl.k8s.io/release/v1.34.11/bin/linux/amd64/kubectl",
+      "sha256": "8efbb9435132a190920eb65a47a8c1ecf755ad85ab57a600c9bedbab460bb7a8",
+      "verification": "https://dl.k8s.io/release/v1.34.11/bin/linux/amd64/kubectl.sha256"
+    },
+    "aws": {
+      "version": "2.37.8",
+      "filename": "aws.zip",
+      "url": "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.37.8.zip",
+      "sha256": "6a2f98fee0901ff623ff9abb5c80f4d67c40e5c0ac5e2ad7afa2ba756a7d5088",
+      "verification": "https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html",
+      "verified_signer": "FB5DB77FD5C118B80511ADA8A6310ACC4672475C"
+    },
+    "ssm": {
+      "version": "1.2.835.0",
+      "filename": "ssm.deb",
+      "url": "https://s3.amazonaws.com/session-manager-downloads/plugin/1.2.835.0/ubuntu_64bit/session-manager-plugin.deb",
+      "sha256": "7c6dcad12518571cc7959a713e6a8ae1bdf6ed66fd9bee37dc189e39ca58ae03",
+      "verification": "https://docs.aws.amazon.com/systems-manager/latest/userguide/install-plugin-linux-verify-signature.html",
+      "verified_signer": "7959637124CE093AD501D47A2C4D4AFF6F6757EE"
+    },
+    "gcloud": {
+      "version": "587.0.0",
+      "filename": "gcloud.tar.gz",
+      "url": "https://storage.googleapis.com/cloud-sdk-release/google-cloud-cli-587.0.0-linux-x86_64.tar.gz",
+      "sha256": "57df2448d259c654796a3703af8e5b53a02d439715b2034d6bb811efc2d6dd7b",
+      "verification": "https://docs.cloud.google.com/sdk/docs/downloads-versioned-archives",
+      "published_current_sha256": "96c99c1ca5defa34776cd3a3888626c567e8b7ac9f9d2944fa62d16d522b98ac",
+      "verification_note": "The published unversioned archive checksum was verified; its decompressed tar is identical to this versioned archive. The gzip filename header differs."
+    }
+  }
+}

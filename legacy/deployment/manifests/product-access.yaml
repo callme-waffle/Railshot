@@ -1,0 +1,30 @@
+# bootstrap-platform.py replaces the registered target and Application names.
+# With github.application=null it omits the Application rule until app registration.
+# Separate from platform CD.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: railshot-product, namespace: railshot-system}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: railshot-product, namespace: argocd}
+rules:
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    resourceNames: [APPLICATION_REQUIRED]
+    verbs: [get, patch]
+  - apiGroups: [argoproj.io]
+    resources: [appprojects]
+    resourceNames: [railshot-apps]
+    verbs: [get]
+  - apiGroups: ['']
+    resources: [secrets]
+    resourceNames: [railshot-TARGET_REQUIRED]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: railshot-product, namespace: argocd}
+subjects: [{kind: ServiceAccount, name: railshot-product, namespace: railshot-system}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: railshot-product}

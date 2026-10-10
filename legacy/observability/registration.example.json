@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "owner": "shared-observer",
+  "lifecycle": "shared",
+  "expires_at": "2026-10-05T14:59:00Z",
+  "state_dir": "/private/observer",
+  "prometheus_url": "http://192.0.2.20:9090",
+  "observer_ip": "192.0.2.20",
+  "observer_registry_file": "/private/observer-targets.json",
+  "observer_target_id": "observer-aws",
+  "observer_directory": "/home/railshot-operator/observer",
+  "node_metrics_port": 30910,
+  "cluster_metrics_port": 30911
+}

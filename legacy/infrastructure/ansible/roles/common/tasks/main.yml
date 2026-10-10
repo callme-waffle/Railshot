@@ -1,0 +1,12 @@
+---
+- name: Install common TLS and package tools
+  ansible.builtin.apt:
+    name:
+      - acl
+      - ca-certificates
+      - curl
+      - python3
+      - openssl
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

@@ -1,0 +1,12 @@
+---
+# Explicitly pinned; upgrades are NOT performed by this starter playbook.
+k3s_version: v1.34.11+k3s1
+cilium_version: 1.20.2
+cilium_cli_version: v0.20.1
+k3s_node_name: demo-k3s
+k3s_cluster_cidr: 10.42.0.0/16
+k3s_service_cidr: 10.43.0.0/16
+k3s_cluster_dns: 10.43.0.10
+k3s_api_host: "{{ ansible_host | default(inventory_hostname) }}"
+k3s_tls_sans: []
+k3s_artifacts_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.kube/hackathon-k3s"

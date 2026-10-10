@@ -1,0 +1,72 @@
+#cloud-config
+# Only public source and configuration references enter Azure custom_data/state.
+# Keep package bootstrap inside the HTTPS-only host egress profile.
+apt:
+  preserve_sources_list: true
+bootcmd:
+  - |
+    /usr/bin/python3 - <<'PYBOOT'
+    from pathlib import Path
+    import re
+    paths = [Path('/etc/apt/sources.list'), *Path('/etc/apt/sources.list.d').glob('*.sources'), *Path('/etc/apt/sources.list.d').glob('*.list')]
+    for path in paths:
+        if not path.is_file():
+            continue
+        content = re.sub(r'http://[A-Za-z0-9.-]*archive\.ubuntu\.com/ubuntu', 'https://archive.ubuntu.com/ubuntu', path.read_text())
+        content = content.replace('http://security.ubuntu.com/ubuntu', 'https://security.ubuntu.com/ubuntu')
+        if re.search(r'(?m)^(?:URIs:|deb\s).*http://', content):
+            raise SystemExit('unreviewed HTTP apt source; bootstrap blocked')
+        path.write_text(content)
+    PYBOOT
+package_update: true
+packages: [ca-certificates, e2fsprogs, util-linux]
+write_files:
+  - path: /etc/railshot/host.yml
+    owner: root:root
+    permissions: '0600'
+    content: |
+      ${indent(6, host_config)}
+  - path: /usr/local/sbin/railshot-bootstrap
+    owner: root:root
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      disk=/dev/disk/azure/scsi1/lun0
+      # Azure attaches this disk after VM creation; never fall back to the OS disk.
+      for attempt in $(seq 1 120); do
+        if test -b "$disk"; then break; fi
+        sleep 5
+      done
+      test -b "$disk" || { echo 'data disk LUN 0 unavailable; bootstrap blocked' >&2; exit 1; }
+      test "$(lsblk -nr -o TYPE "$disk")" = disk || { echo 'partitioned disk rejected' >&2; exit 1; }
+      fs=$(blkid -s TYPE -o value "$disk" || true)
+      if test -z "$fs"; then
+        test '${initialize_empty_data_disk}' = true || { echo 'empty disk initialization not authorized' >&2; exit 1; }
+        # Format only a new, signature-free disk. Unknown/partitioned disks need an operator.
+        test -z "$(wipefs --no-act --noheadings --output TYPE "$disk")" || { echo 'unexpected disk signature; refusing format' >&2; exit 1; }
+        mkfs.ext4 -L railshot-data "$disk"
+      elif test "$fs" != ext4; then
+        echo 'unsupported data filesystem; refusing format' >&2
+        exit 1
+      fi
+      uuid=$(blkid -s UUID -o value "$disk")
+      test -n "$uuid"
+      mkdir -p /var/lib/rancher
+      if ! grep -Fq "UUID=$uuid /var/lib/rancher " /etc/fstab; then
+        if grep -Eq '^[^#]+[[:space:]]/var/lib/rancher[[:space:]]' /etc/fstab; then
+          echo 'conflicting data mount; bootstrap blocked' >&2
+          exit 1
+        fi
+        printf 'UUID=%s /var/lib/rancher ext4 defaults,x-systemd.device-timeout=120 0 2\n' "$uuid" >> /etc/fstab
+      fi
+      if ! mountpoint -q /var/lib/rancher; then
+        test -z "$(find /var/lib/rancher -mindepth 1 -maxdepth 1 -print -quit)" || { echo 'unmounted data directory is not empty; bootstrap blocked' >&2; exit 1; }
+        mount /var/lib/rancher
+      fi
+      test "$(findmnt -n -o UUID --target /var/lib/rancher)" = "$uuid"
+      # Host preparation only; no team runtime is installed or reconciled here.
+      mkdir -p /var/lib/railshot
+      printf '%s\n' '{"bootstrap":"host_prepared","runtime_ready":"not_configured"}' > /var/lib/railshot/bootstrap-status.json
+runcmd:
+  - [/usr/local/sbin/railshot-bootstrap]

@@ -1,0 +1,86 @@
+# Operator installs this separately from the platform Argo Application.
+# Existing namespaces and both Secrets must be created by the operator, never this controller.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: railshot-build-controller, namespace: railshot-system}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: railshot-build-controller, namespace: railshot-build}
+rules:
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, list, create]
+  - apiGroups: ['']
+    resources: [secrets]
+    resourceNames: [railshot-build-runner-registration]
+    verbs: [get, update, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: railshot-build-controller, namespace: railshot-build}
+subjects: [{kind: ServiceAccount, name: railshot-build-controller, namespace: railshot-system}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: railshot-build-controller}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata: {name: railshot-build-controller, namespace: railshot-system}
+data: {job.json: TEMPLATE_REQUIRED, policy.json: POLICY_REQUIRED}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: railshot-build-controller, namespace: railshot-system}
+spec:
+  schedule: '* * * * *'
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 45
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 55
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata: {labels: {app: railshot-build-controller}}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: railshot-build-controller
+          automountServiceAccountToken: false
+          nodeSelector: {kubernetes.io/arch: amd64, railshot.io/node-role: platform}
+          imagePullSecrets: [{name: ghcr-pull}]
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+          containers:
+            - name: controller
+              image: BUILD_REQUIRED/api
+              command: [python3, /app/ci/scripts/runner/replenish.py]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 25m, memory: 32Mi}
+                limits: {cpu: 100m, memory: 128Mi}
+              volumeMounts:
+                - {name: template, mountPath: /etc/railshot-controller, readOnly: true}
+                - {name: github, mountPath: /run/secrets/github, readOnly: true}
+                - {name: kubernetes-api, mountPath: /run/railshot-kubernetes, readOnly: true}
+          volumes:
+            - name: template
+              configMap: {name: railshot-build-controller}
+            - name: github
+              secret: {secretName: railshot-runner-controller-github, defaultMode: 288}
+            - name: kubernetes-api
+              projected:
+                defaultMode: 288
+                sources:
+                  - serviceAccountToken: {path: token, expirationSeconds: 3600}
+                  - configMap:
+                      name: kube-root-ca.crt
+                      items: [{key: ca.crt, path: ca.crt}]

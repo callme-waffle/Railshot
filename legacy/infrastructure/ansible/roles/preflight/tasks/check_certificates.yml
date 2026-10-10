@@ -1,0 +1,28 @@
+---
+- name: Build required certificate list
+  ansible.builtin.set_fact:
+    required_certificate_paths: >-
+      {{ ([etcd_ca_src | default(''), etcd_cert_src | default(''), etcd_key_src | default('')]
+          if inventory_hostname in groups['etcd_nodes'] else [])
+       + ([etcd_ca_src | default(''), patroni_etcd_cert_src | default(''), patroni_etcd_key_src | default(''),
+           patroni_api_ca_src | default(''), patroni_api_cert_src | default(''), patroni_api_key_src | default(''),
+           postgres_tls_ca_src | default(''), postgres_tls_cert_src | default(''), postgres_tls_key_src | default('')]
+          if inventory_hostname in groups['db_nodes'] else [])
+       + ([patroni_api_ca_src | default('')] if inventory_hostname in groups['proxy_nodes'] else []) }}
+- name: Check certificates on the controller
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  delegate_to: localhost
+  become: false
+  loop: '{{ required_certificate_paths }}'
+  register: certificate_files
+- name: Require readable certificate source files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.isreg | default(false)
+      - item.stat.size | default(0) | int > 0
+    fail_msg: Certificate source file is missing or empty.
+  loop: '{{ certificate_files.results }}'
+  loop_control:
+    label: '{{ item.item }}'

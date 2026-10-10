@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "targets": {
+    "demo-aws": {
+      "descriptor_file": "/secure/railshot/terraform/demo-aws/node-descriptor.json",
+      "ssh": {
+        "user": "railshot-operator",
+        "identity_file": "/secure/railshot/identity_ed25519",
+        "known_hosts_file": "/secure/railshot/known_hosts"
+      },
+      "timeout_seconds": 1200
+    },
+    "demo-gcp": {
+      "descriptor_file": "/secure/railshot/terraform/demo-gcp/node-descriptor.json",
+      "ssh": {
+        "user": "railshot-operator",
+        "identity_file": "/secure/railshot/identity_ed25519",
+        "known_hosts_file": "/secure/railshot/known_hosts"
+      },
+      "timeout_seconds": 1200
+    },
+    "demo-openstack": {
+      "server_file": "/secure/railshot/openstack/demo-openstack/server.json",
+      "resource_id": "example-runtime-vm",
+      "project_id": "example-project",
+      "management_network": "management",
+      "placement": "onprem-a",
+      "architecture": "amd64",
+      "initialization": "cloud-init",
+      "purpose": "runtime",
+      "ssh": {
+        "user": "railshot-operator",
+        "identity_file": "/secure/railshot/identity_ed25519",
+        "known_hosts_file": "/secure/railshot/known_hosts"
+      },
+      "timeout_seconds": 1200
+    },
+    "db-onprem": {
+      "server_file": "/secure/railshot/openstack/db-onprem/server.json",
+      "resource_id": "example-database-vm",
+      "project_id": "example-project",
+      "management_network": "management",
+      "placement": "onprem-a",
+      "architecture": "amd64",
+      "initialization": "cloud-init",
+      "purpose": "database",
+      "ssh": {
+        "user": "railshot-operator",
+        "identity_file": "/secure/railshot/identity_ed25519",
+        "known_hosts_file": "/secure/railshot/known_hosts"
+      },
+      "timeout_seconds": 1200
+    }
+  }
+}

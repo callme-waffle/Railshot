@@ -1,0 +1,20 @@
+{
+  "name": "@railshot/dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4181 --strictPort",
+    "build": "node sync-design-system.mjs --check && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4181 --strictPort"
+  },
+  "engines": {
+    "node": ">=20.19"
+  },
+  "devDependencies": {
+    "vite": "^8.2.2"
+  },
+  "dependencies": {
+    "basecoat-css": "1.0.2"
+  }
+}

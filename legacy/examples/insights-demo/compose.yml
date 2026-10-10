@@ -1,0 +1,10 @@
+# Local rehearsal only. Production retains its existing observer and 30s collection.
+services:
+  demo:
+    build: .
+    ports: ['127.0.0.1:18080:8080']
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    command: ['--config.file=/etc/prometheus/prometheus.yml', '--storage.tsdb.retention.time=1h']
+    volumes: ['./prometheus.yml:/etc/prometheus/prometheus.yml:ro']
+    ports: ['127.0.0.1:19090:9090']

@@ -1,0 +1,30 @@
+# Reviewed release workflow updates this dedicated branch. No automatic prune.
+# Only rendered workload.json belongs in gitops/applications/railshot-platform/.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata: {name: railshot-platform, namespace: argocd}
+spec:
+  sourceRepos: [https://github.com/Jasmin-Softbank/Railshot.git]
+  destinations:
+    - {server: 'https://kubernetes.default.svc', namespace: railshot-system}
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - {group: batch, kind: Job}
+    - {group: apps, kind: Deployment}
+    - {group: '', kind: Service}
+    - {group: '', kind: PersistentVolumeClaim}
+    - {group: networking.k8s.io, kind: NetworkPolicy}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: railshot-platform, namespace: argocd}
+spec:
+  project: railshot-platform
+  source:
+    repoURL: https://github.com/Jasmin-Softbank/Railshot.git
+    targetRevision: deployment/platform
+    path: gitops/applications/railshot-platform
+    directory: {include: workload.json}
+  destination: {server: 'https://kubernetes.default.svc', namespace: railshot-system}
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}

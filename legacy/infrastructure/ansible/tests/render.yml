@@ -1,0 +1,52 @@
+---
+- name: Validate templates offline without SSH or infrastructure changes
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - ../group_vars/all.yml
+  vars:
+    k3s_api_host: demo.example.test
+    k3s_tls_sans: [demo.example.test, 192.0.2.10]
+  tasks:
+    - name: Set explicit test inputs after loading defaults
+      ansible.builtin.set_fact:
+        k3s_api_host: demo.example.test
+        k3s_tls_sans: [demo.example.test, 192.0.2.10]
+        k3s_kubeconfig:
+          content: "{{ {'apiVersion': 'v1', 'kind': 'Config', 'clusters': [{'name': 'default', 'cluster': {'server': 'https://127.0.0.1:6443', 'certificate-authority-data': 'test-ca'}}], 'users': [{'name': 'default', 'user': {'client-key-data': 'test-key'}}], 'contexts': [{'name': 'default', 'context': {'cluster': 'default', 'user': 'default'}}], 'current-context': 'default'} | to_yaml | b64encode }}"
+
+    - name: Parse cluster configuration templates
+      ansible.builtin.set_fact:
+        config: "{{ lookup('ansible.builtin.template', '../templates/config.yaml.j2') | from_yaml }}"
+        service: "{{ lookup('ansible.builtin.template', '../templates/k3s.service.j2') }}"
+        kubeconfig: "{{ lookup('ansible.builtin.template', '../templates/kubeconfig.yaml.j2') | from_yaml }}"
+
+    - name: Assert minimal cluster contracts
+      ansible.builtin.assert:
+        that:
+          - config['write-kubeconfig-mode'] == '0600'
+          - config['tls-san'] == ['demo.example.test', '192.0.2.10']
+          - config['disable'] == ['traefik', 'servicelb', 'metrics-server', 'local-storage']
+          - config['flannel-backend'] == 'none'
+          - config['disable-network-policy'] == true
+          - not config.get('disable-kube-proxy', false)
+          - config['cluster-cidr'] == '10.42.0.0/16'
+          - "'ExecStart=/usr/local/bin/k3s server' in service"
+          - kubeconfig.clusters[0].cluster.server == 'https://demo.example.test:6443'
+          - kubeconfig.clusters[0].cluster['certificate-authority-data'] == 'test-ca'
+          - kubeconfig.users[0].user['client-key-data'] == 'test-key'
+          - kubeconfig['current-context'] == 'default'
+
+    - name: Check that legacy ownership cannot be accepted as Cilium ownership
+      vars:
+        identity: "{{ (lookup('ansible.builtin.file', '../site.yml') | from_yaml)[0].vars.k3s_identity }}"
+        legacy: "{{ identity | dict2items | rejectattr('key', 'in', ['cni', 'cilium_version', 'cilium_cli_version']) | items2dict }}"
+      ansible.builtin.assert:
+        that:
+          - identity.cni == 'cilium'
+          - identity.cilium_version is defined
+          - identity.cilium_cli_version is defined
+          - cilium_version == '1.20.2'
+          - cilium_cli_version == 'v0.20.1'
+          - legacy != identity

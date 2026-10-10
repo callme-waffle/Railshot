@@ -1,0 +1,93 @@
+---
+- name: Validate backup repository
+  ansible.builtin.assert:
+    that:
+      - pgbackrest_repo_path is defined
+      - pgbackrest_repo_path is match('^/[A-Za-z0-9_/-]+$')
+      - pgbackrest_repo_path != '/'
+      - retention_full | int >= 1
+    fail_msg: Supply a dedicated mounted local repository path and positive retention count.
+- name: Resolve backup repository and PostgreSQL data paths
+  ansible.builtin.command:
+    argv: [realpath, -m, "{{ item }}"]
+  loop: ["{{ pgbackrest_repo_path }}", "{{ postgres_data_dir }}"]
+  register: backup_resolved_paths
+  changed_when: false
+- name: Reject backup repository overlapping PostgreSQL data
+  ansible.builtin.assert:
+    that:
+      - backup_resolved_paths.results[0].stdout == pgbackrest_repo_path
+      - backup_resolved_paths.results[0].stdout != backup_resolved_paths.results[1].stdout
+      - not backup_resolved_paths.results[0].stdout.startswith(backup_resolved_paths.results[1].stdout + '/')
+      - not backup_resolved_paths.results[1].stdout.startswith(backup_resolved_paths.results[0].stdout + '/')
+- name: Require repository to be an existing separate mount point
+  ansible.builtin.command:
+    argv: [mountpoint, --quiet, "{{ pgbackrest_repo_path }}"]
+  changed_when: false
+- name: Install pgBackRest
+  ansible.builtin.apt:
+    name: pgbackrest
+    state: present
+- name: Set local repository ownership
+  ansible.builtin.file:
+    path: "{{ pgbackrest_repo_path }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+- name: Prepare pgBackRest configuration directory
+  ansible.builtin.file:
+    path: /etc/pgbackrest
+    state: directory
+    owner: root
+    group: postgres
+    mode: '0750'
+- name: Render pgBackRest configuration
+  ansible.builtin.template:
+    src: pgbackrest.conf.j2
+    dest: /etc/pgbackrest/pgbackrest.conf
+    owner: root
+    group: postgres
+    mode: '0640'
+- name: Install backup execution wrapper
+  ansible.builtin.template:
+    src: jasmin-backup.sh.j2
+    dest: /usr/local/bin/jasmin-backup
+    owner: root
+    group: root
+    mode: '0755'
+- name: Install backup service and timer
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop: [jasmin-backup.service, jasmin-backup.timer]
+  register: backup_units
+- name: Activate backup schedule
+  ansible.builtin.systemd_service:
+    name: jasmin-backup.timer
+    enabled: true
+    state: "{{ 'restarted' if backup_units.changed else 'started' }}"
+    daemon_reload: true
+- name: Check local primary role
+  ansible.builtin.command:
+    argv: [psql, -XAt, -h, /var/run/postgresql, -p, "{{ postgres_port }}", -d, postgres, -c, 'SELECT NOT pg_is_in_recovery()']
+  become: true
+  become_user: postgres
+  register: backup_is_primary
+  changed_when: false
+- name: Initialize backup stanza on current primary
+  ansible.builtin.command:
+    argv: [pgbackrest, "--stanza={{ cluster_name }}", stanza-create]
+  become: true
+  become_user: postgres
+  when: backup_is_primary.stdout | trim == 't'
+  changed_when: false
+- name: Report backup scope limitation
+  ansible.builtin.debug:
+    msg: >-
+      Local repositories are per node; WAL and backups can split across failover. Only restore tests within a single
+      primary tenure are supported. Shared or remote backup design is required for cross-node disaster recovery. Enabling
+      archive_mode on an existing cluster may require separately approved restart.

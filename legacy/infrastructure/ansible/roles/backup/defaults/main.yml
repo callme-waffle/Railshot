@@ -1,0 +1,5 @@
+---
+backup_enabled: false
+retention_full: 7
+pgbackrest_backup_calendar: '*-*-* 02:00:00'
+restore_confirm: false

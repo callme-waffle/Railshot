@@ -1,0 +1,58 @@
+{
+  "evidence": {
+    "integration_commit": "b9cfd2969b261d1279aae927bbb5886209716c62",
+    "description": "Synthetic values matching observed Dashboard/API shapes. resolved_runtime_input is explicitly operator-completed test data, not a production converter or real published image."
+  },
+  "dashboard_app_fields": {
+    "app": "contract-demo",
+    "target_id": "demo-runtime",
+    "repository_url": "https://github.com/example/demo"
+  },
+  "dashboard_plan_input": {
+    "name": "contract-demo",
+    "runtime": {"profile_id": "gcp-small", "node_count": 1},
+    "database": {"mode": "none"}
+  },
+  "dashboard_environment_input": {"plan_id": "plan-contract-demo"},
+  "actions_dispatch_input": {
+    "tenant": "demo",
+    "app": "contract-demo",
+    "source_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "target_id": "demo-runtime"
+  },
+  "node_descriptor": {
+    "schema_version": "v1",
+    "provider_kind": "gcp",
+    "execution_driver": "terraform",
+    "target_id": "demo-runtime",
+    "architecture": "x86_64",
+    "resource_id": "projects/example-project/zones/asia-northeast3-a/instances/demo-runtime",
+    "location": {"zone": "asia-northeast3-a"},
+    "addresses": {"private": "10.0.1.10"},
+    "transport_ref": "iap:example-project:asia-northeast3-a:demo-runtime"
+  },
+  "ansible_bootstrap_receipt": {
+    "schema_version": "1.0",
+    "request_id": "contract-demo.runtime.install",
+    "target_id": "demo-runtime",
+    "operation": "runtime.install",
+    "status": "succeeded",
+    "guest_ready": true,
+    "runtime_ready": true
+  },
+  "resolved_runtime_input": {
+    "schema_version": "0.2",
+    "provider": "gcp",
+    "environment_id": "contract-demo",
+    "node": {"host": "10.0.1.10", "ssh_user": "ubuntu"},
+    "workload": {
+      "image": "ghcr.io/railshot/demo@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "namespace": "contract-demo",
+      "replicas": 1,
+      "container_port": 8080,
+      "health_path": "/healthz"
+    },
+    "exposure": {"type": "nodeport", "node_port": 30100},
+    "runtime": {"mode": "online", "timeout_seconds": 600, "node_ip": "10.0.1.10"}
+  }
+}

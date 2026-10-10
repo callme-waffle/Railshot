@@ -1,0 +1,44 @@
+---
+- name: Check TLS-authenticated endpoint health on each member
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/etcdctl
+      - '--endpoints=https://{{ private_ip }}:2379'
+      - --cacert=/etc/etcd/tls/ca.crt
+      - --cert=/etc/etcd/tls/server.crt
+      - --key=/etc/etcd/tls/server.key
+      - --dial-timeout=5s
+      - --command-timeout=5s
+      - endpoint
+      - health
+  environment:
+    ETCDCTL_API: '3'
+  register: etcd_health
+  changed_when: false
+  retries: '{{ etcd_health_retries }}'
+  delay: '{{ etcd_health_delay }}'
+  until: etcd_health.rc == 0
+  when: not ansible_check_mode
+
+- name: Verify the TLS-authenticated v3 JSON gateway used by Patroni
+  ansible.builtin.uri:
+    url: 'https://{{ private_ip }}:2379/v3/cluster/member/list'
+    method: POST
+    body_format: json
+    body: {}
+    ca_path: /etc/etcd/tls/ca.crt
+    client_cert: /etc/etcd/tls/server.crt
+    client_key: /etc/etcd/tls/server.key
+    validate_certs: true
+    use_proxy: false
+    status_code: 200
+    return_content: true
+    timeout: 5
+  register: etcd_gateway
+  changed_when: false
+  retries: '{{ etcd_health_retries }}'
+  delay: '{{ etcd_health_delay }}'
+  until:
+    - etcd_gateway.status | default(0) == 200
+    - (etcd_gateway.json | default({})).get('members', []) | map(attribute='name') | sort == groups['etcd_nodes'] | sort
+  when: not ansible_check_mode

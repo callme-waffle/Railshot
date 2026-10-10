@@ -1,0 +1,113 @@
+# Render separately from the platform Argo Application. Namespace/Secrets are operator-owned.
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: railshot-build-runner, namespace: railshot-build}
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata: {name: railshot-build-runner, namespace: railshot-build}
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata: {name: railshot-build-runner, namespace: railshot-build}
+subjects: [{kind: ServiceAccount, name: railshot-build-runner, namespace: railshot-build}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: railshot-build-runner}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata: {name: railshot-build-node-reader}
+rules:
+  - apiGroups: ['']
+    resources: [nodes]
+    resourceNames: [NODE_REQUIRED]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata: {name: railshot-build-node-reader}
+subjects: [{kind: ServiceAccount, name: railshot-build-runner, namespace: railshot-build}]
+roleRef: {apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: railshot-build-node-reader}
+---
+apiVersion: batch/v1
+kind: Job
+metadata: {name: RUNNER_REQUIRED, namespace: railshot-build}
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 7200
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata: {labels: {app: railshot-build-runner}}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: railshot-build-runner
+      automountServiceAccountToken: false
+      hostNetwork: true
+      hostPID: false
+      hostIPC: false
+      dnsPolicy: ClusterFirstWithHostNet
+      nodeSelector:
+        kubernetes.io/arch: amd64
+        kubernetes.io/hostname: NODE_REQUIRED
+        railshot.io/node-role: build
+      tolerations:
+        - {key: railshot.io/dedicated, operator: Equal, value: build, effect: NoSchedule}
+      imagePullSecrets: [{name: ghcr-pull}]
+      containers:
+        - name: runner
+          image: BUILD_REQUIRED/ci-runner
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            privileged: false
+            allowPrivilegeEscalation: false
+            capabilities: {add: [NET_ADMIN]}
+            seccompProfile: {type: Localhost, localhostProfile: railshot-codex-bwrap.json}
+            appArmorProfile: {type: Localhost, localhostProfile: railshot-codex-bwrap}
+          resources:
+            requests: {cpu: 200m, memory: 512Mi}
+            limits: {cpu: '1', memory: 2Gi}
+          env:
+            - {name: RAILSHOT_RUNNER_URL, value: URL_REQUIRED}
+            - {name: RAILSHOT_RUNNER_NAME, value: RUNNER_REQUIRED}
+            - {name: RAILSHOT_RUNNER_LABELS, value: railshot-ci}
+            - {name: RAILSHOT_POD_NAMESPACE, valueFrom: {fieldRef: {fieldPath: metadata.namespace}}}
+            - {name: RAILSHOT_POD_NAME, valueFrom: {fieldRef: {fieldPath: metadata.name}}}
+            - {name: RAILSHOT_POD_UID, valueFrom: {fieldRef: {fieldPath: metadata.uid}}}
+          volumeMounts:
+            - {name: docker, mountPath: /var/run/docker.sock}
+            - {name: network-lock, mountPath: /run/railshot-ci-network.lock}
+            - {name: config, mountPath: /etc/railshot, readOnly: true}
+            - {name: network-helper, mountPath: /usr/local/sbin/railshot-ci-network, readOnly: true}
+            - {name: receipt, mountPath: /var/lib/railshot-ci, readOnly: true}
+            - {name: work, mountPath: /var/lib/railshot-runner/work}
+            - {name: runs, mountPath: /var/lib/railshot-runner/runs}
+            - {name: codex, mountPath: /var/lib/railshot-runner/codex}
+            - {name: registration-token, mountPath: /run/secrets/github-runner-registration-token, subPath: token, readOnly: true}
+            - {name: kubernetes-api, mountPath: /run/railshot-kubernetes, readOnly: true}
+      volumes:
+        - {name: docker, hostPath: {path: /var/run/docker.sock, type: Socket}}
+        - {name: network-lock, hostPath: {path: /run/railshot-ci-network.lock, type: File}}
+        - {name: config, hostPath: {path: /etc/railshot, type: Directory}}
+        - {name: network-helper, hostPath: {path: /usr/local/sbin/railshot-ci-network, type: File}}
+        - {name: receipt, hostPath: {path: /var/lib/railshot-ci, type: Directory}}
+        - {name: work, hostPath: {path: /var/lib/railshot-runner/work, type: Directory}}
+        - {name: runs, hostPath: {path: /var/lib/railshot-runner/runs, type: Directory}}
+        - {name: codex, hostPath: {path: /var/lib/railshot-runner/codex, type: Directory}}
+        - name: registration-token
+          secret:
+            secretName: railshot-build-runner-registration
+            defaultMode: 384
+            items: [{key: token, path: token}]
+        - name: kubernetes-api
+          projected:
+            defaultMode: 256
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 3600}
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]

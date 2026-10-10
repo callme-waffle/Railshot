@@ -1,0 +1,37 @@
+# Dedicated Ubuntu 24.04 CI VM only. Existing Ansible bootstrap owns BuildKit.
+services:
+  runner:
+    image: ${RAILSHOT_CI_RUNNER_IMAGE:-railshot-ci-runner:local}
+    build:
+      context: ..
+      dockerfile: ci/scripts/runner/Dockerfile
+    platform: linux/amd64
+    container_name: railshot-ci-runner
+    init: true
+    restart: "no"
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:railshot-codex-bwrap
+      - seccomp:/etc/railshot/runner-seccomp.json
+    environment:
+      RAILSHOT_RUNNER_URL: ${RAILSHOT_RUNNER_URL:?Set the private apps repository URL}
+      RAILSHOT_RUNNER_NAME: ${RAILSHOT_RUNNER_NAME:?Set a unique name for this invocation}
+      RAILSHOT_RUNNER_LABELS: ${RAILSHOT_RUNNER_LABELS:-railshot-ci}
+    secrets:
+      - github-runner-registration-token
+    volumes:
+      - {type: bind, source: /var/run/docker.sock, target: /var/run/docker.sock, bind: {create_host_path: false}}
+      - {type: bind, source: /run/railshot-ci-network.lock, target: /run/railshot-ci-network.lock, bind: {create_host_path: false}}
+      - {type: bind, source: /etc/railshot, target: /etc/railshot, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /usr/local/sbin/railshot-ci-network, target: /usr/local/sbin/railshot-ci-network, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /var/lib/railshot-ci, target: /var/lib/railshot-ci, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /etc/rancher, target: /host/etc/rancher, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /var/lib/rancher, target: /host/var/lib/rancher, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: /var/lib/railshot-runner/work, target: /var/lib/railshot-runner/work, bind: {create_host_path: false}}
+      - {type: bind, source: /var/lib/railshot-runner/runs, target: /var/lib/railshot-runner/runs, bind: {create_host_path: false}}
+      - {type: bind, source: /var/lib/railshot-runner/codex, target: /var/lib/railshot-runner/codex, bind: {create_host_path: false}}
+secrets:
+  github-runner-registration-token:
+    file: ${RAILSHOT_RUNNER_TOKEN_FILE:?Set a root-owned 0600 registration token file}

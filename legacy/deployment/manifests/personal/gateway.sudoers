@@ -1,0 +1,4 @@
+# Use visudo -cf before installing. The railshot account must match the API's UID.
+# The wrapper and its Python/config ancestors must be root-owned and not writable
+# by railshot. The helper independently confines requests and checks their owner.
+railshot ALL=(root) NOPASSWD: /usr/local/sbin/railshot-personal-gateway --request /var/lib/railshot/personal/gateway/*

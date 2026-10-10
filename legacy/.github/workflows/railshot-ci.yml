@@ -1,0 +1,90 @@
+name: Railshot CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'integration/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Let a new commit build while an earlier release verifies production.
+# platform-publish.yml serializes the actual releases without cancelling a writer.
+concurrency:
+  group: railshot-ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  changes:
+    if: github.event_name != 'workflow_dispatch'
+    name: Select affected checks
+    permissions: {contents: read, actions: read}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      selected: ${{ steps.select.outputs.selected }}
+      containers: ${{ steps.select.outputs.containers }}
+      container_components: ${{ steps.select.outputs.container_components }}
+      release: ${{ steps.select.outputs.release }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check routing and dependency gate regressions
+        run: python3 -m unittest discover -s ci/scripts -p test_ci_scope.py -v
+      - name: Compare the complete PR or push change set
+        id: select
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AUTO_RELEASE: ${{ github.event_name == 'push' && github.ref == vars.RAILSHOT_PLATFORM_VERIFY_REF && vars.RAILSHOT_AUTO_RELEASE == 'true' }}
+        run: python3 ci/scripts/ci_scope.py select
+
+  containers:
+    name: Build, smoke and publish images
+    needs: changes
+    if: needs.changes.outputs.containers == 'true'
+    uses: ./.github/workflows/platform-containers.yml
+    with:
+      components: ${{ needs.changes.outputs.container_components }}
+      publish: ${{ needs.changes.outputs.release == 'true' && github.event_name == 'push' && github.ref == vars.RAILSHOT_PLATFORM_VERIFY_REF && vars.RAILSHOT_AUTO_RELEASE == 'true' }}
+    permissions: {contents: read, packages: write}
+
+  gate:
+    name: Railshot CI gate
+    if: always() && github.event_name != 'workflow_dispatch'
+    needs: [changes, containers]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require selected checks and reject unexpected skips
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: python3 ci/scripts/ci_scope.py gate
+
+  release:
+    name: Deploy platform
+    needs: [changes, gate]
+    if: ${{ always() && !cancelled() && needs.gate.result == 'success' && needs.changes.outputs.release == 'true' && github.event_name == 'push' && github.ref == vars.RAILSHOT_PLATFORM_VERIFY_REF && vars.RAILSHOT_AUTO_RELEASE == 'true' }}
+    uses: ./.github/workflows/platform-publish.yml
+    with:
+      components: ${{ needs.changes.outputs.container_components }}
+      publish: true
+      deploy: true
+      multicloud: false
+      skip_build: true
+      ci_run_id: ${{ format('{0}', github.run_id) }}
+    permissions: {contents: write, actions: read, packages: write, id-token: write}
+    secrets: inherit
+
+  full-checks:
+    if: github.event_name == 'workflow_dispatch'
+    uses: ./.github/workflows/platform-checks.yml
+    permissions: {contents: read, packages: write}

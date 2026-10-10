@@ -1,0 +1,4 @@
+---
+# Shared public input names intentionally span roles; their names form the deployment API.
+skip_list:
+  - var-naming[no-role-prefix]

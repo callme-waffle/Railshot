@@ -1,0 +1,146 @@
+---
+- name: Run the Seungmin runtime exactly once after the guest check
+  hosts: k3s_server
+  gather_facts: false
+  become: true
+  vars:
+    railshot_runtime_dir: /var/lib/railshot/runtime
+    railshot_deployment_source: "{{ playbook_dir }}/../../deployment"
+    railshot_approved_runtime: "{{ (lookup('file', railshot_deployment_source + '/airgap/versions.json') | from_json).runtime }}"
+    railshot_runtime_identity:
+      target_id: "{{ railshot_target_id }}"
+      resource_id: "{{ railshot_resource_id }}"
+      node_id: "{{ k3s_node_name }}"
+      node_ip: "{{ railshot_node_ip }}"
+      architecture: "{{ railshot_expected_arch }}"
+      k3s_version: "{{ railshot_approved_runtime.k3s_version }}"
+      cilium_version: "{{ railshot_approved_runtime.cilium_version }}"
+      profile: team-bootstrap-json-0.1
+  tasks:
+    - name: Inspect runtime ownership and preexisting installation
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/railshot/runtime-identity.json
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /usr/local/bin/k3s
+        - /etc/systemd/system/k3s.service
+      register: railshot_existing
+
+    - name: Refuse to adopt an unowned existing cluster
+      ansible.builtin.assert:
+        that:
+          - railshot_existing.results[0].stat.exists or not (railshot_existing.results[1].stat.exists or railshot_existing.results[2].stat.exists or railshot_existing.results[3].stat.exists or railshot_existing.results[4].stat.exists)
+        fail_msg: Existing K3s has no integration ownership marker; use an explicitly prepared fresh target.
+
+    - name: Read the previous immutable runtime identity
+      ansible.builtin.slurp:
+        src: /etc/railshot/runtime-identity.json
+      register: railshot_previous_identity
+      when: railshot_existing.results[0].stat.exists
+      no_log: true
+
+    - name: Reject implicit target changes or runtime upgrades
+      ansible.builtin.assert:
+        that:
+          - (railshot_previous_identity.content | b64decode | from_json) == railshot_runtime_identity
+        fail_msg: Existing target identity differs; explicit migration is required.
+      when: railshot_existing.results[0].stat.exists
+      no_log: true
+
+    - name: Prepare private runtime ownership directory
+      ansible.builtin.file:
+        path: /etc/railshot
+        state: directory
+        mode: '0700'
+
+    - name: Record immutable identity before the first runtime mutation
+      ansible.builtin.copy:
+        dest: /etc/railshot/runtime-identity.json
+        content: "{{ railshot_runtime_identity | to_json }}"
+        mode: '0600'
+      no_log: true
+    - name: Create private runtime script directories
+      ansible.builtin.file:
+        path: "{{ railshot_runtime_dir }}/{{ item }}"
+        state: directory
+        mode: '0700'
+      loop: ['', scripts, bootstrap, cilium, airgap]
+
+    - name: Copy the team's runtime bootstrap scripts and approved image policy
+      ansible.builtin.copy:
+        src: "{{ railshot_deployment_source }}/{{ item }}"
+        dest: "{{ railshot_runtime_dir }}/{{ item }}"
+        mode: '0700'
+      loop:
+        - scripts/common.sh
+        - bootstrap/preflight.sh
+        - bootstrap/install-k3s.sh
+        - bootstrap/health.sh
+        - bootstrap/runtime-healthz.py
+        - cilium/install.sh
+        - cilium/preflight.py
+        - cilium/health.sh
+        - airgap/versions.json
+
+    - name: Run native bootstrap under the team's node-wide deployment lock
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/flock
+          - --nonblock
+          - /run/railshot-deployment.lock
+          - /bin/bash
+          - -ec
+          - >-
+            bash bootstrap/preflight.sh;
+            bash bootstrap/install-k3s.sh;
+            bash cilium/install.sh;
+            bash bootstrap/health.sh;
+            bash cilium/health.sh
+        chdir: "{{ railshot_runtime_dir }}"
+      environment:
+        K3S_VERSION: "{{ railshot_approved_runtime.k3s_version }}"
+        CILIUM_VERSION: "{{ railshot_approved_runtime.cilium_version }}"
+        CILIUM_CLI_VERSION: "{{ railshot_approved_runtime.cilium_cli_version }}"
+        WAIT_TIMEOUT: "{{ railshot_wait_timeout_seconds }}s"
+        NODE_IP: "{{ railshot_node_ip }}"
+        K3S_URL: ''
+        K3S_TOKEN: ''
+        K3S_CONFIG_FILE: ''
+      changed_when: true
+      no_log: true
+
+    - name: Check the single node's actual identity and readiness
+      ansible.builtin.command:
+        argv: [/usr/local/bin/k3s, kubectl, get, nodes, -o, json, --request-timeout=10s]
+      register: railshot_nodes
+      changed_when: false
+
+    - name: Verify runtime observations before issuing readiness
+      ansible.builtin.assert:
+        that:
+          - (railshot_nodes.stdout | from_json)['items'] | length == 1
+          - (railshot_nodes.stdout | from_json)['items'][0].status.nodeInfo.architecture == railshot_expected_arch
+          - "railshot_node_ip in ((railshot_nodes.stdout | from_json)['items'][0].status.addresses | selectattr('type', 'equalto', 'InternalIP') | map(attribute='address') | list)"
+          - (railshot_nodes.stdout | from_json)['items'][0].status.nodeInfo.kubeletVersion == railshot_approved_runtime.k3s_version
+          - "(railshot_nodes.stdout | from_json)['items'][0].status.conditions | selectattr('type', 'equalto', 'Ready') | selectattr('status', 'equalto', 'True') | list | length == 1"
+        fail_msg: Runtime node identity, version or readiness differs from the request.
+
+    - name: Check Cilium and CoreDNS rollout
+      ansible.builtin.command:
+        argv: [/usr/local/bin/k3s, kubectl, -n, kube-system, rollout, status, "{{ item }}", --timeout=180s, --request-timeout=10s]
+      loop: [daemonset/cilium, deployment/cilium-operator, deployment/coredns]
+      changed_when: false
+
+    - name: Write a private receipt only after runtime checks passed
+      ansible.builtin.copy:
+        dest: "{{ railshot_receipt_path }}"
+        mode: '0600'
+        content: >-
+          {{ {'request_id': railshot_request_id, 'target_id': railshot_target_id,
+              'node_id': inventory_hostname, 'nonce': railshot_nonce,
+              'stage': 'runtime', 'runtime_ready': true} | to_json }}
+      delegate_to: localhost
+      become: false
+      no_log: true

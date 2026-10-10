@@ -1,0 +1,423 @@
+# Dedicated, disposable Ubuntu CI worker. No SDK auth or runner registration.
+# Standalone is the default. An operations K3s agent requires explicit
+# -e railshot_ci_k3s_build_worker=true, a dedicated build node, and an already
+# Ready node/CNI dataplane verified by the operator before this bootstrap.
+# Never run on the operations server, another Kubernetes distribution, or a
+# customer runtime node. The local config guard does not prove live scheduling
+# or CNI health; those checks must pass before this bootstrap changes Docker.
+# Run: sudo ansible-playbook -i localhost, -c local infrastructure/ansible/ci.yml
+- name: Credential-free CI runtime and bounded dependency network
+  hosts: localhost
+  connection: local
+  become: true
+  tasks:
+    - name: Require the reviewed Ubuntu worker baseline
+      ansible.builtin.assert:
+        that:
+          - ansible_distribution == 'Ubuntu'
+          - ansible_distribution_version == '24.04'
+        fail_msg: This bootstrap is only for a dedicated Ubuntu 24.04 CI worker.
+
+    - name: Accept only standalone hosts or explicitly approved K3s build agents
+      ansible.builtin.command:
+        argv:
+          - /bin/bash
+          - -c
+          - |
+            set -euo pipefail
+            if [ "$RAILSHOT_ALLOW_K3S_BUILD_WORKER" = true ]; then
+              # A flag alone never permits an ordinary agent, a control-plane,
+              # or a standard kubelet. Require the reviewed isolated node config.
+              test -d /var/lib/rancher/k3s/agent
+              test ! -L /var/lib/rancher/k3s/agent
+              for path in /var/lib/rancher/k3s/server /etc/rancher/k3s/k3s.yaml /etc/kubernetes; do
+                if [ -e "$path" ] || [ -L "$path" ]; then
+                  echo "Refusing a Kubernetes control-plane/standard kube host: $path" >&2; exit 2
+                fi
+              done
+              systemctl is-active --quiet k3s-agent
+              if systemctl is-active --quiet k3s || systemctl is-active --quiet kubelet; then
+                echo 'Refusing a server or standalone kubelet service.' >&2; exit 2
+              fi
+              config=/etc/rancher/k3s/config.yaml
+              test -f "$config"
+              test ! -L "$config"
+              test "$(stat -c '%u:%a' "$config")" = '0:600'
+              # Drop-ins can override or append node configuration; ambiguity is
+              # rejected even for an empty directory or dangling symlink.
+              test ! -e /etc/rancher/k3s/config.yaml.d
+              test ! -L /etc/rancher/k3s/config.yaml.d
+              "$RAILSHOT_ANSIBLE_PYTHON" - "$config" <<'PYRAILSHOT_AGENT'
+            from pathlib import Path
+            import sys, yaml
+
+            try:
+                config = yaml.safe_load(Path(sys.argv[1]).read_text())
+            except (OSError, yaml.YAMLError):
+                raise SystemExit('Cannot read a valid K3s build-agent config')
+            if not isinstance(config, dict):
+                raise SystemExit('K3s build-agent config must be a mapping')
+            for field, key, required in (
+                ('node-label', 'railshot.io/node-role', 'railshot.io/node-role=build'),
+                ('node-taint', 'railshot.io/dedicated', 'railshot.io/dedicated=build:NoSchedule'),
+            ):
+                values = config.get(field)
+                if (not isinstance(values, list) or not all(isinstance(value, str) for value in values)
+                        or [value for value in values if value.split('=', 1)[0].split(':', 1)[0] == key] != [required]
+                        or field + '+' in config):
+                    raise SystemExit('K3s build-agent config requires its exact isolated ' + field)
+            if config.get('docker', False) is not False:
+                raise SystemExit('K3s must use containerd; CI owns a separate Docker daemon')
+            PYRAILSHOT_AGENT
+            else
+              for path in /etc/rancher/k3s /var/lib/rancher/k3s /etc/kubernetes /var/lib/kubelet; do
+                if [ -e "$path" ] || [ -L "$path" ]; then
+                  echo "Kubernetes host requires the explicit dedicated K3s build-agent profile: $path" >&2; exit 2
+                fi
+              done
+            fi
+      environment:
+        RAILSHOT_ALLOW_K3S_BUILD_WORKER: "{{ 'true' if (railshot_ci_k3s_build_worker | default(false) | bool) else 'false' }}"
+        # This local playbook's interpreter already has the Ansible YAML parser.
+        RAILSHOT_ANSIBLE_PYTHON: "{{ ansible_playbook_python }}"
+      changed_when: false
+
+    - name: Install distro runtime packages
+      ansible.builtin.apt:
+        name: [docker.io, docker-buildx, python3-venv, python3-yaml, git, jq, iptables, nftables, iproute2, ca-certificates]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Docker configuration directory
+      ansible.builtin.file:
+        path: /etc/docker
+        state: directory
+        mode: '0755'
+
+    - name: Use public DNS without exempting metadata DNS from the container firewall
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        mode: '0644'
+        content: |
+          {"dns":["1.1.1.1","8.8.8.8"],"iptables":true,"ip6tables":true,"ipv6":false,"live-restore":false,"features":{"containerd-snapshotter":true}}
+      register: ci_docker_config
+
+    - name: Create root-owned executor contract directory
+      ansible.builtin.file:
+        path: /etc/railshot
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Install the reviewed executor contract from the same repository revision
+      ansible.builtin.copy:
+        src: ../../ci/scripts/contract/ci-executor.yaml
+        dest: /etc/railshot/ci-executor.yaml
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install the idempotent bridge policy installer
+      ansible.builtin.copy:
+        dest: /usr/local/sbin/railshot-ci-network
+        mode: '0755'
+        content: |
+          #!/bin/bash
+          set -euo pipefail
+          exec 9>/run/railshot-ci-network.lock
+          flock -x 9
+          profile=/etc/railshot/ci-executor.yaml
+          test -f "$profile" && test ! -L "$profile"
+          test "$(stat -c '%u:%a' "$profile")" = '0:644'
+          jq -e '.schema_version == 1 and .builder.network == "railshot-quality" and .builder.flags == ["--oci-worker-net=bridge"]' "$profile" >/dev/null
+          case "${1:-install}" in
+            install)
+              install -d -m 0700 /var/lib/railshot-ci
+              rm -f /var/lib/railshot-ci/network-verified.sha256 ;;
+            --check|--fingerprint) ;;
+            *) echo 'Unsupported network helper action' >&2; exit 2 ;;
+          esac
+          # One owned inet table enforces both IP families before the shared priority-0
+          # Docker/Cilium chains. DROP is terminal; ACCEPT continues through later base
+          # chains, so it cannot override the CNI. Never flush or reorder shared tables.
+          policy_state=$(python3 - "${1:-install}" <<'PYRAILSHOT_POLICY'
+          import json, subprocess, sys
+
+          TABLE = {"family": "inet", "name": "railshot_ci"}
+          objects = [{"table": TABLE}]
+          for chain in ("input", "forward", "egress"):
+              spec = {"family": "inet", "table": "railshot_ci", "name": chain}
+              if chain != "egress":
+                  spec.update(type="filter", hook=chain, prio=-10, policy="accept")
+              objects.append({"chain": spec})
+
+          def match(left, right, op="=="):
+              return {"match": {"op": op, "left": left, "right": right}}
+
+          def meta(key, value, op="=="):
+              return match({"meta": {"key": key}}, value, op)
+
+          def address(field, cidr, op="=="):
+              addr, length = cidr.split("/")
+              return match({"payload": {"protocol": "ip", "field": field}},
+                           addr if length == "32" else {"prefix": {"addr": addr, "len": int(length)}}, op)
+
+          def rule(chain, tests, verdict, comment=None):
+              spec = {"family": "inet", "table": "railshot_ci", "chain": chain,
+                      "expr": tests + [{"counter": {"packets": 0, "bytes": 0}}, verdict]}
+              if comment:
+                  spec["comment"] = comment
+              objects.append({"rule": spec})
+
+          v6 = meta("nfproto", "ipv6")
+          quality = meta("iifname", "br-railshot")
+          runtime = meta("iifname", "rsrun*")
+          reply_states = {"set": ["established", "related"]}
+          rule("input", [runtime, v6], {"drop": None}, "railshot-runtime-ipv6-host-block")
+          rule("input", [runtime, match({"ct": {"key": "state"}}, reply_states)], {"accept": None})
+          rule("input", [runtime], {"drop": None}, "railshot-runtime-host-block")
+          rule("input", [quality], {"drop": None}, "railshot-ci-host-block")
+          rule("forward", [runtime, v6], {"drop": None}, "railshot-runtime-ipv6-forward-block")
+          rule("forward", [quality], {"jump": {"target": "egress"}})
+          rule("egress", [v6], {"drop": None}, "railshot-ci-ipv6-block")
+          rule("egress", [address("saddr", "172.30.0.0/24", "!=")], {"drop": None})
+          rule("egress", [match({"ct": {"key": "state"}}, "invalid", "in")], {"drop": None})
+          rule("egress", [match({"fib": {"result": "type", "flags": ["daddr"]}}, "local")], {"drop": None})
+          for cidr in ("0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8",
+                       "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16", "192.0.0.0/24",
+                       "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24", "203.0.113.0/24",
+                       "224.0.0.0/4", "240.0.0.0/4", "168.63.129.16/32"):
+              rule("egress", [address("daddr", cidr)], {"drop": None}, "railshot-deny-" + cidr)
+          for protocol, ports in (("tcp", [80, 443]), ("udp", [53]), ("tcp", [53])):
+              rule("egress", [match({"payload": {"protocol": protocol, "field": "dport"}},
+                         {"set": ports} if len(ports) > 1 else ports[0]),
+                   match({"ct": {"key": "state"}}, {"set": ["new", "established"]})], {"accept": None})
+          rule("egress", [], {"drop": None}, "railshot-deny-other-egress")
+
+          def normalize(value):
+              # Handles and packet counts change without changing enforcement. Preserve
+              # rule order, verdicts, expressions and table flags (including dormant).
+              if isinstance(value, list):
+                  return [normalize(item) for item in value]
+              if isinstance(value, dict):
+                  result = {key: normalize(item) for key, item in value.items() if key not in ("handle", "index")}
+                  if "counter" in result and isinstance(result["counter"], dict):
+                      result["counter"] = {}
+                  if "set" in result and isinstance(result["set"], list):
+                      result["set"] = sorted(result["set"], key=lambda item: json.dumps(item, sort_keys=True))
+                  if "fib" in result and isinstance(result["fib"].get("flags"), str):
+                      result["fib"]["flags"] = [result["fib"]["flags"]]
+                  return result
+              return value
+
+          def canonical(entries):
+              tables, chains, rules = [], {}, {}
+              for entry in entries:
+                  if "metainfo" in entry:
+                      continue
+                  kind, value = next(iter(entry.items()))
+                  if value.get("family") != "inet" or value.get("table", value.get("name")) != "railshot_ci":
+                      raise SystemExit("Unexpected object in CI-owned nft table")
+                  value = normalize(value)
+                  if kind == "table":
+                      tables.append(value)
+                  elif kind == "chain":
+                      if value["name"] in chains:
+                          raise SystemExit("Duplicate CI nft chain")
+                      chains[value["name"]] = value
+                  elif kind == "rule":
+                      rules.setdefault(value["chain"], []).append(value)
+                  else:
+                      raise SystemExit("Unexpected CI nft object type")
+              return {"tables": tables, "chains": chains, "rules": rules}
+
+          expected = canonical(objects)
+          if sys.argv[1] == "install":
+              # A single nft transaction replaces only our table. Invalid updates leave
+              # the previous table intact; readiness was invalidated before this call.
+              commands = [{"add": {"table": TABLE}}, {"delete": {"table": TABLE}}]
+              commands.extend({"add": item} for item in objects)
+              subprocess.run(["nft", "-j", "-f", "-"], input=json.dumps({"nftables": commands}),
+                             text=True, check=True, capture_output=True)
+          actual = canonical(json.loads(subprocess.check_output(
+              ["nft", "-j", "list", "table", "inet", "railshot_ci"], text=True))["nftables"])
+          if actual != expected:
+              raise SystemExit("CI nft enforcement differs from the owned policy (hook, priority, rule or verdict)")
+          print(json.dumps(actual, sort_keys=True, separators=(",", ":")))
+          PYRAILSHOT_POLICY
+          ) || exit 1
+          if [ "${1:-install}" != install ]; then
+            fingerprint=$({
+              sha256sum "$profile"
+              printf '%s\n' "$policy_state"
+              sysctl -n net.bridge.bridge-nf-call-iptables net.bridge.bridge-nf-call-ip6tables
+              docker network inspect railshot-quality | jq -S '.[0] | {Id,Driver,EnableIPv6,Internal,IPAM,Options}'
+            } | sha256sum | cut -d' ' -f1)
+            if [ "$1" = --check ]; then
+              if [ "$#" -ge 2 ]; then
+                test "$2" = "$(sha256sum "$profile" | cut -d' ' -f1)"
+              fi
+              test -f /var/lib/railshot-ci/network-verified.sha256
+              test "$fingerprint" = "$(cat /var/lib/railshot-ci/network-verified.sha256)"
+            else
+              echo "$fingerprint"
+            fi
+            exit 0
+          fi
+          # Migration removes only our exact former hooks after independent enforcement
+          # has been installed and read back. Cilium, kube-proxy and Docker rules stay put.
+          ipt() { iptables -w 10 "$@"; }
+          ip6t() { ip6tables -w 10 "$@"; }
+          remove4() { while ipt -C "$@" 2>/dev/null; do ipt -D "$@"; done; }
+          remove6() { while ip6t -C "$@" 2>/dev/null; do ip6t -D "$@"; done; }
+          remove4 INPUT -i rsrun+ -m conntrack --ctstate ESTABLISHED,RELATED -j ACCEPT
+          remove4 INPUT -i rsrun+ -m comment --comment railshot-runtime-host-block -j DROP
+          remove4 INPUT -i br-railshot -m comment --comment railshot-ci-host-block -j DROP
+          remove4 DOCKER-USER -i br-railshot -j RAILSHOT-CI-EGRESS
+          remove4 DOCKER-USER -i br-railshot -m comment --comment railshot-update-guard -j DROP
+          for chain in INPUT FORWARD; do
+            remove6 "$chain" -i rsrun+ -j DROP
+            remove6 "$chain" -i br-railshot -j DROP
+          done
+          if ipt -S RAILSHOT-CI-EGRESS >/dev/null 2>&1; then
+            ipt -F RAILSHOT-CI-EGRESS
+            ipt -X RAILSHOT-CI-EGRESS
+          fi
+          modprobe br_netfilter
+          sysctl -q -w net.bridge.bridge-nf-call-iptables=1 net.bridge.bridge-nf-call-ip6tables=1
+          if ! docker network inspect railshot-quality >/dev/null 2>&1; then
+            docker network create --driver bridge --subnet 172.30.0.0/24 --gateway 172.30.0.1 \
+              --opt com.docker.network.bridge.name=br-railshot \
+              --opt com.docker.network.bridge.enable_icc=false railshot-quality >/dev/null
+          fi
+          docker network inspect railshot-quality | jq -e '.[0] |
+            .Driver == "bridge" and .EnableIPv6 == false and .Internal == false and
+            (.IPAM.Config | length) == 1 and .IPAM.Config[0].Subnet == "172.30.0.0/24" and
+            .IPAM.Config[0].Gateway == "172.30.0.1" and
+            .Options["com.docker.network.bridge.name"] == "br-railshot" and
+            .Options["com.docker.network.bridge.enable_icc"] == "false"' >/dev/null
+          sysctl -q -w net.ipv6.conf.br-railshot.disable_ipv6=1
+
+    - name: Install network policy service after Docker
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/railshot-ci-network.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=RAILSHOT disposable CI bridge egress policy
+          Requires=docker.service
+          After=docker.service network-online.target
+          PartOf=docker.service
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/railshot-ci-network
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=docker.service
+      register: ci_network_unit
+
+    - name: Install the real-container network verification command
+      ansible.builtin.copy:
+        src: test-ci-network.sh
+        dest: /usr/local/sbin/test-ci-network
+        mode: '0755'
+
+    - name: Enable Docker and reload service definitions
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        daemon_reload: true
+        state: "{{ 'restarted' if ci_docker_config.changed else 'started' }}"
+
+    - name: Enable policy after each Docker start
+      ansible.builtin.systemd_service:
+        name: railshot-ci-network
+        enabled: true
+        state: started
+
+    - name: Reconcile bridge firewall without altering host inbound policy
+      ansible.builtin.command: /usr/local/sbin/railshot-ci-network
+      changed_when: false
+
+    - name: Prepare the dedicated bounded BuildKit builder on the filtered bridge
+      ansible.builtin.shell: |
+        set -euo pipefail
+        profile=/etc/railshot/ci-executor.yaml
+        jq -e '.schema_version == 1 and .builder.flags == ["--oci-worker-net=bridge"]' "$profile" >/dev/null
+        builder=$(jq -er '.builder.name' "$profile")
+        container=$(jq -er '.builder.container' "$profile")
+        test "$(jq -er '.builder.driver' "$profile")" = remote
+        # Buildx 0.30.1 adds network.host to docker-container drivers. Manage the
+        # same bounded daemon directly and use its documented stdio transport.
+        # Only migrate our named old CI builder; never touch other containers.
+        if docker buildx inspect "$builder" >/dev/null 2>&1; then
+          driver=$(docker buildx inspect "$builder" | sed -n 's/^Driver:[[:space:]]*//p')
+          if [ "$driver" = docker-container ]; then
+            docker buildx rm "$builder"
+          else
+            test "$driver" = remote
+          fi
+        fi
+        if ! docker container inspect "$container" >/dev/null 2>&1; then
+          mapfile -t flags < <(jq -er '.builder.flags[]' "$profile")
+          docker run --detach --name "$container" --label railshot.component=ci-builder \
+            --privileged --restart unless-stopped --entrypoint buildkitd \
+            --network "$(jq -er '.builder.network' "$profile")" \
+            --memory "$(jq -er '.builder.memory_bytes' "$profile")" \
+            --memory-swap "$(jq -er '.builder.memory_bytes' "$profile")" \
+            --cpu-period "$(jq -er '.builder.cpu_period' "$profile")" \
+            --cpu-quota "$(jq -er '.builder.cpu_quota' "$profile")" \
+            --mount "type=volume,src=${container}-state,dst=/var/lib/buildkit" \
+            "$(jq -er '.builder.image' "$profile")" "${flags[@]}" >/dev/null
+        fi
+        docker inspect "$container" | jq -e --slurpfile p "$profile" '.[0] |
+          .Config.Labels["railshot.component"] == "ci-builder" and .Config.Entrypoint == ["buildkitd"] and
+          .Config.Image == $p[0].builder.image and .Config.Cmd == $p[0].builder.flags and
+          .HostConfig.NetworkMode == $p[0].builder.network and
+          (.NetworkSettings.Networks | keys) == [$p[0].builder.network] and
+          .HostConfig.Memory == $p[0].builder.memory_bytes and .HostConfig.MemorySwap == $p[0].builder.memory_bytes and
+          .HostConfig.CpuQuota == $p[0].builder.cpu_quota and .HostConfig.CpuPeriod == $p[0].builder.cpu_period' >/dev/null
+        docker start "$container" >/dev/null
+        if ! docker buildx inspect "$builder" >/dev/null 2>&1; then
+          docker buildx create --name "$builder" --driver remote "docker-container://$container" >/dev/null
+        fi
+        docker buildx inspect "$builder" --bootstrap >/dev/null
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Verify the network again after each policy reconciliation or Docker restart
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/railshot-ci-verify.service
+        mode: '0644'
+        content: |
+          [Unit]
+          Description=RAILSHOT native CI isolation acceptance
+          Requires=docker.service railshot-ci-network.service
+          After=docker.service railshot-ci-network.service network-online.target
+          PartOf=docker.service railshot-ci-network.service
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/test-ci-network
+          TimeoutStartSec=600
+          RemainAfterExit=yes
+          [Install]
+          WantedBy=railshot-ci-network.service
+
+    - name: Enable and run native acceptance after the builder has been prepared
+      ansible.builtin.systemd_service:
+        name: railshot-ci-verify
+        enabled: true
+        daemon_reload: true
+        state: restarted
+
+    - name: Show the worker readiness boundary
+      ansible.builtin.debug:
+        msg: >-
+          Runtime installed for the administrator/root executor; railshot-ci-verify reruns real container probes after each boot.
+          Failed probes leave readiness blocked; inspect journalctl -u railshot-ci-verify and retry that service after fixing the cause.
+          L2 uses the dedicated railshot-ci BuildKit builder; L3 uses internal rsrun-* bridges with host access blocked.
+          Public 80/443 and DNS are allowed for dependency installation, not a domain allowlist.
+          This worker has no GitHub registration or SDK credentials. Destroy it after untrusted CI.

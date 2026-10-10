@@ -1,0 +1,262 @@
+---
+- name: Prepare a fresh single-node k3s and Cilium demo cluster
+  hosts: k3s_server
+  become: true
+  gather_facts: true
+  vars:
+    k3s_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts.architecture] }}"
+    k3s_asset: "{{ 'k3s' if k3s_arch == 'amd64' else 'k3s-arm64' }}"
+    k3s_release_url: "https://github.com/k3s-io/k3s/releases/download/{{ k3s_version }}"
+    k3s_identity:
+      version: "{{ k3s_version }}"
+      node_name: "{{ k3s_node_name }}"
+      cluster_cidr: "{{ k3s_cluster_cidr }}"
+      service_cidr: "{{ k3s_service_cidr }}"
+      cluster_dns: "{{ k3s_cluster_dns }}"
+      cni: cilium
+      cilium_version: "{{ cilium_version }}"
+      cilium_cli_version: "{{ cilium_cli_version }}"
+  pre_tasks:
+    - name: Reuse the JB guest scope checks
+      ansible.builtin.import_tasks: tasks/guest-checks.yml
+
+    - name: Validate the shared single-node Cilium profile
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_facts.kernel is version('5.10', '>=')
+          - ansible_facts.memtotal_mb >= 3500
+          - k3s_version == 'v1.34.11+k3s1'
+          - cilium_version == '1.20.2'
+          - cilium_cli_version == 'v0.20.1'
+          - k3s_cluster_cidr == '10.42.0.0/16'
+          - k3s_service_cidr == '10.43.0.0/16'
+          - k3s_cluster_dns == '10.43.0.10'
+        fail_msg: >-
+          This Cilium profile requires amd64, kernel >= 5.10, 4 GB RAM and the
+          pinned runtime versions/CIDRs. It does not migrate existing Flannel clusters.
+
+    - name: Inspect existing installation paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/rancher/k3s/ansible-starter.json
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /usr/local/bin/k3s
+        - /etc/systemd/system/k3s.service
+        - /etc/rancher/k3s/config.yaml.d
+      register: k3s_existing
+
+    - name: Refuse to overwrite an installation not owned by this project
+      ansible.builtin.assert:
+        that:
+          - not k3s_existing.results[5].stat.exists
+          - >-
+            k3s_existing.results[0].stat.exists or
+            not (k3s_existing.results[1].stat.exists or
+                 k3s_existing.results[2].stat.exists or
+                 k3s_existing.results[3].stat.exists or
+                 k3s_existing.results[4].stat.exists)
+        fail_msg: Existing k3s installation detected. Use a fresh VM; this playbook does not adopt clusters.
+
+    - name: Read previous cluster identity
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/ansible-starter.json
+      register: k3s_previous
+      when: k3s_existing.results[0].stat.exists
+
+    - name: Reject implicit upgrades or destructive network changes
+      ansible.builtin.assert:
+        that:
+          - (k3s_previous.content | b64decode | from_json) == k3s_identity
+        fail_msg: >-
+          Cluster identity/CNI differs (including the previous Flannel starter).
+          Use a fresh VM. This playbook never performs an in-place CNI migration.
+      when: k3s_existing.results[0].stat.exists
+
+  tasks:
+    - name: Install host prerequisites
+      ansible.builtin.apt:
+        name: [ca-certificates, iptables, iproute2, conntrack, socat, kmod, curl, tar]
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Persist kernel modules
+      ansible.builtin.copy:
+        dest: /etc/modules-load.d/k3s-starter.conf
+        content: "overlay\nbr_netfilter\n"
+        mode: '0644'
+
+    - name: Inspect loaded kernel modules
+      ansible.builtin.stat:
+        path: "/sys/module/{{ item }}"
+      loop: [overlay, br_netfilter]
+      register: k3s_modules
+
+    - name: Load missing kernel modules
+      ansible.builtin.command:
+        argv: [modprobe, "{{ item.item }}"]
+      loop: "{{ k3s_modules.results }}"
+      when: not item.stat.exists
+      changed_when: true
+
+    - name: Persist networking sysctls
+      ansible.builtin.copy:
+        dest: /etc/sysctl.d/90-k3s-starter.conf
+        content: |
+          net.ipv4.ip_forward = 1
+          net.bridge.bridge-nf-call-iptables = 1
+          net.bridge.bridge-nf-call-ip6tables = 1
+        mode: '0644'
+
+    - name: Read current networking sysctls
+      ansible.builtin.command:
+        argv: [sysctl, -n, net.ipv4.ip_forward, net.bridge.bridge-nf-call-iptables, net.bridge.bridge-nf-call-ip6tables]
+      register: k3s_sysctls
+      changed_when: false
+
+    - name: Apply networking sysctls when necessary
+      ansible.builtin.command:
+        argv: [sysctl, -p, /etc/sysctl.d/90-k3s-starter.conf]
+      when: k3s_sysctls.stdout_lines != ['1', '1', '1']
+      changed_when: true
+
+    - name: Create configuration directory
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        mode: '0700'
+
+    - name: Record ownership and immutable cluster identity
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/ansible-starter.json
+        content: "{{ k3s_identity | to_nice_json }}\n"
+        mode: '0600'
+
+    - name: Download the pinned binary with upstream SHA256 verification
+      ansible.builtin.get_url:
+        url: "{{ k3s_release_url }}/{{ k3s_asset }}"
+        dest: /usr/local/bin/k3s
+        checksum: "sha256:{{ k3s_release_url }}/sha256sum-{{ k3s_arch }}.txt"
+        mode: '0755'
+        timeout: 120
+      notify: Restart k3s
+
+    - name: Write k3s configuration
+      ansible.builtin.template:
+        src: templates/config.yaml.j2
+        dest: /etc/rancher/k3s/config.yaml
+        mode: '0600'
+      notify: Restart k3s
+
+    - name: Install systemd service
+      ansible.builtin.template:
+        src: templates/k3s.service.j2
+        dest: /etc/systemd/system/k3s.service
+        mode: '0644'
+      notify: Restart k3s
+
+    - name: Apply configuration before readiness checks
+      ansible.builtin.meta: flush_handlers
+
+    - name: Ensure k3s is enabled and started
+      ansible.builtin.systemd:
+        name: k3s
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Wait for local API readiness
+      ansible.builtin.command:
+        argv: [/usr/local/bin/k3s, kubectl, get, --raw=/readyz, --request-timeout=10s]
+      register: k3s_ready
+      until: k3s_ready.rc == 0
+      retries: 60
+      delay: 5
+      changed_when: false
+
+    - name: Prepare the shared Cilium asset directories
+      ansible.builtin.file:
+        path: "/var/lib/railshot/standalone-cilium/{{ item }}"
+        state: directory
+        mode: '0700'
+      loop: [scripts, cilium, airgap]
+
+    - name: Reuse the team Cilium installer rather than maintain a second implementation
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../deployment/{{ item }}"
+        dest: "/var/lib/railshot/standalone-cilium/{{ item }}"
+        mode: '0700'
+      loop: [scripts/common.sh, cilium/install.sh, cilium/preflight.py, airgap/versions.json]
+
+    - name: Install Cilium before waiting for Node Ready or CoreDNS
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/flock
+          - --nonblock
+          - /run/railshot-deployment.lock
+          - /bin/bash
+          - /var/lib/railshot/standalone-cilium/cilium/install.sh
+      environment:
+        K3S_VERSION: "{{ k3s_version }}"
+        CILIUM_VERSION: "{{ cilium_version }}"
+        CILIUM_CLI_VERSION: "{{ cilium_cli_version }}"
+        WAIT_TIMEOUT: 300s
+        RAILSHOT_OFFLINE: 'false'
+        RAILSHOT_BUNDLE: ''
+        RAILSHOT_BUNDLE_SHA256: ''
+      changed_when: true
+      no_log: true
+
+    - name: Wait for node networking to become ready
+      ansible.builtin.command:
+        argv: [/usr/local/bin/k3s, kubectl, wait, "node/{{ k3s_node_name }}", --for=condition=Ready, --timeout=180s]
+      changed_when: false
+
+    - name: Wait for cluster DNS deployment
+      ansible.builtin.command:
+        argv: [/usr/local/bin/k3s, kubectl, -n, kube-system, rollout, status, deployment/coredns, --timeout=180s]
+      register: k3s_dns_ready
+      until: k3s_dns_ready.rc == 0
+      retries: 6
+      delay: 5
+      changed_when: false
+
+    - name: Read cluster admin kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: k3s_kubeconfig
+      no_log: true
+
+    - name: Create private local artifact directory
+      ansible.builtin.file:
+        path: "{{ k3s_artifacts_dir }}"
+        state: directory
+        mode: '0700'
+      delegate_to: localhost
+      become: false
+
+    - name: Export kubeconfig with reachable endpoint
+      ansible.builtin.template:
+        src: templates/kubeconfig.yaml.j2
+        dest: "{{ k3s_artifacts_dir }}/kubeconfig.yaml"
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      no_log: true
+
+    - name: Report deployment result
+      ansible.builtin.debug:
+        msg:
+          - "Kubeconfig: {{ k3s_artifacts_dir }}/kubeconfig.yaml (cluster admin; keep private)"
+          - "Cilium status passed; Node is Ready; CoreDNS rollout passed."
+
+  handlers:
+    - name: Restart k3s
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
+        enabled: true
+        daemon_reload: true

@@ -1,0 +1,57 @@
+#cloud-config
+# Public bootstrap code/key only. No model, GitHub, registry or administrator AWS credential.
+bootcmd:
+  - |
+    /usr/bin/python3 - <<'PY'
+    from datetime import datetime, timezone
+    from pathlib import Path
+    import subprocess
+    deadline = datetime.fromisoformat('${stop_at}'.replace('Z', '+00:00'))
+    if datetime.now(timezone.utc) >= deadline:
+        subprocess.run(['systemctl', 'poweroff', '--no-block'], check=True)
+        raise SystemExit('Administrator stop deadline expired')
+    units = Path('/etc/systemd/system')
+    (units/'railshot-ci-stop.service').write_text('[Unit]\nDescription=Bounded CI VM stop\n[Service]\nType=oneshot\nExecStart=/usr/bin/systemctl poweroff\n')
+    (units/'railshot-ci-stop.timer').write_text('[Unit]\nDescription=Absolute administrator CI deadline\n[Timer]\nOnCalendar=' + deadline.strftime('%Y-%m-%d %H:%M:%S UTC') + '\nPersistent=true\nAccuracySec=1s\nUnit=railshot-ci-stop.service\n[Install]\nWantedBy=timers.target\n')
+    subprocess.run(['systemctl','daemon-reload'], check=True)
+    subprocess.run(['systemctl','enable','railshot-ci-stop.timer'], check=True)
+    subprocess.run(['systemctl','start','--no-block','railshot-ci-stop.timer'], check=True)
+    PY
+package_update: true
+packages: [ansible-core, python3-yaml, python3-jsonschema, git, curl, ca-certificates, openssh-server]
+users:
+  - default
+  - name: railshot-operator
+    lock_passwd: true
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys: ['${public_key}']
+ssh_pwauth: false
+write_files:
+  - path: /etc/ssh/sshd_config.d/40-railshot.conf
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      PermitRootLogin no
+  - path: /usr/local/sbin/railshot-ci-bootstrap
+    permissions: '0700'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      source=/opt/railshot/source-${platform_ref}
+      archive=/var/tmp/railshot-ci-source.tar.gz
+      curl --fail --location --proto '=https' --tlsv1.2 --max-time 120 \
+        https://codeload.github.com/Jasmin-Softbank/Railshot/tar.gz/${platform_ref} -o "$archive"
+      echo '${archive_sha256}  /var/tmp/railshot-ci-source.tar.gz' | sha256sum --check --status
+      test ! -e "$source"
+      install -d -m 0755 "$source"
+      tar --extract --gzip --file "$archive" --strip-components=1 --directory "$source" --no-same-owner
+      ansible-playbook -i localhost, -c local "$source/infrastructure/ansible/ci.yml"
+      install -d -m 0700 /var/lib/railshot-console /var/lib/railshot-console/docker-config
+      # Buildx registration contains no registry login. Use one fixed noncredential config.
+      DOCKER_CONFIG=/var/lib/railshot-console/docker-config docker buildx create \
+        --name railshot-ci --driver remote docker-container://railshot-buildkit
+      DOCKER_CONFIG=/var/lib/railshot-console/docker-config docker buildx inspect railshot-ci --bootstrap
+      date --utc --iso-8601=seconds > /var/lib/railshot-console/bootstrap-installed-at
+runcmd:
+  - [/usr/local/sbin/railshot-ci-bootstrap]

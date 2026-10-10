@@ -1,0 +1,4 @@
+---
+haproxy_writer_port: 5432
+haproxy_client_timeout: 1h
+haproxy_server_timeout: 1h

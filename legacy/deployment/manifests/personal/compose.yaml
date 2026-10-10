@@ -1,0 +1,40 @@
+name: railshot-personal-local
+services:
+  gateway:
+    build:
+      context: ../../..
+      dockerfile: deployment/manifests/personal/Dockerfile
+    image: railshot-personal-local:test
+    init: true
+    restart: unless-stopped
+    # NET_ADMIN controls this container's own network namespace. The remaining
+    # capabilities support root-owned files, dropping UID, and the fixed sudo call.
+    # Docker's root tini needs KILL to forward SIGTERM after its child drops UID.
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, SETUID, SETGID, CHOWN, DAC_OVERRIDE, FOWNER, KILL]
+    environment:
+      PERSONAL_GATEWAY_ENDPOINT: ${PERSONAL_GATEWAY_ENDPOINT:?set a reachable HOST:51820}
+      PERSONAL_PUBLIC_URL: ${PERSONAL_PUBLIC_URL:?set the reachable API URL}
+      PERSONAL_ARTIFACT_BASE_URL: ${PERSONAL_ARTIFACT_BASE_URL:?set the reachable artifact URL}
+      RAILSHOT_PERSONAL_TEST_ALLOW_HTTP: ${RAILSHOT_PERSONAL_TEST_ALLOW_HTTP:-0}
+      PERSONAL_RUNTIME_CONFIG_FILE: ${PERSONAL_RUNTIME_CONFIG_FILE:-}
+      RAILSHOT_PUBLIC_DEMO: "1"
+      RAILSHOT_ALLOWED_HOSTS: ${RAILSHOT_ALLOWED_HOSTS:-127.0.0.1,localhost}
+      RAILSHOT_ALLOWED_ORIGINS: ${RAILSHOT_ALLOWED_ORIGINS:-http://127.0.0.1:4183,http://localhost:4183,http://127.0.0.1:4173,http://localhost:4173}
+    ports:
+      - "${RAILSHOT_LISTEN_ADDRESS:-127.0.0.1}:${RAILSHOT_API_PORT:-4183}:4173/tcp"
+      - "${RAILSHOT_LISTEN_ADDRESS:-127.0.0.1}:4184:4184/tcp"
+      - "${RAILSHOT_LISTEN_ADDRESS:-127.0.0.1}:51820:51820/udp"
+    volumes:
+      - api-state:/var/lib/railshot
+      - gateway-config:/etc/railshot-personal-gateway
+      - gateway-state:/var/lib/railshot-personal-gateway
+      - wireguard-config:/etc/wireguard
+    tmpfs:
+      - /tmp:mode=1777
+      - /run:mode=0755
+volumes:
+  api-state:
+  gateway-config:
+  gateway-state:
+  wireguard-config:

@@ -1,0 +1,350 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "request_id",
+    "operation",
+    "target",
+    "timeout_seconds"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "operation": {
+      "enum": [
+        "guest.check",
+        "runtime.install",
+        "patroni.install"
+      ]
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "provider",
+        "placement",
+        "os",
+        "architecture",
+        "initialization"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+        },
+        "provider": {
+          "enum": [
+            "aws",
+            "gcp",
+            "openstack",
+            "onprem"
+          ]
+        },
+        "placement": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9][a-z0-9._-]*$"
+        },
+        "os": {
+          "const": "linux"
+        },
+        "architecture": {
+          "enum": [
+            "amd64",
+            "arm64"
+          ]
+        },
+        "initialization": {
+          "enum": [
+            "cloud-init",
+            "preconfigured"
+          ]
+        }
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "control_plane",
+        "workers"
+      ],
+      "properties": {
+        "control_plane": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "resource_id",
+              "private_ipv4",
+              "ssh"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+              },
+              "resource_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+              },
+              "private_ipv4": {
+                "type": "string",
+                "format": "ipv4"
+              },
+              "ssh": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "user",
+                  "port",
+                  "identity_file",
+                  "known_hosts_file"
+                ],
+                "properties": {
+                  "user": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "identity_file": {
+                    "type": "string",
+                    "pattern": "^/[A-Za-z0-9_./-]+$"
+                  },
+                  "known_hosts_file": {
+                    "type": "string",
+                    "pattern": "^/[A-Za-z0-9_./-]+$"
+                  },
+                  "transport_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^(?:ssm:[a-z]{2}(?:-[a-z]+)+-\\d:i-[a-f0-9]{8,17}|iap:[a-z][a-z0-9-]{4,61}[a-z0-9]/[a-z]+-[a-z]+[1-9][0-9]*-[a-z]/[a-z][a-z0-9-]{0,61}[a-z0-9])$",
+                    "description": "Optional operator-selected native SSH tunnel; validated against provider, placement and resource_id. No ProxyCommand."
+                  },
+                  "connect_host": {
+                    "type": "string",
+                    "format": "ipv4",
+                    "description": "Optional operator-registered RFC1918 SSH relay for OpenStack only; excludes transport_ref and retains the actual private_ipv4 as HostKeyAlias."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "workers": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "resource_id",
+              "private_ipv4",
+              "ssh"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+              },
+              "resource_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+              },
+              "private_ipv4": {
+                "type": "string",
+                "format": "ipv4"
+              },
+              "ssh": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "user",
+                  "port",
+                  "identity_file",
+                  "known_hosts_file"
+                ],
+                "properties": {
+                  "user": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                  },
+                  "identity_file": {
+                    "type": "string",
+                    "pattern": "^/[A-Za-z0-9_./-]+$"
+                  },
+                  "known_hosts_file": {
+                    "type": "string",
+                    "pattern": "^/[A-Za-z0-9_./-]+$"
+                  },
+                  "transport_ref": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256,
+                    "pattern": "^(?:ssm:[a-z]{2}(?:-[a-z]+)+-\\d:i-[a-f0-9]{8,17}|iap:[a-z][a-z0-9-]{4,61}[a-z0-9]/[a-z]+-[a-z]+[1-9][0-9]*-[a-z]/[a-z][a-z0-9-]{0,61}[a-z0-9])$",
+                    "description": "Optional operator-selected native SSH tunnel; validated against provider, placement and resource_id. No ProxyCommand."
+                  },
+                  "connect_host": {
+                    "type": "string",
+                    "format": "ipv4",
+                    "description": "Optional operator-registered RFC1918 SSH relay for OpenStack only; excludes transport_ref and retains the actual private_ipv4 as HostKeyAlias."
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "patroni": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "placements"
+      ],
+      "properties": {
+        "placements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "site",
+              "database_nodes",
+              "dcs_voters"
+            ],
+            "properties": {
+              "provider": {
+                "enum": [
+                  "aws",
+                  "gcp",
+                  "openstack",
+                  "onprem"
+                ]
+              },
+              "site": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+              },
+              "database_nodes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 31
+              },
+              "dcs_voters": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 31
+              }
+            }
+          }
+        }
+      }
+    },
+    "timeout_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 1800
+    },
+    "runtime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "wait_timeout_seconds"
+      ],
+      "properties": {
+        "wait_timeout_seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 600
+        }
+      }
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:railshot:ansible-request:1.0",
+  "title": "RAILSHOT trusted operator Ansible request",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "patroni.install"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "patroni"
+        ]
+      },
+      "else": {
+        "required": [
+          "inventory"
+        ],
+        "not": {
+          "required": [
+            "patroni"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "runtime.install"
+          }
+        }
+      },
+      "then": {},
+      "else": {
+        "not": {
+          "required": [
+            "runtime"
+          ]
+        }
+      }
+    }
+  ]
+}

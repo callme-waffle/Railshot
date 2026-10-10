@@ -1,0 +1,25 @@
+{
+  "schema_version": "1",
+  "release_version": "v0.1.0",
+  "release_tag": "airgap-bundle-v0.1.0",
+  "architecture": "arm64",
+  "bundle_version": "2026-10-02.1",
+  "manifest_sha256": "0772caa341314645645a42e0f41c39936d1ee535679bd38761fde263d6a7a0c3",
+  "runtime": {
+    "k3s_version": "v1.34.11+k3s1",
+    "cilium_version": "1.20.2",
+    "cilium_cli_version": "v0.20.1"
+  },
+  "created_at": "2026-10-02T05:36:34.585335+00:00",
+  "publication_status": "local_prepared",
+  "assets": {
+    "railshot-airgap-arm64-v0.1.0.tar.zst": {
+      "sha256": "9951caad0711cba40608eb2dabc27122723d028a4233c0d09c8a03d378b806ac",
+      "size": 747700166
+    },
+    "bundle-manifest-arm64.json": {
+      "sha256": "0772caa341314645645a42e0f41c39936d1ee535679bd38761fde263d6a7a0c3",
+      "size": 7194
+    }
+  }
+}

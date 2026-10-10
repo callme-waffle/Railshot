@@ -1,0 +1,33 @@
+---
+- name: Check existing installation ownership
+  ansible.builtin.import_tasks: guard.yml
+- name: Install database software
+  ansible.builtin.import_tasks: install.yml
+- name: Configure Patroni
+  ansible.builtin.import_tasks: configure.yml
+- name: Start all members before waiting for readiness
+  ansible.builtin.systemd_service:
+    name: patroni
+    state: started
+    enabled: true
+    daemon_reload: true
+- name: Apply configuration reloads without PostgreSQL restart
+  ansible.builtin.meta: flush_handlers
+- name: Wait for local PostgreSQL health
+  ansible.builtin.uri:
+    url: "https://{{ private_ip }}:{{ patroni_api_port }}/health"
+    ca_path: /etc/patroni/tls/api-ca.crt
+    validate_certs: true
+    status_code: 200
+  register: patroni_health
+  until: patroni_health.status | default(0) == 200
+  retries: 60
+  delay: 5
+- name: Reconcile dynamic cluster policy once
+  ansible.builtin.import_tasks: dynamic_config.yml
+  run_once: true
+- name: Report restart requirements without automatically restarting PostgreSQL
+  ansible.builtin.debug:
+    msg: >-
+      {{ inventory_hostname }} pending_restart={{ patroni_health.json.pending_restart | default(false) }}. Restart
+      requires a separate maintenance procedure.

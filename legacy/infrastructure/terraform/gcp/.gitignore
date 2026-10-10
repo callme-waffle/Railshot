@@ -1,0 +1,4 @@
+*.tfvars
+*.tfvars.json
+*.tfplan
+*.plan.json

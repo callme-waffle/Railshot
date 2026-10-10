@@ -1,0 +1,52 @@
+#cloud-config
+# Public configuration only; this content is visible in Terraform state and VM metadata.
+%{ if operator_ssh_public_key != null ~}
+users:
+  - default
+  - name: railshot-operator
+    lock_passwd: true
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - ${jsonencode(operator_ssh_public_key)}
+%{ endif ~}
+package_update: true
+packages: [e2fsprogs, util-linux]
+write_files:
+%{ if max_run_duration_seconds != null ~}
+  - path: /etc/systemd/system/railshot-runtime-limit.service
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Stop the disposable Railshot instance at its runtime limit
+      [Service]
+      Type=oneshot
+      ExecStart=/sbin/poweroff
+  - path: /etc/systemd/system/railshot-runtime-limit.timer
+    permissions: "0644"
+    content: |
+      [Unit]
+      Description=Bound each start of the disposable Railshot instance
+      [Timer]
+      OnActiveSec=${max_run_duration_seconds}s
+      AccuracySec=1s
+      [Install]
+      WantedBy=timers.target
+%{ endif ~}
+  - path: /etc/railshot/host.yml
+    permissions: "0600"
+    content: |
+      ${indent(6, host_config)}
+  - path: /usr/local/sbin/railshot-bootstrap
+    permissions: "0700"
+    content: |
+      ${indent(6, bootstrap_script)}
+  - path: /etc/railshot/bootstrap-manifest.json
+    permissions: "0600"
+    content: ${jsonencode(bootstrap_manifest)}
+runcmd:
+%{ if max_run_duration_seconds != null ~}
+  - [systemctl, daemon-reload]
+  - [systemctl, enable, --now, railshot-runtime-limit.timer]
+%{ endif ~}
+  - [bash, /usr/local/sbin/railshot-bootstrap]

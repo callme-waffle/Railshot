@@ -1,0 +1,223 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Railshot workload spec v0 (.railshot/railshot.yaml)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "apiVersion",
+    "app",
+    "services"
+  ],
+  "properties": {
+    "apiVersion": {
+      "enum": [
+        "railshot/v0",
+        "jasmin/v0"
+      ]
+    },
+    "app": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,28}[a-z0-9]$"
+    },
+    "services": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": {
+        "$ref": "#/$defs/service"
+      },
+      "contains": {
+        "required": [
+          "route"
+        ]
+      }
+    },
+    "egress": {
+      "type": "array",
+      "maxItems": 10,
+      "uniqueItems": true,
+      "description": "External HTTPS hosts the code calls at runtime (TCP 443 only). All other outbound traffic is denied.",
+      "items": {
+        "type": "string",
+        "pattern": "^(\\*\\.)?([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "postgres": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "size"
+          ],
+          "properties": {
+            "size": {
+              "enum": [
+                "small"
+              ]
+            }
+          }
+        },
+        "bucket": false
+      }
+    }
+  },
+  "$defs": {
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "build",
+        "port"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]{0,19}$"
+        },
+        "build": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dockerfile"
+          ],
+          "properties": {
+            "context": {
+              "type": "string"
+            },
+            "dockerfile": {
+              "type": "string"
+            }
+          }
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        },
+        "health": {
+          "type": "string",
+          "pattern": "^/"
+        },
+        "route": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "Path prefix on the app host. Omit for internal services."
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 20
+        },
+        "migrate": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "command"
+          ],
+          "description": "Same-image migration command checked in the ephemeral CI PostgreSQL environment. Deployment ordering and database role installation belong to the target runtime.",
+          "properties": {
+            "command": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "maxItems": 20
+            }
+          }
+        },
+        "env": {
+          "type": "object",
+          "maxProperties": 50,
+          "propertyNames": {
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 1024
+          }
+        },
+        "secrets": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          }
+        },
+        "size": {
+          "enum": [
+            "S",
+            "M",
+            "L"
+          ]
+        },
+        "strategy": {
+          "enum": [
+            "rolling"
+          ],
+          "description": "Only rolling is currently supported. Canary/bluegreen are rejected until controller, routing and analysis are installed and verified."
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "autoscaling": false,
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "mountPath",
+            "sizeGi"
+          ],
+          "properties": {
+            "mountPath": {
+              "type": "string",
+              "maxLength": 180,
+              "pattern": "^/(data(?:/[A-Za-z0-9_-]+)*|var/(lib|opt)/[A-Za-z0-9_-]+(?:/[A-Za-z0-9_-]+)*)$"
+            },
+            "sizeGi": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 10
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "services": {
+            "contains": {
+              "required": [
+                "migrate"
+              ]
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "resources"
+        ],
+        "properties": {
+          "resources": {
+            "required": [
+              "postgres"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

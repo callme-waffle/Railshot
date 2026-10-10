@@ -1,0 +1,64 @@
+---
+- name: Inspect managed identity
+  ansible.builtin.stat:
+    path: /etc/patroni/cluster-identity
+  register: patroni_identity_stat
+- name: Inspect data path without following symbolic links
+  ansible.builtin.stat:
+    path: "{{ postgres_data_dir }}"
+    follow: false
+  register: patroni_data_stat
+- name: Refuse symbolic links and non-directory data paths
+  ansible.builtin.assert:
+    that:
+      - not patroni_data_stat.stat.exists or (patroni_data_stat.stat.isdir and not patroni_data_stat.stat.islnk)
+- name: Resolve canonical data path
+  ansible.builtin.command:
+    argv: [realpath, -m, "{{ postgres_data_dir }}"]
+  register: patroni_canonical_data
+  changed_when: false
+- name: Refuse data path aliases including symbolic parent directories
+  ansible.builtin.assert:
+    that: patroni_canonical_data.stdout == postgres_data_dir
+- name: Inspect existing data directory
+  ansible.builtin.find:
+    paths: "{{ postgres_data_dir }}"
+    hidden: true
+    file_type: any
+  register: patroni_existing_data
+- name: Refuse unmanaged existing data
+  ansible.builtin.assert:
+    that:
+      - patroni_identity_stat.stat.exists or patroni_existing_data.matched == 0
+    fail_msg: Existing PostgreSQL data is not owned by this deployment; refusing initialization.
+- name: Read managed identity
+  ansible.builtin.slurp:
+    src: /etc/patroni/cluster-identity
+  register: patroni_identity
+  when: patroni_identity_stat.stat.exists
+- name: Refuse cluster rename on existing nodes
+  ansible.builtin.assert:
+    that: (patroni_identity.content | b64decode | trim) == cluster_name
+  when: patroni_identity_stat.stat.exists
+- name: Inspect existing configuration
+  ansible.builtin.stat:
+    path: /etc/patroni/patroni.yml
+  register: patroni_config_stat
+- name: Read existing configuration for credential preservation
+  ansible.builtin.slurp:
+    src: /etc/patroni/patroni.yml
+  register: patroni_previous_config
+  when: patroni_config_stat.stat.exists
+  no_log: true
+- name: Refuse implicit credential rotation or data relocation
+  ansible.builtin.assert:
+    that:
+      - previous.postgresql.authentication.superuser.password == vault_postgres_password
+      - previous.postgresql.authentication.replication.password == vault_replication_password
+      - previous.restapi.authentication.password == vault_patroni_api_password
+      - previous.postgresql.data_dir == postgres_data_dir
+    fail_msg: Credential rotation and data relocation require a separate maintenance procedure.
+  vars:
+    previous: "{{ patroni_previous_config.content | b64decode | from_yaml }}"
+  when: patroni_config_stat.stat.exists
+  no_log: true

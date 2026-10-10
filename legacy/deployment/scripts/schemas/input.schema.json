@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Railshot Deployment Input — provisional 0.1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "provider": {
+      "enum": [
+        "aws",
+        "gcp",
+        "openstack"
+      ]
+    },
+    "environment_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+    },
+    "node": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$"
+        },
+        "ssh_user": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "pattern": "^[a-z_][a-z0-9_-]*$"
+        }
+      },
+      "required": [
+        "host"
+      ],
+      "additionalProperties": false
+    },
+    "workload": {
+      "type": "object",
+      "properties": {
+        "image": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[a-z0-9][a-z0-9./:_-]*(?:@sha256:[a-f0-9]{64})?$",
+          "description": "An explicit final-component tag or full sha256 digest is required; adapter enforces cross-field semantics.",
+          "anyOf": [
+            {
+              "pattern": ":[a-z0-9_.-]+$"
+            },
+            {
+              "pattern": "@sha256:[a-f0-9]{64}$"
+            }
+          ]
+        },
+        "namespace": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+          "not": {
+            "enum": [
+              "default",
+              "kube-system",
+              "kube-public",
+              "kube-node-lease"
+            ]
+          }
+        },
+        "replicas": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "container_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "health_path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256,
+          "pattern": "^/[^\\s?#]*$"
+        },
+        "sample_content": {
+          "type": "boolean",
+          "description": "Only tagged nginx, container_port 80, health_path /; adapter checks this constraint."
+        }
+      },
+      "required": [
+        "image",
+        "namespace"
+      ],
+      "additionalProperties": false
+    },
+    "exposure": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "const": "nodeport"
+        },
+        "node_port": {
+          "type": "integer",
+          "minimum": 30000,
+          "maximum": 32767
+        },
+        "verification_url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "format": "uri",
+          "pattern": "^https?://[^\\s]+$",
+          "description": "No credentials, query or fragment; adapter checks URL semantics."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "k3s_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+\\+k3s[0-9]+$"
+        },
+        "cilium_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "cilium_cli_version": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^v[0-9]+\\.[0-9]+\\.[0-9]+$"
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 900
+        },
+        "node_ip": {
+          "type": "string",
+          "format": "ipv4"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "provider",
+    "environment_id",
+    "node",
+    "workload"
+  ],
+  "additionalProperties": false
+}

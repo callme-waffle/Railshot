@@ -1,0 +1,21 @@
+---
+- name: Explain disabled backups
+  ansible.builtin.debug:
+    msg: Backups are disabled. This deployment is not production-ready without tested external backup and recovery.
+  when: not (backup_enabled | bool)
+- name: Configure explicitly enabled local backup
+  ansible.builtin.include_tasks: configure.yml
+  when: backup_enabled | bool
+- name: Detect existing backup timer when disabling backups
+  ansible.builtin.stat:
+    path: /etc/systemd/system/jasmin-backup.timer
+  register: backup_timer_stat
+  when: not (backup_enabled | bool)
+- name: Disable existing backup schedule
+  ansible.builtin.systemd_service:
+    name: jasmin-backup.timer
+    enabled: false
+    state: stopped
+  when:
+    - not (backup_enabled | bool)
+    - backup_timer_stat.stat.exists | default(false)

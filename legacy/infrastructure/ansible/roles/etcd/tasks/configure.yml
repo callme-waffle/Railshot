@@ -1,0 +1,37 @@
+---
+- name: Install certificates
+  ansible.builtin.copy:
+    src: '{{ item.src }}'
+    dest: '{{ item.dest }}'
+    owner: etcd
+    group: etcd
+    mode: '0600'
+  loop:
+    - {src: '{{ etcd_ca_src }}', dest: /etc/etcd/tls/ca.crt}
+    - {src: '{{ etcd_cert_src }}', dest: /etc/etcd/tls/server.crt}
+    - {src: '{{ etcd_key_src }}', dest: /etc/etcd/tls/server.key}
+  no_log: true
+
+- name: Write service configuration
+  ansible.builtin.template:
+    src: etcd.yml.j2
+    dest: /etc/etcd/jasmin.yml
+    owner: root
+    group: etcd
+    mode: '0640'
+
+- name: Write service unit
+  ansible.builtin.template:
+    src: etcd.service.j2
+    dest: /etc/systemd/system/etcd.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Mark explicitly managed data directory
+  ansible.builtin.copy:
+    content: "{{ cluster_name }}\n"
+    dest: '{{ etcd_data_dir }}/.jasmin-managed'
+    owner: etcd
+    group: etcd
+    mode: '0600'

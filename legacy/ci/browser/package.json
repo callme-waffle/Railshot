@@ -1,0 +1,15 @@
+{
+  "name": "railshot-browser-check",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test *.test.mjs",
+    "install:browser": "playwright install --with-deps chromium"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

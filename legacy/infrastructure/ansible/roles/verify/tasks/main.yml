@@ -1,0 +1,100 @@
+---
+- name: Query Patroni member state over verified TLS
+  ansible.builtin.uri:
+    url: 'https://{{ private_ip }}:{{ patroni_api_port }}/patroni'
+    url_username: '{{ patroni_api_username }}'
+    url_password: '{{ vault_patroni_api_password }}'
+    force_basic_auth: true
+    validate_certs: true
+    ca_path: /etc/patroni/tls/api-ca.crt
+    return_content: true
+    status_code: 200
+  register: patroni_member_state
+  retries: 12
+  delay: 5
+  until: patroni_member_state.status | default(0) == 200
+  no_log: true
+- name: Require running database member
+  ansible.builtin.assert:
+    that:
+      - patroni_member_state.json.state == 'running'
+      - patroni_member_state.json.role in ['primary', 'master', 'replica']
+- name: Require exactly one primary in this cluster
+  ansible.builtin.assert:
+    that:
+      - >-
+        groups['db_nodes'] | map('extract', hostvars, 'patroni_member_state') |
+        map(attribute='json.role') | select('in', ['primary', 'master']) | list | length == 1
+  run_once: true
+- name: Read actual replication state
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/psql
+      - --no-psqlrc
+      - --tuples-only
+      - --no-align
+      - --dbname=postgres
+      - "--port={{ postgres_port }}"
+      - "--command=SELECT count(*) FROM pg_stat_replication WHERE state = 'streaming' AND sync_state IN ('sync', 'quorum');"
+  become: true
+  become_user: postgres
+  changed_when: false
+  register: actual_sync_replicas
+  retries: 12
+  delay: 5
+  until: replication_mode == 'asynchronous' or actual_sync_replicas.stdout | trim | int >= synchronous_node_count | int
+  when: patroni_member_state.json.role in ['primary', 'master']
+- name: Verify synchronous replicas are active
+  ansible.builtin.assert:
+    that:
+      - actual_sync_replicas.stdout | trim | int >= synchronous_node_count | int
+  when:
+    - replication_mode == 'synchronous'
+    - patroni_member_state.json.role in ['primary', 'master']
+- name: Require a single database system identifier
+  ansible.builtin.assert:
+    that:
+      - >-
+        groups['db_nodes'] | map('extract', hostvars, 'patroni_member_state') |
+        map(attribute='json.database_system_identifier') | unique | list | length == 1
+  run_once: true
+- name: Count streaming replicas on primary
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/psql
+      - --no-psqlrc
+      - --tuples-only
+      - --no-align
+      - --dbname=postgres
+      - "--port={{ postgres_port }}"
+      - "--command=SELECT count(*) FROM pg_stat_replication WHERE state = 'streaming';"
+  become: true
+  become_user: postgres
+  changed_when: false
+  register: streaming_replicas
+  retries: 12
+  delay: 5
+  until: streaming_replicas.stdout | trim | int == groups['db_nodes'] | length - 1
+  when: patroni_member_state.json.role in ['primary', 'master']
+- name: Read synchronous standby configuration on primary
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/psql
+      - --no-psqlrc
+      - --tuples-only
+      - --no-align
+      - --dbname=postgres
+      - "--port={{ postgres_port }}"
+      - --command=SHOW synchronous_standby_names;
+  become: true
+  become_user: postgres
+  changed_when: false
+  register: verify_standby_names
+  when: patroni_member_state.json.role in ['primary', 'master']
+- name: Verify asynchronous policy disables synchronous standby waiting
+  ansible.builtin.assert:
+    that:
+      - verify_standby_names.stdout | trim | length == 0
+  when:
+    - replication_mode == 'asynchronous'
+    - patroni_member_state.json.role in ['primary', 'master']

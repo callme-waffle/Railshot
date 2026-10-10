@@ -1,0 +1,46 @@
+#cloud-config
+# Public configuration only; this content is visible in Terraform state and VM metadata.
+%{ if operator_ssh_public_key != null ~}
+users:
+  - default
+  - name: railshot-operator
+    lock_passwd: true
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - ${jsonencode(operator_ssh_public_key)}
+%{ endif ~}
+# Keep package bootstrap inside the HTTPS-only host egress profile.
+apt:
+  preserve_sources_list: true
+bootcmd:
+  - |
+    /usr/bin/python3 - <<'PYBOOT'
+    from pathlib import Path
+    import re
+    paths = [Path('/etc/apt/sources.list'), *Path('/etc/apt/sources.list.d').glob('*.sources'), *Path('/etc/apt/sources.list.d').glob('*.list')]
+    for path in paths:
+        if not path.is_file():
+            continue
+        content = re.sub(r'http://[A-Za-z0-9.-]*archive\.ubuntu\.com/ubuntu', 'https://archive.ubuntu.com/ubuntu', path.read_text())
+        content = content.replace('http://security.ubuntu.com/ubuntu', 'https://security.ubuntu.com/ubuntu')
+        if re.search(r'(?m)^(?:URIs:|deb\s).*http://', content):
+            raise SystemExit('unreviewed HTTP apt source; bootstrap blocked')
+        path.write_text(content)
+    PYBOOT
+package_update: true
+packages: [e2fsprogs, util-linux]
+write_files:
+  - path: /etc/railshot/host.yml
+    permissions: "0600"
+    content: |
+      ${indent(6, host_config)}
+  - path: /usr/local/sbin/railshot-bootstrap
+    permissions: "0700"
+    content: |
+      ${indent(6, bootstrap_script)}
+  - path: /etc/railshot/bootstrap-manifest.json
+    permissions: "0600"
+    content: ${jsonencode(bootstrap_manifest)}
+runcmd:
+  - [bash, /usr/local/sbin/railshot-bootstrap]

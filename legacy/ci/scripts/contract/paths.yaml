@@ -1,0 +1,121 @@
+# Read by the L0 gate and shown to agents. gitignore-style patterns, relative to the repository root.
+version: 0
+
+# Exclusive: an attempt that touches any other path fails at L0.
+writable:
+  - Dockerfile
+  - "*.Dockerfile"
+  - "**/Dockerfile"
+  - .dockerignore
+  - "**/.dockerignore"
+  - .railshot/**
+  - .jasmin/**  # Existing uploaded specifications remain repairable; new specs use .railshot.
+
+# Never edit, rename or delete. Listed separately so the gate can give a precise error.
+protected:
+  - .github/**
+  - .gitlab-ci.yml
+  - CLAUDE.md
+  - AGENTS.md
+  - .claude/**
+  - .cursor/**
+  - .cursorrules
+  - "**/.env*"
+  - "**/*.pem"
+  - "**/*.key"
+  - "**/id_rsa*"
+  - "**/id_ed25519*"
+
+# Source scope validates these separately: existing tests stay immutable,
+# manifests accept additive setup only, and locks come from native tooling.
+packaging_protected:
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/__tests__/**"
+  - "**/*_test.*"
+  - "**/*.test.*"
+  - "**/*.spec.*"
+  - "**/test_*.py"
+  - "**/package-lock.json"
+  - "**/pnpm-lock.yaml"
+  - "**/yarn.lock"
+  - "**/uv.lock"
+  - "**/poetry.lock"
+  - "**/package.json"
+  - "**/pyproject.toml"
+  - "**/requirements*.txt"
+
+# Source edits only when a trusted operator selects --repair-scope source.
+# Existing tests are immutable; dependency manifests retain additive-only checks.
+# Uploaded workload specifications cannot grant this scope.
+source_writable:
+  - "**/package.json"
+  - "**/*.py"
+  - "**/*.js"
+  - "**/*.mjs"
+  - "**/*.cjs"
+  - "**/*.ts"
+  - "**/*.tsx"
+  - "**/*.jsx"
+  - "**/*.java"
+
+# Additional denies win over both source_writable and packaging rules.
+source_protected:
+  - "**/migrations/**"
+  - "**/migration/**"
+  - "**/*migration*"
+  - "**/*Migration*"
+  - "**/schema/**"
+  - "**/schemas/**"
+  - "**/models/**"
+  - "**/models.py"
+  - "**/schema.*"
+  - "**/prisma/**"
+  - "**/alembic/**"
+  - "**/generated/**"
+  - "**/*generated*"
+  - "**/vendor/**"
+  - "**/*.config.*"
+  - "**/tsconfig*"
+  - "**/eslint*"
+  - "**/.eslintrc*"
+  - "**/ruff*"
+  - "**/mypy*"
+  - "**/pytest*"
+  - "**/conftest.py"
+  - "**/jest*"
+  - "**/vitest*"
+  - "**/setup.py"
+  - "**/setup.cfg"
+  - "**/tox.ini"
+  - "**/pom.xml"
+  - "**/build.gradle*"
+  - "**/settings.gradle*"
+  - "**/gradle/**"
+  - "**/.mvn/**"
+  - "**/*.lock"
+  - "**/*lockfile*"
+  - "**/policy/**"
+  - "**/policies/**"
+  - "**/contract/**"
+  - "**/fixtures/**"
+
+limits:
+  max_files_changed: 8
+  max_patch_bytes: 20000
+  delete_files: true
+  binary_files: false
+  symlinks: false
+
+# Regular expressions matched against added lines of the patch.
+forbidden_patterns:
+  - '\|\|\s*true\b'
+  - '\bexit\s+0\b'
+  - '(pytest\.skip|unittest\.skip|it\.skip|describe\.skip|xit\(|@Disabled)'
+  - '(?i:\b(?:test|it|describe)\.(?:skip|todo|only)\b|passWithNoTests|--if-present|--test-name-pattern|testPathIgnorePatterns|coveragePathIgnorePatterns)'
+  - '--no-verify'
+  - 'trivyignore'
+  - '(curl|wget)[^|\n]*\|\s*(ba)?sh'
+  - 'chmod\s+(-R\s+)?777'
+  - '(?i:noqa|eslint-disable|@ts-ignore|@ts-nocheck|type\s*:\s*ignore|mypy\s*:\s*ignore|ruff\s*:\s*noqa)'
+  - '(?i:@SuppressWarnings|NOSONAR|noinspection|checkstyle\s*:\s*off|pmd\s*:\s*ignore)'

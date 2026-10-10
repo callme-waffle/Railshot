@@ -1,0 +1,221 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ReadEdgeRegion",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeTags",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeNetworkInterfaces",
+        "ec2:DescribeNetworkInterfaceAttribute",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeRouteTables",
+        "ec2:DescribeVpcAttribute",
+        "elasticloadbalancing:DescribeLoadBalancers",
+        "elasticloadbalancing:DescribeLoadBalancerAttributes",
+        "elasticloadbalancing:DescribeListeners",
+        "elasticloadbalancing:DescribeListenerAttributes",
+        "elasticloadbalancing:DescribeListenerCertificates",
+        "elasticloadbalancing:DescribeRules",
+        "elasticloadbalancing:DescribeTargetGroups",
+        "elasticloadbalancing:DescribeTargetGroupAttributes",
+        "elasticloadbalancing:DescribeTargetHealth",
+        "elasticloadbalancing:DescribeTags"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "ReadOwnedCertificates",
+      "Effect": "Allow",
+      "Action": [
+        "acm:DescribeCertificate",
+        "acm:ListTagsForCertificate"
+      ],
+      "Resource": [
+        "arn:aws:acm:ap-northeast-2:721622471953:certificate/a95e8486-4e40-4d51-a257-69660d95b65a",
+        "arn:aws:acm:ap-northeast-2:721622471953:certificate/dc42609f-63eb-4336-b05f-b04ff2671968"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "ReadOwnedZone",
+      "Effect": "Allow",
+      "Action": [
+        "route53:GetHostedZone",
+        "route53:ListResourceRecordSets",
+        "route53:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/Z01500273BKOZ113O8L34"
+    },
+    {
+      "Sid": "WaitDnsChange",
+      "Effect": "Allow",
+      "Action": "route53:GetChange",
+      "Resource": "arn:aws:route53:::change/*"
+    },
+    {
+      "Sid": "CreateDeleteAppAlias",
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::hostedzone/Z01500273BKOZ113O8L34",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "route53:ChangeResourceRecordSetsRecordTypes": [
+            "A"
+          ],
+          "route53:ChangeResourceRecordSetsActions": [
+            "CREATE",
+            "DELETE"
+          ]
+        },
+        "ForAllValues:StringLike": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": [
+            "*-????????????.railshot.io"
+          ]
+        },
+        "Null": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "false",
+          "route53:ChangeResourceRecordSetsRecordTypes": "false",
+          "route53:ChangeResourceRecordSetsActions": "false"
+        }
+      }
+    },
+    {
+      "Sid": "NewAppTargetGroups",
+      "Effect": "Allow",
+      "Action": [
+        "elasticloadbalancing:CreateTargetGroup",
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:DeleteTargetGroup"
+      ],
+      "Resource": "arn:aws:elasticloadbalancing:ap-northeast-2:721622471953:targetgroup/rsapp-*/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "NewHostRule",
+      "Effect": "Allow",
+      "Action": "elasticloadbalancing:CreateRule",
+      "Resource": "arn:aws:elasticloadbalancing:ap-northeast-2:721622471953:listener/app/railshot-apps/4363b7c639aaab7e/a3dee055c140eb3d",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "DeleteAppHostRule",
+      "Effect": "Allow",
+      "Action": "elasticloadbalancing:DeleteRule",
+      "Resource": "arn:aws:elasticloadbalancing:ap-northeast-2:721622471953:listener-rule/app/railshot-apps/4363b7c639aaab7e/a3dee055c140eb3d/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "AddExactAlbEgress",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupEgress"
+      ],
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:security-group/sg-0716e6b46f1a845f4",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:Vpc": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206"
+        }
+      }
+    },
+    {
+      "Sid": "AddRegisteredNodePortIngress",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupIngress"
+      ],
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:721622471953:security-group/sg-02925a97753d8d3e9",
+        "arn:aws:ec2:ap-northeast-2:721622471953:security-group/sg-0ad2a18168c4eac2b"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:Vpc": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206"
+        }
+      }
+    },
+    {
+      "Sid": "AddOwnedNodePortIngress",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:RevokeSecurityGroupIngress"
+      ],
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:ResourceTag/ProjectOwner": "railshot-product",
+          "ec2:Vpc": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206"
+        },
+        "StringLike": {
+          "ec2:ResourceTag/Target": "?*"
+        }
+      }
+    },
+    {
+      "Sid": "AddRegisteredGcpRoute",
+      "Effect": "Allow",
+      "Action": "ec2:CreateRoute",
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:721622471953:route-table/rtb-0bc498243a6f73e04"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "PreserveBootstrapTargets",
+      "Effect": "Deny",
+      "Action": [
+        "elasticloadbalancing:ModifyTargetGroupAttributes",
+        "elasticloadbalancing:RegisterTargets",
+        "elasticloadbalancing:DeregisterTargets",
+        "elasticloadbalancing:DeleteTargetGroup"
+      ],
+      "Resource": [
+        "arn:aws:elasticloadbalancing:ap-northeast-2:721622471953:targetgroup/rsapp-20261002031059839700000002/daee084561348566",
+        "arn:aws:elasticloadbalancing:ap-northeast-2:721622471953:targetgroup/rsapp-20261002032235187500000001/6310b5cb96b9b4fc",
+        "arn:aws:elasticloadbalancing:ap-northeast-2:721622471953:targetgroup/rsapp-20261002035846096300000001/93fb74da23e15a6b",
+        "arn:aws:elasticloadbalancing:ap-northeast-2:721622471953:targetgroup/rsapp-20261002110309953700000001/b0e53918c8d1e5a7"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+# Install root:root 0755 at /usr/local/sbin/railshot-personal-gateway.
+# Neither the API caller nor its JSON request can select code/configuration.
+set -eu
+[ "$#" -eq 2 ] && [ "$1" = '--request' ] || exit 64
+exec /usr/bin/python3 /opt/railshot/deployment/scripts/personal_wireguard.py \
+  --config /etc/railshot-personal-gateway/config.json --request "$2"

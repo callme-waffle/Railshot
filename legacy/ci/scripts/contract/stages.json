@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "layers": {
+    "L0": "package.policy",
+    "L1": "package.spec",
+    "Q": "source.quality",
+    "L2": "image.build",
+    "L3": "image.runtime",
+    "L4": "image.scan"
+  },
+  "stages": {
+    "source.prepare": {
+      "owner": "intake",
+      "completion": "sanitized source snapshot",
+      "replay": "verify_snapshot",
+      "repair": "operator"
+    },
+    "package.prepare": {
+      "owner": "adapter",
+      "completion": "validated packaging proposal applied",
+      "replay": "reuse_receipt",
+      "repair": "packaging",
+      "investigation": [
+        "Inspect existing build/run instructions and packaging files.",
+        "Propose the smallest container configuration preserving application behavior."
+      ]
+    },
+    "package.policy": {
+      "owner": "gate",
+      "completion": "allowed source changes",
+      "replay": "repeat_read",
+      "repair": "packaging",
+      "investigation": [
+        "Inspect rejected paths and the named policy violation.",
+        "Correct only the proposed packaging changes; do not weaken policy or tests."
+      ]
+    },
+    "package.spec": {
+      "owner": "gate",
+      "completion": "valid application specification",
+      "replay": "repeat_read",
+      "repair": "packaging",
+      "investigation": [
+        "Inspect the spec validation result and referenced service fields.",
+        "Align the spec with observed app entrypoint, port and health path."
+      ]
+    },
+    "source.quality": {
+      "owner": "gate",
+      "completion": "quality observation",
+      "replay": "repeat_isolated",
+      "repair": "none"
+    },
+    "image.build": {
+      "owner": "gate",
+      "completion": "immutable local image identifiers",
+      "replay": "verify_images",
+      "repair": "configured_scope",
+      "investigation": [
+        "Start with the failed build process and Dockerfile.",
+        "Read only manifests or source ranges referenced by that failure; distinguish app failure from environment failure."
+      ]
+    },
+    "image.runtime": {
+      "owner": "gate",
+      "completion": "HTTP check for the exact image identifiers",
+      "replay": "repeat_isolated",
+      "repair": "configured_scope",
+      "investigation": [
+        "Start with container exit, health response and runtime process logs.",
+        "Inspect startup command, listen address, port, health path and referenced source ranges."
+      ]
+    },
+    "image.scan": {
+      "owner": "gate",
+      "completion": "scan result for the exact images",
+      "replay": "repeat_isolated",
+      "repair": "packaging",
+      "investigation": [
+        "Start with the structured scan finding and affected image dependency.",
+        "Inspect the Dockerfile dependency choice without weakening the scan."
+      ]
+    },
+    "bundle.export": {
+      "owner": "bundle",
+      "completion": "verified image archive and source binding",
+      "replay": "verify_artifact",
+      "repair": "operator"
+    },
+    "image.publish": {
+      "owner": "publisher",
+      "completion": "registry digest readback",
+      "replay": "reconcile_remote",
+      "repair": "operator"
+    },
+    "gitops.write": {
+      "owner": "bridge",
+      "completion": "manifest commit present in registered remote branch",
+      "replay": "reconcile_remote",
+      "repair": "operator"
+    },
+    "argo.sync": {
+      "owner": "argo",
+      "completion": "requested revision applied by Argo",
+      "replay": "reconcile_remote",
+      "repair": "operator"
+    },
+    "public.observe": {
+      "owner": "observer",
+      "completion": "target workload and public HTTP verified",
+      "replay": "repeat_read",
+      "repair": "operator"
+    }
+  }
+}

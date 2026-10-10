@@ -1,0 +1,24 @@
+{
+  "request_id": "db-plan-001",
+  "target_id": "db-onprem",
+  "operation": "database.configure",
+  "parameters": {
+    "mode": "standalone",
+    "nodes": [
+      {
+        "target_id": "db-onprem",
+        "roles": [
+          "database"
+        ]
+      }
+    ],
+    "placements": [
+      {
+        "provider": "openstack",
+        "site": "onprem-a",
+        "database_nodes": 1,
+        "dcs_voters": 0
+      }
+    ]
+  }
+}

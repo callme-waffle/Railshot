@@ -1,0 +1,4 @@
+# Bootstrap encryption dependency; OpenStackClient is supplied by the customer node.
+cryptography==50.0.2
+# Read-only clouds.yaml endpoint discovery; values are never sourced or executed.
+PyYAML==6.0.3

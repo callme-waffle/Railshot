@@ -1,0 +1,43 @@
+# Official openstack-cinder-csi chart 2.34.0; credentials are provisioned separately.
+clusterID: railshot-k3s-openstack
+
+secret:
+  enabled: true
+  hostMount: false
+  create: false
+  name: railshot-cinder-csi-cloud-config
+  filename: cloud.conf
+
+csi:
+  plugin:
+    image:
+      tag: v1.34.0
+    # Use the existing Secret for cloud.conf and any private CA, not a host CA path.
+    volumes: []
+    volumeMounts:
+      - name: cloud-config
+        mountPath: /etc/config
+        readOnly: true
+    controllerPlugin:
+      nodeSelector:
+        kubernetes.io/hostname: railshot-openstack-runtime-01
+    nodePlugin:
+      nodeSelector:
+        kubernetes.io/hostname: railshot-openstack-runtime-01
+
+storageClass:
+  enabled: false
+  custom: |-
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: railshot-cinder
+      annotations:
+        storageclass.kubernetes.io/is-default-class: "true"
+    provisioner: cinder.csi.openstack.org
+    reclaimPolicy: Delete
+    volumeBindingMode: WaitForFirstConsumer
+    allowVolumeExpansion: true
+    parameters:
+      type: lvmdriver-1
+      csi.storage.k8s.io/fstype: ext4

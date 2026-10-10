@@ -1,0 +1,23 @@
+name: {{ inventory_hostname | to_json }}
+data-dir: {{ etcd_data_dir | to_json }}
+listen-client-urls: "https://{{ private_ip }}:2379"
+advertise-client-urls: "https://{{ private_ip }}:2379"
+listen-peer-urls: "https://{{ private_ip }}:2380"
+initial-advertise-peer-urls: "https://{{ private_ip }}:2380"
+initial-cluster: "{% for node in groups['etcd_nodes'] | sort %}{{ node }}=https://{{ hostvars[node].private_ip }}:2380{{ ',' if not loop.last else '' }}{% endfor %}"
+initial-cluster-token: {{ (cluster_name ~ '-etcd') | to_json }}
+# Bootstrap flags are ignored once this member has initialized its data directory.
+initial-cluster-state: new
+strict-reconfig-check: true
+# Patroni uses the v3 JSON API; etcd 3.4 config-file defaults disable this gateway.
+enable-grpc-gateway: true
+client-transport-security:
+  cert-file: /etc/etcd/tls/server.crt
+  key-file: /etc/etcd/tls/server.key
+  trusted-ca-file: /etc/etcd/tls/ca.crt
+  client-cert-auth: true
+peer-transport-security:
+  cert-file: /etc/etcd/tls/server.crt
+  key-file: /etc/etcd/tls/server.key
+  trusted-ca-file: /etc/etcd/tls/ca.crt
+  client-cert-auth: true

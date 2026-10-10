@@ -1,0 +1,5 @@
+project_id          = "railshot-poc-20261001"
+zone                = "asia-northeast3-a"
+instance_name       = "railshot-gcp-poc"
+expected_private_ip = "10.66.0.2"
+hostname            = "your-app.example.com"

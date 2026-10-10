@@ -1,0 +1,367 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DescribeRegisteredRegion",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeImages",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceAttribute",
+        "ec2:DescribeInstanceCreditSpecifications",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeVolumesModifications",
+        "ec2:DescribeTags",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeNetworkInterfaces"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "CreateOwnedSecurityGroups",
+      "Effect": "Allow",
+      "Action": "ec2:CreateSecurityGroup",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "aws:RequestTag/ProjectOwner": "railshot-product"
+        },
+        "StringLike": {
+          "aws:RequestTag/Target": "?*"
+        }
+      }
+    },
+    {
+      "Sid": "CreateSecurityGroupsInRegisteredVpc",
+      "Effect": "Allow",
+      "Action": "ec2:CreateSecurityGroup",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "ConfigureOwnedSecurityGroups",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AuthorizeSecurityGroupIngress",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:RevokeSecurityGroupEgress"
+      ],
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:ResourceTag/ProjectOwner": "railshot-product",
+          "ec2:Vpc": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206"
+        },
+        "StringLike": {
+          "ec2:ResourceTag/Target": "?*"
+        }
+      }
+    },
+    {
+      "Sid": "RunWithRegisteredImageAndSubnet",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2::image/ami-0d222b26b6fb4eeed",
+        "arn:aws:ec2:ap-northeast-2:721622471953:subnet/subnet-00e5994c429f074d8"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "RunWithExistingTransportGroup",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:security-group/sg-0ad2a18168c4eac2b",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:Vpc": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206"
+        }
+      }
+    },
+    {
+      "Sid": "RunWithOwnedSecurityGroups",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:security-group/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:ResourceTag/ProjectOwner": "railshot-product",
+          "ec2:Vpc": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206"
+        },
+        "StringLike": {
+          "ec2:ResourceTag/Target": "?*"
+        }
+      }
+    },
+    {
+      "Sid": "RunOwnedInstances",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "aws:RequestTag/ProjectOwner": "railshot-product",
+          "ec2:InstanceType": "t3.large",
+          "ec2:InstanceProfile": "arn:aws:iam::721622471953:instance-profile/railshot-user-aws-node",
+          "ec2:MetadataHttpTokens": "required",
+          "ec2:MetadataHttpEndpoint": "enabled"
+        },
+        "StringLike": {
+          "aws:RequestTag/Target": "?*"
+        },
+        "NumericEquals": {
+          "ec2:MetadataHttpPutResponseHopLimit": "1"
+        }
+      }
+    },
+    {
+      "Sid": "RunOwnedRootVolumes",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:volume/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "aws:RequestTag/ProjectOwner": "railshot-product",
+          "ec2:VolumeType": "gp3",
+          "ec2:AvailabilityZone": "ap-northeast-2a"
+        },
+        "StringLike": {
+          "aws:RequestTag/Target": "?*"
+        },
+        "Bool": {
+          "ec2:Encrypted": "true"
+        },
+        "NumericEquals": {
+          "ec2:VolumeSize": "30"
+        }
+      }
+    },
+    {
+      "Sid": "RunNetworkInterfacesInRegisteredSubnet",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:network-interface/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:Vpc": "arn:aws:ec2:ap-northeast-2:721622471953:vpc/vpc-085e5a8268cf2b206",
+          "ec2:Subnet": "arn:aws:ec2:ap-northeast-2:721622471953:subnet/subnet-00e5994c429f074d8"
+        }
+      }
+    },
+    {
+      "Sid": "CreateOwnedDataVolumes",
+      "Effect": "Allow",
+      "Action": "ec2:CreateVolume",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:volume/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "aws:RequestTag/ProjectOwner": "railshot-product",
+          "ec2:VolumeType": "gp3",
+          "ec2:AvailabilityZone": "ap-northeast-2a"
+        },
+        "StringLike": {
+          "aws:RequestTag/Target": "?*"
+        },
+        "Bool": {
+          "ec2:Encrypted": "true"
+        },
+        "NumericEquals": {
+          "ec2:VolumeSize": "20"
+        }
+      }
+    },
+    {
+      "Sid": "AttachOwnedVolumesToOwnedInstances",
+      "Effect": "Allow",
+      "Action": "ec2:AttachVolume",
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:721622471953:volume/*",
+        "arn:aws:ec2:ap-northeast-2:721622471953:instance/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ec2:ResourceTag/ProjectOwner": "railshot-product"
+        },
+        "StringLike": {
+          "ec2:ResourceTag/Target": "?*"
+        }
+      }
+    },
+    {
+      "Sid": "TagOnlyDuringApprovedCreation",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": [
+        "arn:aws:ec2:ap-northeast-2:721622471953:instance/*",
+        "arn:aws:ec2:ap-northeast-2:721622471953:volume/*",
+        "arn:aws:ec2:ap-northeast-2:721622471953:security-group/*",
+        "arn:aws:ec2:ap-northeast-2:721622471953:network-interface/*"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "aws:RequestTag/ProjectOwner": "railshot-product",
+          "ec2:CreateAction": [
+            "RunInstances",
+            "CreateSecurityGroup",
+            "CreateVolume"
+          ]
+        },
+        "StringLike": {
+          "aws:RequestTag/Target": "?*"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": [
+            "ProjectOwner",
+            "Target",
+            "Project",
+            "ManagedBy",
+            "Name",
+            "Retention"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "PassOnlyExistingCustomerNodeRole",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::721622471953:role/railshot-user-aws-node",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ec2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "ReadSsmExecutionStatus",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:DescribeInstanceInformation",
+        "ssm:GetCommandInvocation"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "RunHostEnrollmentOnOwnedInstances",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ssm:resourceTag/ProjectOwner": "railshot-product"
+        },
+        "StringLike": {
+          "ssm:resourceTag/Target": "?*"
+        }
+      }
+    },
+    {
+      "Sid": "UseFixedEnrollmentDocument",
+      "Effect": "Allow",
+      "Action": "ssm:SendCommand",
+      "Resource": "arn:aws:ssm:ap-northeast-2::document/AWS-RunShellScript",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "StartForwardingOnOwnedInstances",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:ap-northeast-2:721622471953:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ssm:resourceTag/ProjectOwner": "railshot-product"
+        },
+        "StringLike": {
+          "ssm:resourceTag/Target": "?*"
+        },
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
+        }
+      }
+    },
+    {
+      "Sid": "UseFixedForwardingDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:ap-northeast-2::document/AWS-StartPortForwardingSession",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "TerminateOnlyOwnSessions",
+      "Effect": "Allow",
+      "Action": "ssm:TerminateSession",
+      "Resource": "arn:aws:ssm:ap-northeast-2:721622471953:session/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-northeast-2",
+          "ssm:resourceTag/aws:ssmmessages:session-id": "${aws:userid}"
+        }
+      }
+    },
+    {
+      "Sid": "ReadExactPricingOperation",
+      "Effect": "Allow",
+      "Action": "pricing:GetProducts",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    },
+    {
+      "Sid": "ReadAccountBillingSnapshot",
+      "Effect": "Allow",
+      "Action": "ce:GetCostAndUsage",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    }
+  ]
+}

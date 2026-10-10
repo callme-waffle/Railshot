@@ -1,0 +1,9 @@
+# GCP application storage
+
+`gcp-app-storage.yaml` pins Rancher Local Path Provisioner v0.0.37 and BusyBox 1.37.0. It installs `railshot-persistent` only on `railshot-gcp-poc`, with delayed binding, local PVs and Delete reclamation. The storage root is `/var/lib/rancher/railshot-volumes` on the already attached, retained GCP data disk. It does not use the VM boot disk or change Cilium, K3s, or an external database.
+
+Run `sudo python3 deployment/scripts/install-app-storage.py --manifest deployment/manifests/gcp-app-storage.yaml` on the reviewed node. The installer requires the dedicated ext4 mount and checks ownership before applying. Do not enable K3s's separate local-storage addon for the same class. Inspect the provisioner rollout, then test a namespace-owned PVC with a consuming Pod; delayed binding requires a Pod. Verify a write survives Pod replacement and that deleting the disposable PVC cleans up its PV and data directory.
+
+Applications declare one `storage` mount, 1–10 GiB, and one replica. The platform uses Recreate updates and UID/GID 65532. SQLite files and attachments stay together on that volume. Stop/start and updates preserve the claim; permanent app deletion deletes it and its directory. An app has no hostPath access or permission to select another storage class. CI uses isolated temporary storage at the same declared path; only target verification proves persistence.
+
+This is storage for a single-node runtime. It survives Pod/container replacement and VM reboot. The attached GCP disk is retained when the VM is deleted, but reattaching/recovering it requires the operator. Local Path does not enforce the requested capacity as a filesystem quota, and this setup does not add replication or backups. Monitor free space on the 20 GiB disk shared with K3s. The upstream source and limitations are documented at https://github.com/rancher/local-path-provisioner/tree/v0.0.37 .

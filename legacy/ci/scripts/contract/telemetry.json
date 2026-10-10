@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "retention_days": 7,
+  "max_events": 240,
+  "outcomes": ["RUNNING", "PASS", "FAIL", "BLOCKED", "UNKNOWN", "NOT_RUN", "INCOMPLETE"],
+  "severity_numbers": {"INFO": 9, "WARN": 13, "ERROR": 17},
+  "error_categories": {
+    "GATE_CHECK_FAILED": "check",
+    "GATE_CONFIG_INVALID": "configuration",
+    "GATE_ENVIRONMENT_UNAVAILABLE": "platform",
+    "GATE_EVIDENCE_MISMATCH": "evidence",
+    "OBSERVATION_WRITE_FAILED": "telemetry",
+    "CI_DISPATCH_UNCONFIRMED": "dispatch",
+    "SOURCE_REGISTRATION_FAILED": "source_registration",
+    "CI_FAILED": "check",
+    "PUBLICATION_UNVERIFIED": "publication",
+    "PUBLISH_OUTCOME_UNKNOWN": "publication",
+    "CD_CONFIG_INVALID": "configuration",
+    "CD_RECONCILE_REQUIRED": "reconciliation",
+    "CD_BRIDGE_INPUT_INVALID": "configuration",
+    "CD_APPLY_BLOCKED": "configuration",
+    "CD_APPLY_UNKNOWN": "reconciliation",
+    "CD_OUTCOME_UNKNOWN": "reconciliation",
+    "CD_UNVERIFIED": "reconciliation",
+    "CLASSIFICATION_UNAVAILABLE": "classification"
+  },
+  "classification_rubric": "railshot-cause-v1",
+  "candidates": {
+    "source": "Application syntax, type, missing source module or application exception demonstrated by diagnostics.",
+    "dependency": "Dependency version, lockfile mismatch, resolution conflict or unavailable package; not a transport or DNS error.",
+    "packaging": "Docker build context, COPY, entrypoint, listening port, bind address or health path configuration.",
+    "configuration": "Invalid application specification, missing configured secret reference or permission configuration.",
+    "platform": "Runner, builder, DNS, network transport, registry or platform service failure.",
+    "resource": "Resource exhaustion supported by evidence such as OOMKilled or no space left; exit 137 alone is insufficient.",
+    "database": "Database connectivity, authentication, schema or migration failure supported by database evidence.",
+    "unknown": "Evidence is absent, contradictory or insufficient to distinguish a cause; none of the other categories is supported."
+  },
+  "actions": {
+    "source": "참조된 파일·행과 오류를 확인하고 소스를 수정한 뒤 다시 검사하세요.",
+    "dependency": "의존성 선언과 lockfile을 확인하고 해당 패키지 관리자로 갱신한 뒤 다시 검사하세요.",
+    "packaging": "빌드 경로·시작 명령·포트·헬스 경로를 확인하세요.",
+    "configuration": "필수 설정과 secret 참조를 확인하세요. 비밀값을 로그에 넣지 마세요.",
+    "platform": "운영자가 실행기·네트워크·레지스트리 상태를 확인해야 합니다.",
+    "resource": "확인된 메모리·디스크 증거와 사용량을 점검하세요.",
+    "database": "DB 연결과 migration 결과·부작용을 확인한 뒤 재실행 여부를 결정하세요.",
+    "unknown": "원인을 확정할 근거가 부족합니다. 누락된 진단을 먼저 확인하세요."
+  }
+}

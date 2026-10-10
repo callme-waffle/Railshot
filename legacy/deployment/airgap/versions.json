@@ -1,0 +1,15 @@
+{
+  "policy_version": "2026-10-02.1",
+  "runtime": {
+    "k3s_version": "v1.34.11+k3s1",
+    "cilium_version": "1.20.2",
+    "cilium_cli_version": "v0.20.1"
+  },
+  "cilium_images": {
+    "agent": "quay.io/cilium/cilium@sha256:2939231d0d3e3ebddcd80fffa168b7ddcc78fdf0dc864d1c8c126ff523c54f01",
+    "operator": "quay.io/cilium/operator-generic@sha256:64d8798350e8569b8e7622563fed6e44dce2625f311e4651b774816516c744fc",
+    "envoy": "quay.io/cilium/cilium-envoy@sha256:af7382699576b9e65e9184efa52eeca0b58aea70ad6e511bf260c91d9f740463"
+  },
+  "health_image": "curlimages/curl:8.12.1",
+  "sample_image": "nginx:1.28.0-alpine"
+}

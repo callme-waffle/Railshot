@@ -1,0 +1,66 @@
+---
+- name: Require cluster topology and valid policy
+  ansible.builtin.assert:
+    that:
+      - cluster_name is defined
+      - cluster_name | default('') is match('^[a-z][a-z0-9-]{0,62}$')
+      - groups.get('db_nodes', []) | length >= 2
+      - groups.get('etcd_nodes', []) | length >= 3
+      - groups.get('etcd_nodes', []) | length % 2 == 1
+      - groups.get('proxy_nodes', []) | length >= 1
+      - replication_mode in ['synchronous', 'asynchronous']
+      - synchronous_mode_strict is boolean
+      - synchronous_node_count | int >= 1
+      - synchronous_node_count | int < groups.get('db_nodes', []) | length
+      - postgres_version | string == '16'
+      - postgres_port | int == 5432
+      - patroni_api_port | int == 8008
+      - patroni_api_username == 'patroni'
+      - postgres_data_dir is match('^/var/lib/postgresql/[^.]+$')
+      - private_ip is defined
+      - private_ip | default('') | length > 0
+      - site is defined
+      - site | default('') | length > 0
+      - client_cidrs is defined
+      - client_cidrs | default([]) is sequence
+      - client_cidrs | default([]) is not string
+      - client_cidrs | default([]) | length > 0
+      - backup_enabled is boolean
+    fail_msg: Invalid topology, required input, or replication policy. See docs/api/deployment-inputs.md.
+- name: Reject duplicate private addresses
+  ansible.builtin.assert:
+    that:
+      - >-
+        (groups['db_nodes'] + groups['etcd_nodes'] + groups['proxy_nodes']) | unique | map('extract', hostvars, 'private_ip') | list | length ==
+        (groups['db_nodes'] + groups['etcd_nodes'] + groups['proxy_nodes']) | unique | map('extract', hostvars, 'private_ip') | unique | list | length
+- name: Require supplied secrets without printing values
+  ansible.builtin.assert:
+    that:
+      - item is string
+      - item | length >= 16
+      - item != 'REPLACE_ME'
+  loop:
+    - '{{ vault_postgres_password | default("") }}'
+    - '{{ vault_replication_password | default("") }}'
+    - '{{ vault_patroni_api_password | default("") }}'
+  no_log: true
+- name: Require backup repository when enabled
+  ansible.builtin.assert:
+    that:
+      - pgbackrest_repo_path | default('') is match('^/mnt/[^.]+$')
+      - retention_full | int >= 1
+  when: backup_enabled
+- name: Validate IPv4 addresses and allowed client networks on controller
+  ansible.builtin.command:
+    argv:
+      - '{{ ansible_playbook_python }}'
+      - -c
+      - >-
+        import ipaddress,json,sys;
+        ipaddress.IPv4Address(sys.argv[1]);
+        [ipaddress.IPv4Network(n,strict=False) for n in json.loads(sys.argv[2])]
+      - '{{ private_ip }}'
+      - '{{ client_cidrs | to_json }}'
+  delegate_to: localhost
+  become: false
+  changed_when: false

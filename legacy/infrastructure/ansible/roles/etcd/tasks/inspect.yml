@@ -1,0 +1,124 @@
+---
+- name: Require complete odd member inventory and TLS sources
+  ansible.builtin.assert:
+    that:
+      - groups['etcd_nodes'] | length >= 3
+      - groups['etcd_nodes'] | length % 2 == 1
+      - ansible_play_hosts_all | sort == groups['etcd_nodes'] | sort
+      - etcd_ca_src | default('') | length > 0
+      - etcd_cert_src | default('') | length > 0
+      - etcd_key_src | default('') | length > 0
+    fail_msg: Run etcd against its complete inventory, using an odd count of at least three members and per-node TLS sources.
+
+- name: Inspect member state
+  ansible.builtin.stat:
+    path: '{{ etcd_data_dir }}/member'
+  register: etcd_member_state
+
+- name: Inspect ownership marker
+  ansible.builtin.stat:
+    path: '{{ etcd_data_dir }}/.jasmin-managed'
+  register: etcd_owner_state
+
+- name: Read existing ownership marker
+  ansible.builtin.slurp:
+    src: '{{ etcd_data_dir }}/.jasmin-managed'
+  register: etcd_owner_content
+  when: etcd_owner_state.stat.exists
+
+- name: Reject another cluster ownership
+  ansible.builtin.assert:
+    that:
+      - etcd_owner_content.content | b64decode | trim == cluster_name
+    fail_msg: The existing data directory belongs to a different cluster.
+  when: etcd_owner_state.stat.exists
+
+- name: Inspect services before adopting an existing installation
+  ansible.builtin.service_facts:
+
+- name: Reject a running unmanaged etcd service
+  ansible.builtin.assert:
+    that:
+      - etcd_owner_state.stat.exists or (ansible_facts.services.get('etcd.service', {}).get('state', '') != 'running')
+    fail_msg: A running unmanaged etcd instance must not be adopted by the installation role.
+
+- name: Inspect distribution default data locations
+  ansible.builtin.stat:
+    path: '{{ item }}'
+  loop:
+    - /var/lib/etcd/member
+    - /var/lib/etcd/default/member
+    - /var/lib/etcd/default.etcd/member
+  register: etcd_foreign_data
+
+- name: Reject foreign initialized data
+  ansible.builtin.assert:
+    that:
+      - not item.stat.exists
+    fail_msg: Distribution default etcd data exists. Explicit migration is required.
+  loop: '{{ etcd_foreign_data.results }}'
+  loop_control:
+    label: '{{ item.item }}'
+
+- name: Reject unowned data or mixed fresh and existing members
+  ansible.builtin.assert:
+    that:
+      - not etcd_member_state.stat.exists or etcd_owner_state.stat.exists
+      - >-
+        groups['etcd_nodes'] | map('extract', hostvars, ['etcd_member_state', 'stat', 'exists']) | unique | length == 1
+    fail_msg: >-
+      Existing foreign data or mixed member state requires explicit recovery/member replacement.
+      This role never wipes or adds members automatically.
+
+- name: Read installed service description for naming compatibility
+  ansible.builtin.slurp:
+    src: /etc/systemd/system/etcd.service
+  register: etcd_installed_service
+  when: etcd_member_state.stat.exists
+
+- name: Preserve only the legacy display label on initialized members
+  ansible.builtin.set_fact:
+    etcd_legacy_service_description: >-
+      {{ etcd_member_state.stat.exists and
+         'Description=Jasmin managed etcd' in
+         (etcd_installed_service.content | default('') | b64decode).splitlines() }}
+
+- name: Detect existing configuration changes without writing
+  ansible.builtin.template:
+    src: '{{ item.src }}'
+    dest: '{{ item.dest }}'
+    owner: root
+    group: '{{ item.group }}'
+    mode: '{{ item.mode }}'
+  loop:
+    - {src: etcd.yml.j2, dest: /etc/etcd/jasmin.yml, group: etcd, mode: '0640'}
+    - {src: etcd.service.j2, dest: /etc/systemd/system/etcd.service, group: root, mode: '0644'}
+  check_mode: true
+  diff: false
+  register: etcd_config_probe
+  when: etcd_member_state.stat.exists
+
+- name: Detect certificate rotation without writing
+  ansible.builtin.copy:
+    src: '{{ item.src }}'
+    dest: '{{ item.dest }}'
+    owner: etcd
+    group: etcd
+    mode: '0600'
+  loop:
+    - {src: '{{ etcd_ca_src }}', dest: /etc/etcd/tls/ca.crt}
+    - {src: '{{ etcd_cert_src }}', dest: /etc/etcd/tls/server.crt}
+    - {src: '{{ etcd_key_src }}', dest: /etc/etcd/tls/server.key}
+  check_mode: true
+  diff: false
+  no_log: true
+  register: etcd_tls_probe
+  when: etcd_member_state.stat.exists
+
+- name: Require maintenance for changes to initialized etcd
+  ansible.builtin.assert:
+    that:
+      - not (etcd_config_probe.changed | default(false))
+      - not (etcd_tls_probe.changed | default(false))
+    fail_msg: Initialized etcd configuration or TLS differs. Perform a reviewed rolling maintenance operation; parallel reconfiguration is deliberately blocked.
+  when: etcd_member_state.stat.exists

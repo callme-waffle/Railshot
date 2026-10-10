@@ -1,0 +1,55 @@
+name: Deployment Runtime
+
+on:
+  push:
+    branches: [feature/deployment-runtime-seungmin]
+    paths: ['deployment/**', '.github/workflows/deployment-runtime.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deployment-runtime-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  runtime-contracts:
+    name: Runtime contracts and syntax (no cloud mutations)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install -r deployment/scripts/tests/requirements.txt
+      - name: Read pinned CRD schemas for existing declaration contract tests
+        run: kubectl kustomize gitops/argo > "$RUNNER_TEMP/railshot-argocd-schema.yaml"
+      - name: Runtime tests (fixtures and subprocess/loopback tests, not real CSP)
+        env:
+          RAILSHOT_ARGO_SCHEMA_MANIFEST: ${{ runner.temp }}/railshot-argocd-schema.yaml
+        run: python -m unittest discover -s deployment/scripts/tests -p 'test_*.py' -v
+      - name: Shell, Python, YAML and golden input validation
+        run: |
+          python - <<'PY'
+          import ast, json, pathlib, subprocess, yaml
+          import sys
+          root = pathlib.Path('deployment')
+          for path in root.rglob('*.sh'):
+              subprocess.run(['bash', '-n', str(path)], check=True)
+          for path in root.rglob('*.py'):
+              ast.parse(path.read_text(), filename=str(path))
+          for pattern in ('*.yaml', '*.yml'):
+              for path in root.rglob(pattern):
+                  list(yaml.safe_load_all(path.read_text()))
+          sys.path.insert(0, str(root / 'scripts'))
+          from input_adapter import parse_input
+          from runtime import load
+          parse_input(load((root / 'scripts/tests/fixtures/demo-golden-local.json').read_text()))
+          PY

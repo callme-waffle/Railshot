@@ -1,0 +1,13 @@
+---
+- name: Restore backup into an isolated empty target
+  hosts: restore_targets
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: deployment_defaults
+  tasks:
+    - name: Restore without starting a database
+      ansible.builtin.include_role:
+        name: backup
+        tasks_from: restore

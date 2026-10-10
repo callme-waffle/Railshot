@@ -1,0 +1,15 @@
+{
+  "schema_version": "v1",
+  "execution_driver": "terraform",
+  "provider_kind": "aws",
+  "target_id": "demo-aws",
+  "resource_id": "arn:aws:ec2:ap-northeast-2:123456789012:instance/i-0123456789abcdef0",
+  "architecture": "x86_64",
+  "location": {
+    "region": "ap-northeast-2"
+  },
+  "addresses": {
+    "private": "10.77.0.10"
+  },
+  "transport_ref": "ssm:ap-northeast-2:i-0123456789abcdef0"
+}

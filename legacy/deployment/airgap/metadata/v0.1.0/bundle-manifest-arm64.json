@@ -1,0 +1,178 @@
+{
+  "schema_version": "1",
+  "bundle_version": "2026-10-02.1",
+  "created_at": "2026-10-02T01:44:17.920956+00:00",
+  "platform": "linux/arm64",
+  "runtime": {
+    "k3s_version": "v1.34.11+k3s1",
+    "cilium_version": "1.20.2",
+    "cilium_cli_version": "v0.20.1"
+  },
+  "version_policy": "2026-10-02.1",
+  "files": {
+    "k3s": {
+      "path": "artifacts/k3s-arm64",
+      "sha256": "272f45b9efc69d0bbdb7042156156c6903087829a5003d4593af0ad2d08d76d4",
+      "size": 70451362,
+      "source": "https://github.com/k3s-io/k3s/releases/download/v1.34.11%2Bk3s1/k3s-arm64"
+    },
+    "k3s_images": {
+      "path": "artifacts/k3s-airgap-images-arm64.tar.zst",
+      "sha256": "18c53139e7ad39009057d5c52ec5501aeea1ada235986e43c7357a3863ff3fdd",
+      "size": 175402369,
+      "source": "https://github.com/k3s-io/k3s/releases/download/v1.34.11%2Bk3s1/k3s-airgap-images-arm64.tar.zst"
+    },
+    "installer": {
+      "path": "artifacts/install-k3s.sh",
+      "sha256": "40b487f0d8ef4f5d1bf422e7bb6228cc7789c40ecc66c5ab067d396bbee9816e",
+      "size": 36455,
+      "source": "https://raw.githubusercontent.com/k3s-io/k3s/v1.34.11%2Bk3s1/install.sh"
+    },
+    "cilium_cli": {
+      "path": "artifacts/cilium",
+      "sha256": "822ca5d2a5f3d793f83d4c7b09ab39b5b687ab74c543985e521d0603b8f202c1",
+      "size": 153682080,
+      "source": "https://github.com/cilium/cilium-cli/releases/download/v0.20.1/cilium-linux-arm64.tar.gz"
+    },
+    "cilium_chart": {
+      "path": "artifacts/cilium-chart.tgz",
+      "sha256": "b2afd87b7f75f875f92a14559f14f59b7babbb479d968e3fd625a20bf30ec20e",
+      "size": 212133,
+      "source": "https://helm.cilium.io/cilium-1.20.2.tgz"
+    },
+    "image_5": {
+      "path": "images/2939231d0d3e3ebddcd80fffa168b7ddcc78fdf0dc864d1c8c126ff523c54f01.tar",
+      "sha256": "3166ec3676d31c5b5658109819499466cb931d48a14db3334f38e4050407df9c",
+      "size": 242465792
+    },
+    "image_6": {
+      "path": "images/64d8798350e8569b8e7622563fed6e44dce2625f311e4651b774816516c744fc.tar",
+      "sha256": "6057c0abc7700a4189ade9e327966b7b18f78a5b57b9290edd218d44ae967aec",
+      "size": 65582080
+    },
+    "image_7": {
+      "path": "images/af7382699576b9e65e9184efa52eeca0b58aea70ad6e511bf260c91d9f740463.tar",
+      "sha256": "d53377e2dd87ff36ac43bb9102fd6883e3338663af74935cfad5ca60c29fc5eb",
+      "size": 73798656
+    },
+    "image_8": {
+      "path": "images/94e9e444bcba979c2ea12e27ae39bee4cd10bc7041a472c4727a558e213744e6.tar",
+      "sha256": "4f347675d8e0a38a37967f6b6b024c10545ae058891a8b02c8ef8f8402bd4f19",
+      "size": 13096448
+    },
+    "image_9": {
+      "path": "images/30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284.tar",
+      "sha256": "da0ff2bb5759e8c71be4422f520f5c7c06cc219e17ac7d5701077e87488db1ad",
+      "size": 21871616
+    },
+    "image_10": {
+      "path": "images/52e3ada4d978443601f286cc2f9e7b95c82aa3ad5a78ce9c6b94ce00258e68cc.tar",
+      "sha256": "7a18ba7e5d90c8623b97cd250d9698323ca5370f4e1c10c90258e25545fa57fd",
+      "size": 25745920
+    }
+  },
+  "images": [
+    {
+      "reference": "docker.io/rancher/klipper-helm:v0.13.3-build20260727",
+      "digest": "sha256:5425a2b4613d2458dbdff99218e8d487ebb59c20e7a941f061c0777070f0aac1",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "docker.io/rancher/klipper-lb:v0.4.17",
+      "digest": "sha256:910944bb0bd94f060a82a56ca1ea1c577d3e49b3473a093a47a985f32e92d94a",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "docker.io/rancher/local-path-provisioner:v0.0.37",
+      "digest": "sha256:e757967a5ec338f6a9b371c5a9688bedaa8c3578ea3dd4db329ea0084be0a86f",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "docker.io/rancher/mirrored-coredns-coredns:1.14.6",
+      "digest": "sha256:900f9c109f7a33545d3c811516e8376df9019147b750f5ce3e254468769176ea",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "docker.io/rancher/mirrored-library-busybox:1.37.0",
+      "digest": "sha256:101b4afd76732482eff9b95cae5f94bcf295e521fbec4e01b69c5421f3f3f3e5",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "docker.io/rancher/mirrored-library-traefik:3.7.8",
+      "digest": "sha256:4299bbed850421258fc5448c2e0e6ad350981d4d335a68de11b92448aedbefe5",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "docker.io/rancher/mirrored-metrics-server:v0.9.0",
+      "digest": "sha256:d9862115e7c7881280d3d75ca26bda8ffc0fc213315979575bf23ce9826205c0",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "docker.io/rancher/mirrored-pause:3.10.2",
+      "digest": "sha256:f548e0e8e3dc1896ca956272154dde3314e8cc4fde0a57577ee9fa1c63f5baf4",
+      "archive": "k3s_images",
+      "role": "k3s_system"
+    },
+    {
+      "reference": "quay.io/cilium/cilium@sha256:2939231d0d3e3ebddcd80fffa168b7ddcc78fdf0dc864d1c8c126ff523c54f01",
+      "digest": "sha256:2939231d0d3e3ebddcd80fffa168b7ddcc78fdf0dc864d1c8c126ff523c54f01",
+      "archive": "image_5",
+      "role": "cilium_agent"
+    },
+    {
+      "reference": "quay.io/cilium/operator-generic@sha256:64d8798350e8569b8e7622563fed6e44dce2625f311e4651b774816516c744fc",
+      "digest": "sha256:64d8798350e8569b8e7622563fed6e44dce2625f311e4651b774816516c744fc",
+      "archive": "image_6",
+      "role": "cilium_operator"
+    },
+    {
+      "reference": "quay.io/cilium/cilium-envoy@sha256:af7382699576b9e65e9184efa52eeca0b58aea70ad6e511bf260c91d9f740463",
+      "digest": "sha256:af7382699576b9e65e9184efa52eeca0b58aea70ad6e511bf260c91d9f740463",
+      "archive": "image_7",
+      "role": "cilium_envoy"
+    },
+    {
+      "reference": "docker.io/curlimages/curl:8.12.1",
+      "digest": "sha256:94e9e444bcba979c2ea12e27ae39bee4cd10bc7041a472c4727a558e213744e6",
+      "archive": "image_8",
+      "role": "health"
+    },
+    {
+      "reference": "docker.io/curlimages/curl@sha256:94e9e444bcba979c2ea12e27ae39bee4cd10bc7041a472c4727a558e213744e6",
+      "digest": "sha256:94e9e444bcba979c2ea12e27ae39bee4cd10bc7041a472c4727a558e213744e6",
+      "archive": "image_8",
+      "role": "health"
+    },
+    {
+      "reference": "docker.io/library/nginx:1.28.0-alpine",
+      "digest": "sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284",
+      "archive": "image_9",
+      "role": "workload"
+    },
+    {
+      "reference": "docker.io/library/nginx@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284",
+      "digest": "sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284",
+      "archive": "image_9",
+      "role": "workload"
+    },
+    {
+      "reference": "docker.io/library/nginx:1.28.1-alpine",
+      "digest": "sha256:52e3ada4d978443601f286cc2f9e7b95c82aa3ad5a78ce9c6b94ce00258e68cc",
+      "archive": "image_10",
+      "role": "extra"
+    },
+    {
+      "reference": "docker.io/library/nginx@sha256:52e3ada4d978443601f286cc2f9e7b95c82aa3ad5a78ce9c6b94ce00258e68cc",
+      "digest": "sha256:52e3ada4d978443601f286cc2f9e7b95c82aa3ad5a78ce9c6b94ce00258e68cc",
+      "archive": "image_10",
+      "role": "extra"
+    }
+  ]
+}

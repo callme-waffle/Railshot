@@ -1,0 +1,69 @@
+# Operator bootstrap owns this policy; do not delegate it to the platform Argo project.
+# Only the product API app AND service account are excluded in railshot-system.
+apiVersion: cilium.io/v2
+kind: CiliumClusterwideNetworkPolicy
+metadata:
+  name: railshot-platform-metadata
+specs:
+- endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: argocd
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egressDeny:
+  - toCIDR:
+    - 169.254.169.254/32
+    - fd00:ec2::254/128
+- endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: railshot-system
+    matchExpressions:
+    - key: k8s:app
+      operator: NotIn
+      values:
+      - railshot-api
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egressDeny:
+  - toCIDR:
+    - 169.254.169.254/32
+    - fd00:ec2::254/128
+- endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: railshot-system
+    matchExpressions:
+    - key: k8s:io.cilium.k8s.policy.serviceaccount
+      operator: NotIn
+      values:
+      - railshot-product
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egressDeny:
+  - toCIDR:
+    - 169.254.169.254/32
+    - fd00:ec2::254/128
+- endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: kube-system
+      k8s:k8s-app: kube-dns
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egressDeny:
+  - toCIDR:
+    - 169.254.169.254/32
+    - fd00:ec2::254/128
+- endpointSelector:
+    matchLabels:
+      k8s:io.kubernetes.pod.namespace: kube-system
+      k8s:app: local-path-provisioner
+  enableDefaultDeny:
+    ingress: false
+    egress: false
+  egressDeny:
+  - toCIDR:
+    - 169.254.169.254/32
+    - fd00:ec2::254/128

@@ -1,0 +1,123 @@
+name: railshot-personal-production
+services:
+  prepare:
+    platform: linux/amd64
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile
+      target: api
+    image: railshot/api:personal-production-test
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    read_only: true
+    command: [python3, /app/deployment/manifests/personal/production-compose-prepare.py]
+    volumes:
+      - ${RAILSHOT_PERSONAL_PRODUCTION_CONFIG_DIR:?set an absolute private config directory}:/input:ro
+      - api-state:/output/api-state
+      - api-token:/output/api-token
+      - dashboard-token:/output/dashboard-token
+      - gateway-key:/output/gateway-key
+      - gateway-ipc:/output/gateway-ipc
+      - gateway-socket:/output/gateway-socket
+    tmpfs: [/tmp:mode=1777]
+
+  api:
+    platform: linux/amd64
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile
+      target: api
+    image: railshot/api:personal-production-test
+    user: "1000:1000"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+    environment:
+      RAILSHOT_BIND_HOST: 0.0.0.0
+      RAILSHOT_ALLOWED_HOSTS: localhost,127.0.0.1,dashboard,api
+      RAILSHOT_ALLOWED_ORIGINS: http://localhost:4194,http://127.0.0.1:4194
+      RAILSHOT_API_TOKEN_FILE: /run/secrets/api/token
+      RAILSHOT_STATE_DIR: /var/lib/railshot/state
+      RAILSHOT_PERSONAL_CONFIG: /var/lib/railshot/config/personal.json
+      RAILSHOT_PERSONAL_TEST_ALLOW_HTTP: "1"
+    ports:
+      - 127.0.0.1:${RAILSHOT_PERSONAL_API_PORT:-4193}:4173/tcp
+      - 127.0.0.1:${RAILSHOT_PERSONAL_UDP_PORT:-51920}:51820/udp
+    volumes:
+      - api-state:/var/lib/railshot
+      - api-token:/run/secrets/api:ro
+      - gateway-socket:/run/railshot-personal-gateway
+    tmpfs: [/tmp:mode=1777]
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4173/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  gateway:
+    platform: linux/amd64
+    build:
+      context: ../../..
+      dockerfile: apps/api/Dockerfile
+      target: personal-gateway
+    image: railshot/personal-gateway:production-test
+    user: "0:1000"
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    network_mode: service:api
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+      api: {condition: service_started}
+    environment:
+      PERSONAL_GATEWAY_ENDPOINT: "${PERSONAL_GATEWAY_ENDPOINT:-api:51820}"
+    volumes:
+      - gateway-socket:/run/railshot-personal-gateway
+      - gateway-key:/run/secrets/personal-gateway-key:ro
+      - gateway-ipc:/run/secrets/personal-gateway-ipc:ro
+      - gateway-state:/var/lib/railshot-personal-gateway
+      - wireguard-state:/etc/wireguard
+    tmpfs: [/tmp:mode=1777]
+    healthcheck:
+      test: [CMD, python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  dashboard:
+    platform: linux/amd64
+    build:
+      context: ../../..
+      dockerfile: apps/dashboard/Dockerfile
+      target: dashboard
+    image: railshot/dashboard:personal-production-test
+    user: "101:101"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    depends_on:
+      prepare: {condition: service_completed_successfully}
+      api: {condition: service_healthy}
+    environment:
+      RAILSHOT_API_TOKEN_FILE: /run/secrets/api/token
+      RAILSHOT_API_UPSTREAM: "api:4173"
+      # This local acceptance stack has no MCP service. A resolvable private
+      # upstream keeps Nginx startup deterministic; /mcp remains unavailable.
+      RAILSHOT_MCP_UPSTREAM: "api:4173"
+    ports: ["127.0.0.1:${RAILSHOT_PERSONAL_DASHBOARD_PORT:-4194}:8080/tcp"]
+    volumes: ["dashboard-token:/run/secrets/api:ro"]
+    tmpfs: [/tmp:mode=1777]
+
+volumes:
+  api-state:
+  api-token:
+  dashboard-token:
+  gateway-key:
+  gateway-ipc:
+  gateway-socket:
+  gateway-state:
+  wireguard-state:

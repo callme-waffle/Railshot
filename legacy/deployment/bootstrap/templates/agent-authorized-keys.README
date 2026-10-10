@@ -1,0 +1,13 @@
+Generate an authorized_keys line with apps/agent/install_forced_command.py.
+Use a dedicated Ed25519 key generated on the service server. Transfer only its public key.
+Install the emitted line under the account that owns /etc/jasmin encrypted credentials
+(initial implementation: root). Preserve existing authorized_keys entries and set mode 0600.
+The restrict/from/command options apply to this dedicated key only. Other existing keys
+are not made restricted by this installation. Do not install the same dedicated key
+anywhere without the restrictive options. The runner permits only jasmin-job-v1.
+The Python interpreter, repository, parent directories and config directory must be
+root-owned and not writable by other users. The server's known_hosts must be verified
+out of band and stored with mode 0600. Never disable host key checking.
+The source IP and interface must match an operator-managed, verified management route.
+The Cloudflare application Tunnel does not supply this SSH management path.
+This helper does not create users, change sshd_config or restart SSH.
