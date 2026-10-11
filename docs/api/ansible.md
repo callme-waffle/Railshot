@@ -74,7 +74,7 @@ Patroni를 선택하면 [cluster.py](../../infrastructure/ansible/cluster.py)에
 
 **운영 인수 상태와 구현 범위는 별개입니다.** 2026-10-02 운영 확인에서 공개 `GET /api/v1/profiles` 목록은 `items: []`로, 새 환경·DB profile은 아직 활성화되지 않았습니다. 기존 등록 대상의 업로드→CI→CD→공개 HTTPS 성공은 새 VM 생성이나 runtime 1대와 DB용 3대를 포함한 실제 4VM 경로의 검증 결과가 아닙니다. 해당 4VM 생성·Patroni 준비·binding·앱 연결은 별도 운영 검증이 남아 있으며, 로컬 HTTP·모의 실행 시험으로 완료를 주장하지 않습니다. DB 역할·배치·TLS/Vault 매핑과 내부 HTTP의 승인 profile 기반 `database.configure` 계약은 아래를 따릅니다.
 
-책임 경계는 [CI 백엔드 설계](ci-backend-design.md), 이름·응답 규칙은 [REST 컨벤션](conventions.md), 저장소 작업 지침은 [AGENT.md](../../AGENT.md)를 따릅니다. 성공·오류 외형의 기준 구현은 [화균 님 OpenStack schema](../../infrastructure/providers/openstack/src/control_plane/api/schemas.py)입니다.
+책임 경계는 [CI 백엔드 설계](ci-backend-design.md), 이름·응답 규칙은 [REST 컨벤션](conventions.md), 저장소 작업 지침은 [AGENTS.md](../../AGENTS.md)를 따릅니다. 성공·오류 외형의 기준 구현은 [화균 님 OpenStack schema](../../infrastructure/providers/openstack/src/control_plane/api/schemas.py)입니다.
 
 ### B-1. 호출 경로
 

@@ -122,6 +122,6 @@ Python・Terraform・Ansible・ランタイムのチェックについては[CI�
 | [`observability/`](observability/README.md) | 環境のメトリクス、ログ、HTTPの観測 |
 | [`docs/`](docs/architecture/README.md) | アーキテクチャ、API仕様、意思決定、各時点の検証記録 |
 
-ディレクトリごとの担当範囲は[AGENT.md](AGENT.md)に従います。変更はPRでレビューし、統合手順は[Gitflowドキュメント](docs/integration/gitflow.md)に従います。過去のPoC・統合記録にある対応範囲や未完了項目は、記録当時の状況です。
+リポジトリの作業指針は[AGENTS.md](AGENTS.md)に従います。変更はPRでレビューし、統合手順は[Gitflowドキュメント](docs/integration/gitflow.md)に従います。過去のPoC・統合記録にある対応範囲や未完了項目は、記録当時の状況です。
 
 リンク先の詳細ドキュメントは主に韓国語です。

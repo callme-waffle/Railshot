@@ -122,4 +122,4 @@ Python·Terraform·Ansible·런타임 검사는 [CI 안내](ci/README.md)에 정
 | [`observability/`](observability/README.md) | 환경 지표, 로그와 HTTP 관측 |
 | [`docs/`](docs/architecture/README.md) | 아키텍처, API 계약, 의사결정과 시점별 검증 기록 |
 
-디렉터리별 책임은 [AGENT.md](AGENT.md)를 따릅니다. 변경은 PR로 검토하며, 통합 절차는 [Gitflow 문서](docs/integration/gitflow.md)를 참고하세요. 과거 PoC·통합 기록의 지원 범위와 미완료 항목은 해당 기록 시점의 결과입니다.
+저장소 작업 지침은 [AGENTS.md](AGENTS.md)를 따릅니다. 변경은 PR로 검토하며, 통합 절차는 [Gitflow 문서](docs/integration/gitflow.md)를 참고하세요. 과거 PoC·통합 기록의 지원 범위와 미완료 항목은 해당 기록 시점의 결과입니다.
