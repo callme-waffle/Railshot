@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DashboardError } from './sessions.js';
 import { isIP } from 'node:net';
+import { installerDigest, installerScript } from './personal/installer.js';
 
 const hash = (value) => createHash('sha256').update(typeof value === 'string' ? value : JSON.stringify(value)).digest('hex');
 const now = () => new Date().toISOString();
@@ -24,7 +25,8 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
   const runtimeWorkers = new Set();
   function owned(state, id, owner) {
     const target = state.personal.targets[id];
-    if (!owner || !target || target.session_id !== owner) absent();
+    if (!owner || !target || (owner.startsWith('account:')
+      ? target.account_id !== owner.slice('account:'.length) : target.account_id || target.session_id !== owner)) absent();
     return target;
   }
   function apps(state, target) { return Object.values(state.applications).filter((app) => app.environment_target_id === target.id && app.status !== 'deleted'); }
@@ -310,10 +312,19 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
   }
   return {
     writable,
+    installer() {
+      if (!adapter?.config) fail('설치 스크립트가 준비되지 않았습니다.', 503, 'CAPABILITY_UNAVAILABLE');
+      const script = installerScript(adapter.config);
+      return { script, digest: installerDigest(script) };
+    },
     async readiness() {
       if (!adapter?.readiness) return { scope: 'personal', ready: false,
         blockers: [{ code: 'PERSONAL_GATEWAY_NOT_CONFIGURED', message: '개인 환경 등록 서버가 설정되지 않았습니다.' }] };
       return adapter.readiness();
+    },
+    async connectionReadiness() {
+      if (!adapter?.connectionReadiness) return this.readiness();
+      return { ...await adapter.connectionReadiness(), scope: 'personal', phase: 'connection' };
     },
     async restore() {
       for (const target of Object.values(store.read().personal.targets)) {
@@ -330,7 +341,8 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
         } catch { await store.transaction((state) => { Object.assign(state.personal.targets[target.id], { status: 'attention', blockers: ['RUNTIME_RECONCILIATION_REQUIRED'] }); }); }
       }
     },
-    list(owner) { const state = store.read(); return Object.values(state.personal.targets).filter((t) => owner && t.session_id === owner && t.status !== 'deleted').map((t) => publicTarget(t, state)); },
+    list(owner) { const state = store.read(); return Object.values(state.personal.targets).filter((t) => owner && (owner.startsWith('account:')
+      ? t.account_id === owner.slice('account:'.length) : !t.account_id && t.session_id === owner) && t.status !== 'deleted').map((t) => publicTarget(t, state)); },
     get(id, owner) { const state = store.read(); return publicTarget(owned(state, id, owner), state); },
     async execute(id, input, owner) {
       const target = owned(store.read(), id, owner);
@@ -357,13 +369,14 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
       return { ...observation, measured_scope: 'client_host', measured_target: id };
     },
     async create(input, owner) {
-      if (!owner) fail('복구키를 발급받아 개인 환경 소유권을 먼저 설정하세요.', 409, 'OWNER_REQUIRED');
+      if (!owner) fail('로그인 또는 개인 환경 소유권 설정이 필요합니다.', 401, 'UNAUTHENTICATED');
       if (!exact(input, ['label'], ['provider']) || input.provider !== undefined && input.provider !== 'openstack'
           || typeof input.label !== 'string' || !input.label.trim() || input.label.length > 80 || /[\x00-\x1f]/.test(input.label)) fail('환경 이름을 확인하세요.');
       return store.transaction((state) => {
-        if (Object.values(state.personal.targets).filter((t) => t.session_id === owner && t.status !== 'deleted').length >= maxTargets) fail('개인 환경 등록 한도를 초과했습니다.', 409, 'CAPACITY_EXCEEDED');
+        if (Object.values(state.personal.targets).filter((t) => (owner.startsWith('account:')
+          ? t.account_id === owner.slice('account:'.length) : !t.account_id && t.session_id === owner) && t.status !== 'deleted').length >= maxTargets) fail('개인 환경 등록 한도를 초과했습니다.', 409, 'CAPACITY_EXCEEDED');
         const id = 'personal-' + randomUUID();
-        const target = { id, session_id: owner, label: input.label.trim(), status: 'pending', generation: 0,
+        const target = { id, session_id: owner, ...(owner.startsWith('account:') ? { account_id: owner.slice('account:'.length) } : {}), label: input.label.trim(), status: 'pending', generation: 0,
           registration_stage: 'enrollment', blockers: adapter ? [] : ['PERSONAL_GATEWAY_NOT_CONFIGURED'], created_at: now() };
         state.personal.targets[id] = target;
         return publicTarget(target, state);
@@ -371,7 +384,8 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
     },
     async enrollment(id, input, owner) {
       if (!exact(input, [])) fail('등록 자격 요청에는 추가 필드를 넣을 수 없습니다.');
-      const prerequisites = adapter?.readiness ? await adapter.readiness() : { ready: false, blockers: [{ code: 'PERSONAL_GATEWAY_NOT_CONFIGURED' }] };
+      const prerequisites = adapter?.connectionReadiness ? await adapter.connectionReadiness()
+        : adapter?.readiness ? await adapter.readiness() : { ready: false, blockers: [{ code: 'PERSONAL_GATEWAY_NOT_CONFIGURED' }] };
       if (!prerequisites.ready) fail(prerequisites.blockers[0]?.message || '개인 환경 설치 선행 조건을 확인하세요.', 409,
         prerequisites.blockers[0]?.code || 'CAPABILITY_UNAVAILABLE');
       return store.transaction((state) => {
@@ -380,19 +394,22 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
         if (!adapter) fail('개인 환경 설치 서버가 구성되지 않았습니다.', 409, 'CAPABILITY_UNAVAILABLE');
         for (const item of Object.values(state.personal.enrollments)) if (item.target_id === id) item.revoked = true;
         if (Object.keys(state.personal.enrollments).length >= 10000) fail('등록 자격 보관 한도를 초과했습니다.', 409, 'CAPACITY_EXCEEDED');
-        const enrollmentId = randomUUID(), token = randomBytes(32).toString('base64url'), expires_at = new Date(Date.now() + 900000).toISOString();
+        const enrollmentId = randomUUID(), token = randomBytes(32).toString('base64url'), expires_at = new Date(Date.now() + 1800000).toISOString();
         target.generation += 1;
-        state.personal.enrollments[enrollmentId] = { id: enrollmentId, target_id: id, token_hash: hash(token), generation: target.generation, expires_at, used: false };
+        state.personal.enrollments[enrollmentId] = { id: enrollmentId, target_id: id, account_id: target.account_id || null, token_hash: hash(token), generation: target.generation, expires_at, used: false };
         const config = adapter.config;
+        const script = installerScript(config);
+        if (target.account_id) return { id: enrollmentId, enrollment_id: enrollmentId, target_id: id, expires_at,
+          token, script_url: `${config.public_url.replace(/\/$/, '')}/api/v1/installers/personal`, script_sha256: installerDigest(script) };
         const testHttp = config.test_allow_http === true;
         const command = `install_file=$(mktemp) && curl --disable --proto '${testHttp ? '=http,https' : '=https'}' --max-redirs 0 --fail --silent --show-error ${shell(config.installer_url)} -o "$install_file" && RAILSHOT_ENROLLMENT_TOKEN=${shell(token)} sudo --preserve-env=RAILSHOT_ENROLLMENT_TOKEN bash "$install_file" --personal-registration --api-url ${shell(config.public_url)} --enrollment-id ${shell(enrollmentId)} --artifact-url ${shell(config.artifact_url)} --artifact-sha256 ${shell(config.artifact_sha256)}${testHttp ? ' --test-allow-http' : ''}; install_status=$?; rm -f "$install_file"; (exit "$install_status")`;
-        return { id: enrollmentId, target_id: id, expires_at, install_command: command };
+        return { id: enrollmentId, target_id: id, expires_at, token, install_command: command };
       });
     },
     async claim(id, input, authorization) {
-      if (!exact(input, ['public_key', 'client_version', 'project_id', 'runtime'], ['capabilities']) || !/^[A-Za-z0-9+/]{43}=$/.test(input.public_key || '')
+      if (!exact(input, ['public_key', 'client_version', 'runtime'], ['project_id', 'capabilities']) || !/^[A-Za-z0-9+/]{43}=$/.test(input.public_key || '')
           || typeof input.client_version !== 'string' || !/^[A-Za-z0-9._-]{1,64}$/.test(input.client_version)
-          || typeof input.project_id !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(input.project_id)
+          || input.project_id !== undefined && (typeof input.project_id !== 'string' || !/^[A-Za-z0-9._-]{1,128}$/.test(input.project_id))
           || input.runtime !== undefined && (!exact(input.runtime, ['ssh_host_key'], ['profile_id', 'resource_id'])
             || input.runtime.ssh_host_key !== undefined && !/^ssh-ed25519 [A-Za-z0-9+/]{68}={0,2}$/.test(input.runtime.ssh_host_key)
             || input.runtime.profile_id !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(input.runtime.profile_id)
@@ -401,26 +418,58 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
         const enrollment = state.personal.enrollments[id];
         if (!enrollment || enrollment.token_hash !== tokenHash(authorization) || enrollment.used || enrollment.revoked || Date.parse(enrollment.expires_at) <= Date.now()) fail('등록 자격이 만료되었거나 유효하지 않습니다.', 401, 'UNAUTHENTICATED');
         const target = state.personal.targets[enrollment.target_id];
-        if (!target || held(target) || target.generation !== enrollment.generation || target.client_hash) fail('환경 등록 상태가 변경되었습니다.', 409, 'TARGET_UNAVAILABLE');
+        if (!target || held(target) || target.generation !== enrollment.generation || target.client_hash
+            || (target.account_id || null) !== (enrollment.account_id || null)
+            || !target.account_id && !input.project_id) fail('환경 등록 상태가 변경되었습니다.', 409, 'TARGET_UNAVAILABLE');
         enrollment.used = true;
-        Object.assign(target, { status: 'installing', public_key: input.public_key, project_id: input.project_id, client_version: input.client_version, registration_stage: 'gateway', runtime: input.runtime || null });
+        Object.assign(target, { status: 'installing', public_key: input.public_key, project_id: input.project_id || null, client_version: input.client_version, registration_stage: 'gateway', runtime: input.runtime || null });
         return structuredClone(target);
       });
       try {
         const registered = await adapter.register(target);
         if (registered.status !== 'succeeded' || !registered.tunnel) throw new Error('Gateway unverified');
         target.tunnel = registered.tunnel;
-        const runtimePrepared = await adapter.prepare(target), token = randomBytes(32).toString('base64url');
+        const runtimePrepared = await adapter.prepare(target);
+        const vaultKey = target.account_id ? await adapter.vaultPublicKey() : null;
+        if (target.account_id && (!vaultKey?.vault_public_key || !vaultKey?.vault_key_id)) throw new Error('Vault wrapping key unavailable');
+        const token = randomBytes(32).toString('base64url');
         await store.transaction((state) => {
           Object.assign(state.personal.targets[target.id], { client_hash: hash(token), tunnel: registered.tunnel, status: 'connecting', runtime_prepared: runtimePrepared,
             registration_stage: 'openstack', blockers: ['OPENSTACK_CONTROL_PENDING'] });
         });
         return { target_id: target.id, generation: target.generation, client_token: token, tunnel: registered.tunnel,
+          ...(vaultKey || {}),
           heartbeat_url: `/api/v1/targets/${target.id}/heartbeats`, ...(adapter.runtimeAccess?.(target) ? { runtime_access: adapter.runtimeAccess(target) } : {}) };
       } catch {
         await store.transaction((state) => { Object.assign(state.personal.targets[target.id], { status: 'attention', blockers: ['ENROLLMENT_RECONCILIATION_REQUIRED'] }); });
         fail('클라이언트 등록 결과를 확인해야 합니다. 등록 자격은 재사용할 수 없습니다.', 503, 'ENROLLMENT_UNVERIFIED');
       }
+    },
+    vaultKey() {
+      if (!adapter?.vaultPublicKey) fail('자격 암호화 키가 준비되지 않았습니다.', 503, 'CAPABILITY_UNAVAILABLE');
+      return adapter.vaultPublicKey();
+    },
+    async registerVault(id, input, authorization) {
+      if (!exact(input, ['generation', 'project_id', 'key_id', 'wrapped_dek'])
+          || !Number.isSafeInteger(input.generation)
+          || !/^[A-Za-z0-9._-]{1,128}$/.test(input.project_id || '')
+          || !/^[a-f0-9]{64}$/.test(input.key_id || '')
+          || typeof input.wrapped_dek !== 'string' || !/^[A-Za-z0-9+/]+={0,2}$/.test(input.wrapped_dek)
+          || input.wrapped_dek.length > 4096) fail('제어 자격 등록 입력을 확인하세요.');
+      const current = authenticated(store.read(), id, authorization, input.generation);
+      const same = (target) => target.vault && target.vault.project_id === input.project_id
+        && target.vault.key_id === input.key_id && target.vault.wrapped_dek === input.wrapped_dek;
+      if (!current.account_id || held(current) || current.vault && !same(current)) fail('제어 자격 등록 상태가 변경되었습니다.', 409, 'TARGET_UNAVAILABLE');
+      if (same(current)) return { target_id: id, generation: current.generation, project_id: input.project_id, status: 'registered' };
+      if (!adapter?.validateVault || await adapter.validateVault(input) !== true) fail('제어 자격 암호화를 확인하지 못했습니다.', 422, 'INVALID_INPUT');
+      return store.transaction((state) => {
+        const target = authenticated(state, id, authorization, input.generation);
+        if (held(target) || target.vault && !same(target)) fail('제어 자격 등록 상태가 변경되었습니다.', 409, 'TARGET_UNAVAILABLE');
+        if (same(target)) return { target_id: id, generation: target.generation, project_id: input.project_id, status: 'registered' };
+        target.vault = { project_id: input.project_id, key_id: input.key_id, wrapped_dek: input.wrapped_dek };
+        target.project_id = input.project_id;
+        return { target_id: id, generation: target.generation, project_id: input.project_id, status: 'registered' };
+      });
     },
     async heartbeat(id, input, authorization) {
       if (!exact(input, ['generation', 'client_version', 'checks'], ['capabilities', 'project_id', 'metrics'])
@@ -430,9 +479,15 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
       if (input.metrics !== undefined && (!exact(input.metrics, [], metricNames) || Object.entries(input.metrics).some(([name, value]) => value !== null && (!Number.isFinite(value) || value < 0 || name.endsWith('_percent') && value > 100)))) fail('메트릭 값 범위를 확인하세요.');
       const current = authenticated(store.read(), id, authorization, input.generation);
       let verified = false;
+      let serverListVerified = false;
       let runtimeVerification;
       if (!held(current) && input.checks.tunnel && adapter) {
-        try { const result = await adapter.verify(current); verified = result.status === 'succeeded' && result.reachable === true && result.openstack_verified === true; } catch { /* never infer connectivity from the client alone */ }
+        try {
+          const result = await adapter.verify(current);
+          serverListVerified = result.server_list_verified === true;
+          verified = result.status === 'succeeded' && result.reachable === true
+            && (current.account_id ? serverListVerified : result.openstack_verified === true);
+        } catch { /* never infer connectivity from the client alone */ }
       }
       if (verified && !held(current) && current.runtime_evidence && current.runtime_binding
           && ['succeeded', 'blocked'].includes(current.runtime_preparation?.status) && adapter?.verifyRuntime) {
@@ -444,7 +499,9 @@ export function createPersonalEnvironments({ store, adapter, applicationAdapter,
         if (input.project_id !== undefined && input.project_id !== target.project_id) fail('프로젝트가 등록과 다릅니다.', 409, 'PROJECT_MISMATCH');
         Object.assign(target, { last_seen_at: now(), client_version: input.client_version, checks: input.checks, ...(input.metrics !== undefined ? { metrics: input.metrics, metrics_seen_at: now() } : {}) });
         if (!held(target)) {
-          target.connection_status = verified && input.checks.openstack ? 'ready' : 'connecting';
+          target.connection_status = target.account_id
+            ? verified && serverListVerified ? 'ready' : 'connecting'
+            : verified && input.checks.openstack ? 'ready' : 'connecting';
           if (runtimeVerification) {
             target.runtime_prepared = runtimeVerification.status === 'succeeded' && adapter.deploymentReady?.(target) === true;
             target.runtime_preparation = runtimeResult(runtimeVerification);

@@ -1,0 +1,4177 @@
+{
+  "source_commit": "645e28aefa7f3d3996c57ea6853c6e2f67c5bcc4",
+  "source_tree": "4ef3aaf1390aa3448043d36cd07297a936cb1853",
+  "purpose": "Immutable reference source archive; active implementation remains at repository root.",
+  "included_file_count": 832,
+  "excluded_file_count": 671,
+  "excluded_paths": [
+    ".mcp.json",
+    "AGENT.md",
+    "README.md",
+    "README.ja.md",
+    "docs/",
+    "deployment/scripts/tests/results/"
+  ],
+  "files": [
+    {
+      "path": ".dockerignore",
+      "mode": "100644",
+      "blob": "d459ee0f953ba9f1ef0ff37d6edbd8d181ea6d9e"
+    },
+    {
+      "path": ".gitattributes",
+      "mode": "100644",
+      "blob": "267926fac5d233f97a4ab75161b6a645e39c9e34"
+    },
+    {
+      "path": ".github/workflows/control-cilium.yml",
+      "mode": "100644",
+      "blob": "a9aac2c25e0f0006e3d5b3de6a9546d8686af790"
+    },
+    {
+      "path": ".github/workflows/deployment-runtime.yml",
+      "mode": "100644",
+      "blob": "1a1a416428a0b0bb81023a94d63c3ca323ddfab7"
+    },
+    {
+      "path": ".github/workflows/platform-checks.yml",
+      "mode": "100644",
+      "blob": "6a0a0dbd52b7f80a025c0cd11fe21e3d2a909688"
+    },
+    {
+      "path": ".github/workflows/platform-containers.yml",
+      "mode": "100644",
+      "blob": "02d50297ab80c1d1ff03cb5a4cf3450cd48ea8fc"
+    },
+    {
+      "path": ".github/workflows/platform-publish.yml",
+      "mode": "100644",
+      "blob": "073f1da992d1e73468ef27df6826b506cd6a3fe6"
+    },
+    {
+      "path": ".github/workflows/railshot-ci.yml",
+      "mode": "100644",
+      "blob": "2cb9c144c419777a40921ec2fe46d6aa3aa11967"
+    },
+    {
+      "path": ".gitignore",
+      "mode": "100644",
+      "blob": "0a2fd0979392139d90946836da7cadca02c2ebad"
+    },
+    {
+      "path": "apps/README.md",
+      "mode": "100644",
+      "blob": "6a0b1c50d94c8c80152b0587f0601de10e2742f7"
+    },
+    {
+      "path": "apps/agent/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "apps/agent/README.md",
+      "mode": "100644",
+      "blob": "817443173df2408866f7f62740c7a6963ae266d2"
+    },
+    {
+      "path": "apps/agent/__init__.py",
+      "mode": "100644",
+      "blob": "fd7f50a6146677db8d21d9b367bbf6c7bd710f86"
+    },
+    {
+      "path": "apps/agent/install_forced_command.py",
+      "mode": "100644",
+      "blob": "61f2be9462f77bc7074c0ca0ea4505074c52394d"
+    },
+    {
+      "path": "apps/agent/openstack_control.py",
+      "mode": "100644",
+      "blob": "1e6aad8fcb11a72221bc472abbdfa118431d3593"
+    },
+    {
+      "path": "apps/agent/package.json",
+      "mode": "100644",
+      "blob": "2cb3eadb2333c0fcb48c77ce326004f0dacbf796"
+    },
+    {
+      "path": "apps/agent/personal.py",
+      "mode": "100644",
+      "blob": "c2bc37889417f96e8481e5f0ec87e319b03e5ad8"
+    },
+    {
+      "path": "apps/agent/personal_remove.py",
+      "mode": "100644",
+      "blob": "c046c23a62db74caf5923bbe747ed2448790d793"
+    },
+    {
+      "path": "apps/agent/personal_runtime.py",
+      "mode": "100644",
+      "blob": "946ef245e9217f327960d84cfafa42f947d611bd"
+    },
+    {
+      "path": "apps/agent/protocol.py",
+      "mode": "100644",
+      "blob": "b48c84bc057aff3111968dce6d77292e0c6867d0"
+    },
+    {
+      "path": "apps/agent/runner.py",
+      "mode": "100644",
+      "blob": "c620e1a8409aa1ccc3b6b74d0c9ee3a9846456d6"
+    },
+    {
+      "path": "apps/agent/runtime_access.py",
+      "mode": "100644",
+      "blob": "5bda1a0de9837fca83fef9fcd573a84f46dccbe4"
+    },
+    {
+      "path": "apps/agent/sender.py",
+      "mode": "100644",
+      "blob": "824290096285f9bf840937420d94ef2d9310be71"
+    },
+    {
+      "path": "apps/agent/src/agent.js",
+      "mode": "100644",
+      "blob": "790e84a98c64c6c2108143a136d25fc8899400a0"
+    },
+    {
+      "path": "apps/agent/src/api.js",
+      "mode": "100644",
+      "blob": "3869c21f98e1744ce189b4762ad79838603476ee"
+    },
+    {
+      "path": "apps/agent/src/insights-app.html",
+      "mode": "100644",
+      "blob": "edb5c9efebf77c5d3aea26dddd7b059b0c77fb5e"
+    },
+    {
+      "path": "apps/agent/src/local-tools.js",
+      "mode": "100644",
+      "blob": "275efeb6392e7c5fb5033ae4179e09e465fae8ba"
+    },
+    {
+      "path": "apps/agent/src/mcp-client.js",
+      "mode": "100644",
+      "blob": "c3ad8bb811be63f474ea6249a8aa7d9091d4acab"
+    },
+    {
+      "path": "apps/agent/src/mcp-local.js",
+      "mode": "100644",
+      "blob": "bf8741f909914b342b00d423196684533ace2c80"
+    },
+    {
+      "path": "apps/agent/src/mcp-tools.js",
+      "mode": "100644",
+      "blob": "2bdb363e90810033e287b19a10f57b8af3d0ff91"
+    },
+    {
+      "path": "apps/agent/src/mcp.js",
+      "mode": "100644",
+      "blob": "6085750e658b475e8b852933f1f9f9a3b1c51baa"
+    },
+    {
+      "path": "apps/agent/src/model.js",
+      "mode": "100644",
+      "blob": "8c554320aa08c0b2249fa4c53fc245561ca23245"
+    },
+    {
+      "path": "apps/agent/src/remote-mcp.js",
+      "mode": "100644",
+      "blob": "a000ebf20a195f884a4a143200cec1090a62121a"
+    },
+    {
+      "path": "apps/agent/src/server.js",
+      "mode": "100644",
+      "blob": "9d1bb7671b46d0b0c7b035ab6321b45fdc98321b"
+    },
+    {
+      "path": "apps/agent/src/tools.js",
+      "mode": "100644",
+      "blob": "374caeb3396d530aef7f2605ca453aeefc5c22bd"
+    },
+    {
+      "path": "apps/agent/test/agent.test.js",
+      "mode": "100644",
+      "blob": "88e963f21254146c1428eaf2ea0cf14dd265bf7f"
+    },
+    {
+      "path": "apps/agent/test/deployment-progress.test.js",
+      "mode": "100644",
+      "blob": "36ac20a7b724168283a3287c0b2718977d096536"
+    },
+    {
+      "path": "apps/agent/test/insights.test.js",
+      "mode": "100644",
+      "blob": "bc5725b2870f4d50cca374862c98f8a7cd6a3eb4"
+    },
+    {
+      "path": "apps/agent/test/local-project.test.js",
+      "mode": "100644",
+      "blob": "bfc740a3b7bf9ba0a0b6d1d11f0e812e84944259"
+    },
+    {
+      "path": "apps/agent/test/remote-mcp.test.js",
+      "mode": "100644",
+      "blob": "4ae72737af24205e0fc49adb839fad47b8d7f7d5"
+    },
+    {
+      "path": "apps/agent/tests/test_agent.py",
+      "mode": "100644",
+      "blob": "4efbf01251bdade3dc0068d6790f627a0b8195e5"
+    },
+    {
+      "path": "apps/agent/tests/test_openstack_control.py",
+      "mode": "100644",
+      "blob": "6f857b8ffcebd6bfe8f8eec02911a8007cf34ac2"
+    },
+    {
+      "path": "apps/agent/tests/test_personal.py",
+      "mode": "100644",
+      "blob": "c66313d2bc53f981a2bc0e837a687e7dee083515"
+    },
+    {
+      "path": "apps/agent/tests/test_personal_runtime.py",
+      "mode": "100644",
+      "blob": "f989cd80ada94587d2149ce9799e471d57478f1d"
+    },
+    {
+      "path": "apps/agent/tests/test_runtime_access.py",
+      "mode": "100644",
+      "blob": "d9718b96ef75a9247321d88aff7b6d2c43742e3c"
+    },
+    {
+      "path": "apps/agent/ui/build.mjs",
+      "mode": "100644",
+      "blob": "18f967fb9e8fafde3a4604935e46a9f695193e2c"
+    },
+    {
+      "path": "apps/agent/ui/insights-app.js",
+      "mode": "100644",
+      "blob": "39cd78b034193184090fa05ae6b279047194b487"
+    },
+    {
+      "path": "apps/api/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "apps/api/Dockerfile",
+      "mode": "100644",
+      "blob": "9c9408bfb6b2783fe927cde5aae56a377fec4288"
+    },
+    {
+      "path": "apps/api/README.md",
+      "mode": "100644",
+      "blob": "265774fe7fff0cf16e63491e0af4e8c4be44f8f4"
+    },
+    {
+      "path": "apps/api/docs/interface.md",
+      "mode": "100644",
+      "blob": "18c9bd086831fa2cafd03ef82bb1edfe309beadc"
+    },
+    {
+      "path": "apps/api/docs/source-formats.md",
+      "mode": "100644",
+      "blob": "da729804e10423fe1c4f5b8cf3e79747c05041fa"
+    },
+    {
+      "path": "apps/api/git-askpass.sh",
+      "mode": "100644",
+      "blob": "b2ac8347b5413a3fb7e55a97fba6a292fb8efa13"
+    },
+    {
+      "path": "apps/api/package-lock.json",
+      "mode": "100644",
+      "blob": "52330d31e9f11a2bc8357c21cbbf29a413048788"
+    },
+    {
+      "path": "apps/api/package.json",
+      "mode": "100644",
+      "blob": "74690fa90b6d4187be080ee913d2680d003100bd"
+    },
+    {
+      "path": "apps/api/prepare-state.js",
+      "mode": "100644",
+      "blob": "34ce2ad4427520a3081f7d69881f438925b468f9"
+    },
+    {
+      "path": "apps/api/runtime-install.sh",
+      "mode": "100644",
+      "blob": "15c100cfbbecef2002a04e95fb3f84f3f4b944ef"
+    },
+    {
+      "path": "apps/api/runtime-smoke.py",
+      "mode": "100644",
+      "blob": "5dc0eadc053b467c32d00957e6d12234ce000ed1"
+    },
+    {
+      "path": "apps/api/runtime-tools.json",
+      "mode": "100644",
+      "blob": "ca87bf59de114b0a0a3302c879e5b2c20bed5e75"
+    },
+    {
+      "path": "apps/api/src/access.js",
+      "mode": "100644",
+      "blob": "a8db958fbd2da2a3a6c17f7b7a3a8b55c70a8ad4"
+    },
+    {
+      "path": "apps/api/src/agent-activity.js",
+      "mode": "100644",
+      "blob": "3334fffbe8576b6cd4a3ce22a4e1143db2bdeb38"
+    },
+    {
+      "path": "apps/api/src/agent-events.js",
+      "mode": "100644",
+      "blob": "b7ae091d00dbae339595ea51288246d58e20b91e"
+    },
+    {
+      "path": "apps/api/src/application-lifecycle.js",
+      "mode": "100644",
+      "blob": "fa623151ce1d6054141ee8f650b809caa3d8c364"
+    },
+    {
+      "path": "apps/api/src/applications.js",
+      "mode": "100644",
+      "blob": "0920e3ce833c35a22b1e6dcb2777342d53f8f95b"
+    },
+    {
+      "path": "apps/api/src/archive.js",
+      "mode": "100644",
+      "blob": "1f7470a78b7943df76255a8c4ed52a22421cbd9c"
+    },
+    {
+      "path": "apps/api/src/cd.js",
+      "mode": "100644",
+      "blob": "4b7d6bb1ea81477eb2f8c09d940783bbf880af10"
+    },
+    {
+      "path": "apps/api/src/classifier.js",
+      "mode": "100644",
+      "blob": "0e5b5a4ffaa6f4b88160d57420f98816bf948b92"
+    },
+    {
+      "path": "apps/api/src/cli.js",
+      "mode": "100644",
+      "blob": "3a4dd70cec138382ce998e67d010dfc7dd083422"
+    },
+    {
+      "path": "apps/api/src/client.js",
+      "mode": "100644",
+      "blob": "36adca455a3ee651585c5933b8586a4c6f700768"
+    },
+    {
+      "path": "apps/api/src/contract.js",
+      "mode": "100644",
+      "blob": "83b79449949affbd6adbc4861eb1adc302c7d0f6"
+    },
+    {
+      "path": "apps/api/src/dashboard-schema.sql",
+      "mode": "100644",
+      "blob": "d36fe7e6d76b0c7e6ecec2b3891bef37788f6d30"
+    },
+    {
+      "path": "apps/api/src/deployment-diagnostics.js",
+      "mode": "100644",
+      "blob": "907f21718164e1d77cf72f0b14488f95b8a06f1f"
+    },
+    {
+      "path": "apps/api/src/diagnostics.js",
+      "mode": "100644",
+      "blob": "44d8984b57dc9ea268f328a70135be41a9937329"
+    },
+    {
+      "path": "apps/api/src/environments.js",
+      "mode": "100644",
+      "blob": "2c76b77f1ccc0f27962d57651c62bef90ed2e648"
+    },
+    {
+      "path": "apps/api/src/github.js",
+      "mode": "100644",
+      "blob": "f12511db961b1f20cebe1e263846d4c24b2f0672"
+    },
+    {
+      "path": "apps/api/src/http/dashboard.js",
+      "mode": "100644",
+      "blob": "649b31e1a441fc9e3f1c13c2fb254b4c487af2e3"
+    },
+    {
+      "path": "apps/api/src/http/openstack.js",
+      "mode": "100644",
+      "blob": "05c85c9166b93141501089df404d52a3c4c675e1"
+    },
+    {
+      "path": "apps/api/src/http/request.js",
+      "mode": "100644",
+      "blob": "a482ea4f705f7a25cfe3ce630140d7f3fe457faa"
+    },
+    {
+      "path": "apps/api/src/http/response.js",
+      "mode": "100644",
+      "blob": "12a0bfeb70e36b51ea2d9585c0288294d55b7d0f"
+    },
+    {
+      "path": "apps/api/src/http/source.js",
+      "mode": "100644",
+      "blob": "8ede3064986d2a9f79fe57c6058f93c17b12b827"
+    },
+    {
+      "path": "apps/api/src/insights.js",
+      "mode": "100644",
+      "blob": "fc94df47ce2ad72eebd5cd60d92fbfe3c776c5ce"
+    },
+    {
+      "path": "apps/api/src/logs.js",
+      "mode": "100644",
+      "blob": "d6e5af7c358704f74fbe0407a4954f2633d01e5e"
+    },
+    {
+      "path": "apps/api/src/metrics.js",
+      "mode": "100644",
+      "blob": "3538aba1055ba82c1fc3f3fe5ca28d363d8bed5a"
+    },
+    {
+      "path": "apps/api/src/openstack/installer.js",
+      "mode": "100644",
+      "blob": "c1a42c0fdb373603c16631e752c8b98c3280ebae"
+    },
+    {
+      "path": "apps/api/src/openstack/registrations.js",
+      "mode": "100644",
+      "blob": "84effe9afccca314df4ecf682fa8f54101ca6576"
+    },
+    {
+      "path": "apps/api/src/personal-adapter.js",
+      "mode": "100644",
+      "blob": "0643b49a0b6dd0f818d0dbc332be617022b64d6e"
+    },
+    {
+      "path": "apps/api/src/personal-environments.js",
+      "mode": "100644",
+      "blob": "7aa86d0fc4a98bdc9386c810d04fd2e1417587ee"
+    },
+    {
+      "path": "apps/api/src/prepare-release.js",
+      "mode": "100644",
+      "blob": "9bbec214488ae4ede8760ae9541732c5071c4d2e"
+    },
+    {
+      "path": "apps/api/src/product-store.js",
+      "mode": "100644",
+      "blob": "680194ca19e71dc3db98e9e3e62809f801c83635"
+    },
+    {
+      "path": "apps/api/src/product.js",
+      "mode": "100644",
+      "blob": "73feb65909caac53ea223ecb9eb63bce5ce66939"
+    },
+    {
+      "path": "apps/api/src/public-github.js",
+      "mode": "100644",
+      "blob": "12af1f3d591b37ba7dcd1b5864841021b3ab3a98"
+    },
+    {
+      "path": "apps/api/src/published.js",
+      "mode": "100644",
+      "blob": "e1bd94baa079b44282e680ecd7e0cb66325a0cfb"
+    },
+    {
+      "path": "apps/api/src/server.js",
+      "mode": "100644",
+      "blob": "6567bdd6a55962d5a9c55f48fe8eff0ccbc7e025"
+    },
+    {
+      "path": "apps/api/src/sessions.js",
+      "mode": "100644",
+      "blob": "28c68bfa6765d7e1eff12997210c37af42bf7984"
+    },
+    {
+      "path": "apps/api/src/source-snapshot.js",
+      "mode": "100644",
+      "blob": "af847d06c22f84ad9678b77d08ef9da6296795ac"
+    },
+    {
+      "path": "apps/api/src/telemetry.js",
+      "mode": "100644",
+      "blob": "2b9878808a825ab4e9408c1619b7af88c85cd857"
+    },
+    {
+      "path": "apps/api/src/traffic.js",
+      "mode": "100644",
+      "blob": "980e1655b25d27828365f1fadf19ad3127f77c95"
+    },
+    {
+      "path": "apps/api/test/access.test.js",
+      "mode": "100644",
+      "blob": "21dc2877750760e2cc2ffcac33a2cff146324183"
+    },
+    {
+      "path": "apps/api/test/agent-activity.test.js",
+      "mode": "100644",
+      "blob": "29a3b2f150acd7c92ecb9c25f9e68a6c8f04eb91"
+    },
+    {
+      "path": "apps/api/test/agent-events.test.js",
+      "mode": "100644",
+      "blob": "662b71229c22abe747106b14fa7dce38157deda9"
+    },
+    {
+      "path": "apps/api/test/application-lifecycle.test.js",
+      "mode": "100644",
+      "blob": "0dd51801babf8513302c8bb792d5c44c70275a7a"
+    },
+    {
+      "path": "apps/api/test/application-updates.test.js",
+      "mode": "100644",
+      "blob": "3297f260681e05341dd54962924833e66d65523f"
+    },
+    {
+      "path": "apps/api/test/applications.test.js",
+      "mode": "100644",
+      "blob": "b1bcd9d55d09a4d74d9a0ce9d1c6b0601a6114f3"
+    },
+    {
+      "path": "apps/api/test/cd.test.js",
+      "mode": "100644",
+      "blob": "820b632281ff7164d0c5c77981fcbf0568d048a2"
+    },
+    {
+      "path": "apps/api/test/dashboard-transport.test.js",
+      "mode": "100644",
+      "blob": "d5dbb57a5f1831aa858cd85e3b2bbd84787654ea"
+    },
+    {
+      "path": "apps/api/test/deployment-queue.test.js",
+      "mode": "100644",
+      "blob": "b3703dd58d0e37da070a860fc95466bd355f1934"
+    },
+    {
+      "path": "apps/api/test/deployment.test.js",
+      "mode": "100644",
+      "blob": "37e21e1c322d1aa31c5dbe365e5e685a7faa4b8b"
+    },
+    {
+      "path": "apps/api/test/diagnostics.test.js",
+      "mode": "100644",
+      "blob": "49b43b884ac7667ff8cb080f92238ab3e1ccbb98"
+    },
+    {
+      "path": "apps/api/test/environments.test.js",
+      "mode": "100644",
+      "blob": "048e615ce885737452a912373f232a64b04b79c5"
+    },
+    {
+      "path": "apps/api/test/insights.test.js",
+      "mode": "100644",
+      "blob": "7d8cf8d47c9cb6f2a103c08797596401c3114a84"
+    },
+    {
+      "path": "apps/api/test/logs.test.js",
+      "mode": "100644",
+      "blob": "457e708304a08b68e69e3291c85796f5dec6624c"
+    },
+    {
+      "path": "apps/api/test/metrics.test.js",
+      "mode": "100644",
+      "blob": "131da6f1248d3f31de7c75b9f4082a78ffabd940"
+    },
+    {
+      "path": "apps/api/test/observation-recovery.test.js",
+      "mode": "100644",
+      "blob": "931b2af89c7ac062b595c2c4ddfa3685dab7a702"
+    },
+    {
+      "path": "apps/api/test/personal-adapter.test.js",
+      "mode": "100644",
+      "blob": "b60934f25da031c979b307c4d1a4b8b9a1a12ad0"
+    },
+    {
+      "path": "apps/api/test/personal-environments.test.js",
+      "mode": "100644",
+      "blob": "634342ec51e368e6b315cbe2d0eccb79116573c5"
+    },
+    {
+      "path": "apps/api/test/platform-release.test.js",
+      "mode": "100644",
+      "blob": "2670b37814a662fb833c266bfcb7fd10f723c87d"
+    },
+    {
+      "path": "apps/api/test/product.test.js",
+      "mode": "100644",
+      "blob": "9a363dd2ab8b7aed891ec82402f4794f75c2b526"
+    },
+    {
+      "path": "apps/api/test/public-access.test.js",
+      "mode": "100644",
+      "blob": "ebb4eb226a7cb7273e7e5ac9df179ac3464f45a2"
+    },
+    {
+      "path": "apps/api/test/runtime-install.test.js",
+      "mode": "100644",
+      "blob": "2bf2c485d52de9d436c276b6684d66b50fc11489"
+    },
+    {
+      "path": "apps/api/test/server-config.test.js",
+      "mode": "100644",
+      "blob": "b616c9b97b542272111f33a55cd61b724910b076"
+    },
+    {
+      "path": "apps/api/test/sessions.test.js",
+      "mode": "100644",
+      "blob": "80c183bf46db365e121c2d8852c0987aeb9cb38d"
+    },
+    {
+      "path": "apps/api/test/traffic-live.test.js",
+      "mode": "100644",
+      "blob": "9944937c9d0724570178b9f0b6625f30519382f9"
+    },
+    {
+      "path": "apps/api/test/updates-http.test.js",
+      "mode": "100644",
+      "blob": "61fc16a5e7f9b6b52a9f08ecff2decfcb01093b1"
+    },
+    {
+      "path": "apps/dashboard/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "apps/dashboard/Dockerfile",
+      "mode": "100644",
+      "blob": "2bad5efbfc8177bc109606a20d7eb435e1acb11a"
+    },
+    {
+      "path": "apps/dashboard/README.md",
+      "mode": "100644",
+      "blob": "273f7a05113e28792da5189185b8a40ac1377546"
+    },
+    {
+      "path": "apps/dashboard/THIRD_PARTY_NOTICES.md",
+      "mode": "100644",
+      "blob": "12733292a5c02aebdfce30a4531678248d2bdcc0"
+    },
+    {
+      "path": "apps/dashboard/app.js",
+      "mode": "100644",
+      "blob": "2d6a6eb8c97e4b6278cffee3c70406c6aba33109"
+    },
+    {
+      "path": "apps/dashboard/index.html",
+      "mode": "100644",
+      "blob": "2f9fefc569fd354ae45cb59d6c4761189f9b3f86"
+    },
+    {
+      "path": "apps/dashboard/nginx.conf",
+      "mode": "100644",
+      "blob": "427ec6888dd2cd7545bfdf3e786887b6335c70b2"
+    },
+    {
+      "path": "apps/dashboard/package.json",
+      "mode": "100644",
+      "blob": "73f1b82261032624b030593efe6b8dce7efb785c"
+    },
+    {
+      "path": "apps/dashboard/preview/history.html",
+      "mode": "100644",
+      "blob": "4f4ab474e8c25e3fb257da439e450d66c85be0f4"
+    },
+    {
+      "path": "apps/dashboard/preview/history.js",
+      "mode": "100644",
+      "blob": "79a0d053825e30f91bd98baf54274bc8d55a2050"
+    },
+    {
+      "path": "apps/dashboard/src/api.js",
+      "mode": "100644",
+      "blob": "7299554cf82070b878e957a0a2fe01d8258be6ea"
+    },
+    {
+      "path": "apps/dashboard/src/deployment-history.js",
+      "mode": "100644",
+      "blob": "43e5f472e2709dc2fc2050217dd2f444bc706864"
+    },
+    {
+      "path": "apps/dashboard/src/insights-view.js",
+      "mode": "100644",
+      "blob": "f18f1225bdae4a6179792402c3494d32b48c238e"
+    },
+    {
+      "path": "apps/dashboard/src/insights.js",
+      "mode": "100644",
+      "blob": "51b88dcd003ceeea2a25fb09298f40286e5810fb"
+    },
+    {
+      "path": "apps/dashboard/src/lifecycle.js",
+      "mode": "100644",
+      "blob": "83f8310ad01a60cb02ae4a220c01006cd0b06d1a"
+    },
+    {
+      "path": "apps/dashboard/src/openstack-installer.js",
+      "mode": "100644",
+      "blob": "4c58d0d776dcf4c7b5a544589595e1843512efad"
+    },
+    {
+      "path": "apps/dashboard/src/recovery.js",
+      "mode": "100644",
+      "blob": "4f6e7dc9be3fabfcd5fafe8cadb15a01bc716a3f"
+    },
+    {
+      "path": "apps/dashboard/start.sh",
+      "mode": "100644",
+      "blob": "4c62f35f15d454dddddc82d8b1c636679b5cbb00"
+    },
+    {
+      "path": "apps/dashboard/styles.css",
+      "mode": "100644",
+      "blob": "d8199b847b6f6799b4ac4ec4efa9222cbd77ce57"
+    },
+    {
+      "path": "apps/dashboard/sync-design-system.mjs",
+      "mode": "100644",
+      "blob": "03b1ed92b06adb47e669ac4b35450571ad67720c"
+    },
+    {
+      "path": "apps/dashboard/vite.config.js",
+      "mode": "100644",
+      "blob": "6f2d94aeb1be0a4dfc3feb645f3ca7a7d041a7df"
+    },
+    {
+      "path": "ci/README.md",
+      "mode": "100644",
+      "blob": "7555df70d3030e15ec91e0cb87f4e447daddf538"
+    },
+    {
+      "path": "ci/browser/README.md",
+      "mode": "100644",
+      "blob": "c22dcd6a8633764b1af0ba93498ca2f7bdb0dca8"
+    },
+    {
+      "path": "ci/browser/application-lifecycle.test.mjs",
+      "mode": "100644",
+      "blob": "66223ae507afe2b1c7455d699ffa6d6c64a5522e"
+    },
+    {
+      "path": "ci/browser/deployment-history.test.mjs",
+      "mode": "100644",
+      "blob": "39d8257f819a7a379513e1d5a0f5ce9768de99c3"
+    },
+    {
+      "path": "ci/browser/environment.test.mjs",
+      "mode": "100644",
+      "blob": "c76b5aca344427b45b33d7f4a0826678d442644e"
+    },
+    {
+      "path": "ci/browser/insights.test.mjs",
+      "mode": "100644",
+      "blob": "7a794db4f3797122b827c0c5f182e69e0ef6ff52"
+    },
+    {
+      "path": "ci/browser/live-dashboard.test.mjs",
+      "mode": "100644",
+      "blob": "a39b5f9f8cea81b406168454c01e163d8446df6c"
+    },
+    {
+      "path": "ci/browser/monitoring.test.mjs",
+      "mode": "100644",
+      "blob": "cf45e56890f97b64fbcaea740df28cbf4d70b5dd"
+    },
+    {
+      "path": "ci/browser/package-lock.json",
+      "mode": "100644",
+      "blob": "176de589b824249322d80603bd0f2e4cc10c0277"
+    },
+    {
+      "path": "ci/browser/package.json",
+      "mode": "100644",
+      "blob": "49bc6471d09e71634c31bf76b6f99797a9caa9fd"
+    },
+    {
+      "path": "ci/browser/personal-api.test.mjs",
+      "mode": "100644",
+      "blob": "6f3ad7239027906d4bfe47407c7e56a76d9ba9b8"
+    },
+    {
+      "path": "ci/browser/personal-environment.test.mjs",
+      "mode": "100644",
+      "blob": "ebbb97066cb7453f205ddae3ff8bdb54714af687"
+    },
+    {
+      "path": "ci/browser/smoke.test.mjs",
+      "mode": "100644",
+      "blob": "8bcf1dfe76f5b91103de713ae5eceb287dcaae1f"
+    },
+    {
+      "path": "ci/policies/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "ci/requirements-dev.txt",
+      "mode": "100644",
+      "blob": "cf6d062218c72f2e6c5e42e55f1999ac521c40bc"
+    },
+    {
+      "path": "ci/requirements-test.txt",
+      "mode": "100644",
+      "blob": "d74d95c9d70d5ab5e622ae2876bbd95665a3e7ee"
+    },
+    {
+      "path": "ci/runner-compose.yml",
+      "mode": "100644",
+      "blob": "a0ddd8e68ff63f364e96799fa5f228327b7d0518"
+    },
+    {
+      "path": "ci/scripts/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "ci/scripts/agents/DONT.md",
+      "mode": "100644",
+      "blob": "a88efb8692af4d1fc003fdadf8df91546a0260e4"
+    },
+    {
+      "path": "ci/scripts/agents/SAFETY.md",
+      "mode": "100644",
+      "blob": "2975417639d04b1067c9c21911fb5336126cc9a9"
+    },
+    {
+      "path": "ci/scripts/agents/adapter/INSTRUCTION.md",
+      "mode": "100644",
+      "blob": "4f371742dce2bec00063269159413d7bd007cbb1"
+    },
+    {
+      "path": "ci/scripts/agents/fixer/INSTRUCTION.md",
+      "mode": "100644",
+      "blob": "8898925d2e36807f6ba37dceb5d9aabd460a132a"
+    },
+    {
+      "path": "ci/scripts/agents/skills/prepare-deployment/SKILL.md",
+      "mode": "100644",
+      "blob": "118860463b532f77345ea2dab9142b00bf457f9c"
+    },
+    {
+      "path": "ci/scripts/agents/skills/prepare-deployment/references/examples.md",
+      "mode": "100644",
+      "blob": "476efea9fe10ef6f7fc89befe201e50e246cecc6"
+    },
+    {
+      "path": "ci/scripts/check-ansible.sh",
+      "mode": "100755",
+      "blob": "00bb97c10e715b5e9ac5911c28a72f4936e15e57"
+    },
+    {
+      "path": "ci/scripts/check-bootstrap.sh",
+      "mode": "100755",
+      "blob": "a8a2e1b9fdda07c4901fa88c2eadb43c4506bb8a"
+    },
+    {
+      "path": "ci/scripts/check_contract.py",
+      "mode": "100644",
+      "blob": "7c8a8e2d01dd7a7f2c479f971ece61a1fd1732a5"
+    },
+    {
+      "path": "ci/scripts/ci_scope.py",
+      "mode": "100644",
+      "blob": "2d607103e851dde915556b64bc1db14ef53717ec"
+    },
+    {
+      "path": "ci/scripts/codebuild.py",
+      "mode": "100644",
+      "blob": "f0c05633db4e66505f7da0fe972a67a8b6c2dae2"
+    },
+    {
+      "path": "ci/scripts/codebuild_release.py",
+      "mode": "100644",
+      "blob": "15acbd88a2ad82d1dadd2a738c05acff0849c256"
+    },
+    {
+      "path": "ci/scripts/container-smoke.py",
+      "mode": "100644",
+      "blob": "1473f66b17aa7e5de6b34727006c4bf75ade15fd"
+    },
+    {
+      "path": "ci/scripts/contract/catalog.yaml",
+      "mode": "100644",
+      "blob": "c6573f9dce84a126973b8e6893fba2117d0d3558"
+    },
+    {
+      "path": "ci/scripts/contract/ci-executor.yaml",
+      "mode": "100644",
+      "blob": "cd5f1a13476cdec780d6f68185dafb55d9e02db3"
+    },
+    {
+      "path": "ci/scripts/contract/failure-classes.md",
+      "mode": "100644",
+      "blob": "ab09fec0ff7b2f4d69cc7e231585b9e2959fec71"
+    },
+    {
+      "path": "ci/scripts/contract/observability.md",
+      "mode": "100644",
+      "blob": "72fda6679a5ed3fcd6fdd3ad55aa7b5a1e6b35b1"
+    },
+    {
+      "path": "ci/scripts/contract/paths.yaml",
+      "mode": "100644",
+      "blob": "66f306432c99948da70a7472803ace98c6dff9f9"
+    },
+    {
+      "path": "ci/scripts/contract/registry.md",
+      "mode": "100644",
+      "blob": "fed59d1987cb55db056a509c856380d1e289489f"
+    },
+    {
+      "path": "ci/scripts/contract/stack-contract.md",
+      "mode": "100644",
+      "blob": "50e952b9b6e51e4727c76585c4a5194e633153a2"
+    },
+    {
+      "path": "ci/scripts/contract/stages.json",
+      "mode": "100644",
+      "blob": "a900707d2c638968c6e9708f935efc5054c82b6f"
+    },
+    {
+      "path": "ci/scripts/contract/telemetry.json",
+      "mode": "100644",
+      "blob": "24842c91dcf473d7592aaac49921586bf0540bd0"
+    },
+    {
+      "path": "ci/scripts/diagnostics.py",
+      "mode": "100644",
+      "blob": "0ed0568428b0c6ae5a48e01eabec38a39675dd6e"
+    },
+    {
+      "path": "ci/scripts/execution.py",
+      "mode": "100644",
+      "blob": "395ae2770eeb8d3811d37e9d573e5b66377b03bb"
+    },
+    {
+      "path": "ci/scripts/gate/bundle.py",
+      "mode": "100644",
+      "blob": "000b0d6fa5348cb5949926c9d94a3f82d653c156"
+    },
+    {
+      "path": "ci/scripts/gate/e2e.py",
+      "mode": "100644",
+      "blob": "3745ef24c90a418d3775f66fe0769e3375188ed1"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/README.md",
+      "mode": "100644",
+      "blob": "6b5a9dadf4e22f91accf8888613f7a84480a18eb"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/fastapi/.dockerignore",
+      "mode": "100644",
+      "blob": "4af8e31d3ba8f0027a89b7ac0fc81878dad47271"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/fastapi/.python-version",
+      "mode": "100644",
+      "blob": "f36fa5fd8017a085e301126c8c3fc30f1a2550b9"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/fastapi/.railshot/railshot.yaml",
+      "mode": "100644",
+      "blob": "1a0f96c2ea4d963d5858d332d6c79fa34a4fe32c"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/fastapi/Dockerfile",
+      "mode": "100644",
+      "blob": "5b33bb1a794c4ea16f551c5051d071474d66c5b6"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/fastapi/app.py",
+      "mode": "100644",
+      "blob": "20f714238371a76e735bdb04bf9a792e468495ee"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/fastapi/pyproject.toml",
+      "mode": "100644",
+      "blob": "915db5cb3a503af8024137723eb3382109d9fd3e"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/fastapi/tests/test_app.py",
+      "mode": "100644",
+      "blob": "b3fc9bb609e771488b711db2f8fa98166d26b533"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/generate.py",
+      "mode": "100644",
+      "blob": "e43bc8d9787d3dd362f68edd5d2e8f09591ec45d"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/.dockerignore",
+      "mode": "100644",
+      "blob": "3c31f16cbd2a29ec88b32867d5c3554152f5b0fe"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/.railshot/railshot.yaml",
+      "mode": "100644",
+      "blob": "48c6daa50e5f25461c51397879fe62b801b9a911"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/Dockerfile",
+      "mode": "100644",
+      "blob": "f9871c1bf2d899a9e2dd0846b1396153effcf9b5"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/build.gradle",
+      "mode": "100644",
+      "blob": "9ef8f2adac56c9ae349a4cf863fd699e46909ddf"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/config/checkstyle/checkstyle.xml",
+      "mode": "100644",
+      "blob": "86645b4a85463f3f0f2af0359c79b83f6c29c6ec"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/gradle.properties",
+      "mode": "100644",
+      "blob": "1d1b899293aabd58926fe63d98f80074d5b7be0b"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/settings.gradle",
+      "mode": "100644",
+      "blob": "5cbcd79a6ac24150e354a155ac511f7069be3958"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/src/main/java/dev/railshot/FixtureApplication.java",
+      "mode": "100644",
+      "blob": "3fcf2e99ddac468fdb61b48762d60a78a77d50ef"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/src/main/java/dev/railshot/HealthController.java",
+      "mode": "100644",
+      "blob": "47d5342a9cc262c41c9e5755799bae3e94536258"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/gradle-spring/src/test/java/dev/railshot/HealthTest.java",
+      "mode": "100644",
+      "blob": "8ccbf87f303004ed1e57ef47bf0b13d7998271bc"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/.dockerignore",
+      "mode": "100644",
+      "blob": "3c31f16cbd2a29ec88b32867d5c3554152f5b0fe"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/.railshot/railshot.yaml",
+      "mode": "100644",
+      "blob": "be847d196b2111cecb9e429e019dcaa4b2a3d43c"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/Dockerfile",
+      "mode": "100644",
+      "blob": "ed089a88cab4893f01cb1b4bdb0b937231ac4284"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/config/checkstyle/checkstyle.xml",
+      "mode": "100644",
+      "blob": "86645b4a85463f3f0f2af0359c79b83f6c29c6ec"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/pom.xml",
+      "mode": "100644",
+      "blob": "3273bc6397995c8c45c222a719f47bd7abaf6f09"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/src/main/java/dev/railshot/FixtureApplication.java",
+      "mode": "100644",
+      "blob": "3fcf2e99ddac468fdb61b48762d60a78a77d50ef"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/src/main/java/dev/railshot/HealthController.java",
+      "mode": "100644",
+      "blob": "47d5342a9cc262c41c9e5755799bae3e94536258"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/maven-spring/src/test/java/dev/railshot/HealthTest.java",
+      "mode": "100644",
+      "blob": "8ccbf87f303004ed1e57ef47bf0b13d7998271bc"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/.dockerignore",
+      "mode": "100644",
+      "blob": "3c31f16cbd2a29ec88b32867d5c3554152f5b0fe"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/.node-version",
+      "mode": "100644",
+      "blob": "de889f8c2e71ed4bdfc48f042e6265f8f67f6356"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/.railshot/railshot.yaml",
+      "mode": "100644",
+      "blob": "74c66e57f24da76326d08e4be4d49d33e09be654"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/Dockerfile",
+      "mode": "100644",
+      "blob": "d6d7e8db8d56864be582e85fbb62d121e808601e"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/app/health/route.ts",
+      "mode": "100644",
+      "blob": "54685077d19b415a1995af2ff01087593ee9c1ee"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/app/layout.tsx",
+      "mode": "100644",
+      "blob": "a6cbbdd918c06a08de8e973e4433f48777a51738"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/app/page.tsx",
+      "mode": "100644",
+      "blob": "1de675540764391da6b71c6cbf8437fb47132049"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/eslint.config.mjs",
+      "mode": "100644",
+      "blob": "058b23ec4d41941608d26df6b206bec958b3abc3"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/lib/message.test.ts",
+      "mode": "100644",
+      "blob": "9f02b7169fde08dc68c90baf73bd1c482a283a91"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/lib/message.ts",
+      "mode": "100644",
+      "blob": "48310959dc62aa6bf643200d0fbcfaefa1c2df36"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/next-env.d.ts",
+      "mode": "100644",
+      "blob": "6080addc2d9595896fa4440b16cf51a41bfcfef8"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/next.config.mjs",
+      "mode": "100644",
+      "blob": "59b8383476dad5b528261b664e9dadbfc0ec182b"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/package.json",
+      "mode": "100644",
+      "blob": "651ed1b3ba9514063ab621a0aed5aa9fa4df207c"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/nextjs/tsconfig.json",
+      "mode": "100644",
+      "blob": "7bd1a5dff2e90361cdbb9a55586af5d10f5be957"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/.dockerignore",
+      "mode": "100644",
+      "blob": "4af8e31d3ba8f0027a89b7ac0fc81878dad47271"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/.node-version",
+      "mode": "100644",
+      "blob": "de889f8c2e71ed4bdfc48f042e6265f8f67f6356"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/.railshot/railshot.yaml",
+      "mode": "100644",
+      "blob": "fe18906ae042b554fceb69880866aaa2e88440b1"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/Dockerfile",
+      "mode": "100644",
+      "blob": "8613b4017287b58fcee6531ce84a3a456e72430c"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/eslint.config.mjs",
+      "mode": "100644",
+      "blob": "212c049f14d9bd4b77a94cfc93cfaf48e3554d04"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/package.json",
+      "mode": "100644",
+      "blob": "195cf05e1df09b73efacda08932d814683ed0692"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/src/app.js",
+      "mode": "100644",
+      "blob": "a9c9d16bf00b6df0646b527da0fa1958c08b3459"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/src/app.test.js",
+      "mode": "100644",
+      "blob": "73488adb80ad5c4897958f987adf75ea84a3eb31"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-js/src/server.js",
+      "mode": "100644",
+      "blob": "3d45c5b10fc85cb0ea37057011a1896bb04db16f"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/.dockerignore",
+      "mode": "100644",
+      "blob": "4af8e31d3ba8f0027a89b7ac0fc81878dad47271"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/.node-version",
+      "mode": "100644",
+      "blob": "de889f8c2e71ed4bdfc48f042e6265f8f67f6356"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/.railshot/railshot.yaml",
+      "mode": "100644",
+      "blob": "b424bb13b366e4da60907087d862f1b5e8614a0c"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/Dockerfile",
+      "mode": "100644",
+      "blob": "50e0114f200bb84ce8d4dc2f6e4566532de74284"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/eslint.config.mjs",
+      "mode": "100644",
+      "blob": "4b0bee6d67ba3f6315117a13c90d9a2492a311dc"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/package.json",
+      "mode": "100644",
+      "blob": "b8322bbf0a2da536ada516952b921e30ad88235b"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/src/app.test.ts",
+      "mode": "100644",
+      "blob": "73488adb80ad5c4897958f987adf75ea84a3eb31"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/src/app.ts",
+      "mode": "100644",
+      "blob": "e5ce3e0388ff1c467971902c4dc09e365fe6a44e"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/src/server.ts",
+      "mode": "100644",
+      "blob": "3d45c5b10fc85cb0ea37057011a1896bb04db16f"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/npm-ts/tsconfig.json",
+      "mode": "100644",
+      "blob": "483e6e654bd3f07a7b9b4e7d838373c6c979e212"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/test_fixture_runner.py",
+      "mode": "100644",
+      "blob": "1055290b3097dc0b9b46f7ff5699657615e35887"
+    },
+    {
+      "path": "ci/scripts/gate/fixtures/test_java_profiles.py",
+      "mode": "100644",
+      "blob": "d2f781b52e3b208be81fa27b9629a5e8f7e7a28f"
+    },
+    {
+      "path": "ci/scripts/gate/gate.py",
+      "mode": "100644",
+      "blob": "b858ad2f16822e235424e5ff8dc799d201110ece"
+    },
+    {
+      "path": "ci/scripts/gate/prepare.py",
+      "mode": "100644",
+      "blob": "8ce63195626077ce00bb218e55706d2d8d0ec1fc"
+    },
+    {
+      "path": "ci/scripts/gate/progress.py",
+      "mode": "100644",
+      "blob": "492e59cae9df350b223588bb188a0dcbe2cf8c46"
+    },
+    {
+      "path": "ci/scripts/gate/quality.py",
+      "mode": "100644",
+      "blob": "0b2fe3fd40c61842337b97ac5dc061d676cd5431"
+    },
+    {
+      "path": "ci/scripts/gate/repair.py",
+      "mode": "100644",
+      "blob": "fc25bb958db51a6aa757a464b9de1261b79d610b"
+    },
+    {
+      "path": "ci/scripts/gate/test_bundle.py",
+      "mode": "100644",
+      "blob": "156878e66a1216f7bb3d9d6fe9a76eb96f0c5357"
+    },
+    {
+      "path": "ci/scripts/gate/test_gap_boundaries.py",
+      "mode": "100644",
+      "blob": "3c54914a587db2a183a9f7c38f21320264b782cd"
+    },
+    {
+      "path": "ci/scripts/gate/test_java_evidence.py",
+      "mode": "100644",
+      "blob": "4be0dce245275b50394b98446a24fa1af0fa8877"
+    },
+    {
+      "path": "ci/scripts/gate/test_js_unit_diagnostics.py",
+      "mode": "100644",
+      "blob": "aaaee6f8c030c8fb7b90a6540539635f2e29d531"
+    },
+    {
+      "path": "ci/scripts/gate/test_node_reporter.py",
+      "mode": "100644",
+      "blob": "b560b81daf2cdff9717e6d7e4e813e520981f24a"
+    },
+    {
+      "path": "ci/scripts/gate/test_pipeline.py",
+      "mode": "100644",
+      "blob": "59500b11272fff69f6adf2163821ae4aaae86cbb"
+    },
+    {
+      "path": "ci/scripts/gate/test_prepare.py",
+      "mode": "100644",
+      "blob": "acd7d88ce930b37f1454d2603590be0a6ca8b0cc"
+    },
+    {
+      "path": "ci/scripts/gate/test_progress.py",
+      "mode": "100644",
+      "blob": "1186a610795f367cb12374e814f6c75be46f8cba"
+    },
+    {
+      "path": "ci/scripts/gate/test_python_profiles.py",
+      "mode": "100644",
+      "blob": "fd8f817d0958d56314e8e1eeda079f3ef94bf851"
+    },
+    {
+      "path": "ci/scripts/gate/test_quality_boundary.py",
+      "mode": "100644",
+      "blob": "41b0d0244bcce97ad92f56a2404189f801f62467"
+    },
+    {
+      "path": "ci/scripts/gate/test_runtime_profiles.py",
+      "mode": "100644",
+      "blob": "f3519149acc193fb3fdfff7a5e9785c1ef4ef611"
+    },
+    {
+      "path": "ci/scripts/gate/test_semantics.py",
+      "mode": "100644",
+      "blob": "f906f680adfd83f3a78cc2f0bfff0b6c9d40dc67"
+    },
+    {
+      "path": "ci/scripts/gate/test_source_repair.py",
+      "mode": "100644",
+      "blob": "ea30a5bbee419e970b14eb0aa22b4d9c483c722a"
+    },
+    {
+      "path": "ci/scripts/infra/database.py",
+      "mode": "100644",
+      "blob": "44faaa0860b0ab3750bd093f6ae1a770e68821d9"
+    },
+    {
+      "path": "ci/scripts/infra/test_database.py",
+      "mode": "100644",
+      "blob": "e647234bcd0c07fef93e7ac1b9d7e4f8c9bd51e7"
+    },
+    {
+      "path": "ci/scripts/integration_e2e.py",
+      "mode": "100644",
+      "blob": "510a2a765cb15c0a0cce0fafeea0b96a4df644f5"
+    },
+    {
+      "path": "ci/scripts/loop/checks_progress.py",
+      "mode": "100644",
+      "blob": "5cd46345be1b8427b7c3331ea84c9301e522277e"
+    },
+    {
+      "path": "ci/scripts/loop/gate_progress.py",
+      "mode": "100644",
+      "blob": "72cf4c8116fafe13db94464547f6e0eaabfd4697"
+    },
+    {
+      "path": "ci/scripts/loop/loop.py",
+      "mode": "100644",
+      "blob": "0da1c016334a2120ef4172d0c403b1c319575069"
+    },
+    {
+      "path": "ci/scripts/loop/native_packaging.py",
+      "mode": "100644",
+      "blob": "9d3613f34e16bc27d1a244b67602c1d1ff3a0020"
+    },
+    {
+      "path": "ci/scripts/loop/run_state.py",
+      "mode": "100644",
+      "blob": "897b27c0f14596711a59540cd657c19b33964269"
+    },
+    {
+      "path": "ci/scripts/loop/test_checks_progress.py",
+      "mode": "100644",
+      "blob": "bb3caa654467613498755d6c6b94cce354494fd7"
+    },
+    {
+      "path": "ci/scripts/loop/test_native_packaging.py",
+      "mode": "100644",
+      "blob": "e83f43c5b218dffc49ad2375580357f7b58ff388"
+    },
+    {
+      "path": "ci/scripts/loop/test_resume.py",
+      "mode": "100644",
+      "blob": "e673aa3afc4b4018ec4ebe7545e78f29554b8b7f"
+    },
+    {
+      "path": "ci/scripts/observability.py",
+      "mode": "100644",
+      "blob": "453d7581bc6cc199eb0702262de8088337d0b286"
+    },
+    {
+      "path": "ci/scripts/poc/intake.py",
+      "mode": "100644",
+      "blob": "5f011f412ce581c7800485e3862d34f4ce12dd06"
+    },
+    {
+      "path": "ci/scripts/poc/test_intake.py",
+      "mode": "100644",
+      "blob": "7bbc8c711627358c7e1272215bc07b6d701882dd"
+    },
+    {
+      "path": "ci/scripts/prepare-cni-smoke.sh",
+      "mode": "100755",
+      "blob": "2c250f805812967e30a3351e1a149afda44fa1c1"
+    },
+    {
+      "path": "ci/scripts/process.py",
+      "mode": "100644",
+      "blob": "6640feac518ba9c4fadc77bbbda0569e890a4003"
+    },
+    {
+      "path": "ci/scripts/publication.py",
+      "mode": "100644",
+      "blob": "3e7028456839b5baf6c9c94cecaa2f6914c26a03"
+    },
+    {
+      "path": "ci/scripts/runner/Dockerfile",
+      "mode": "100644",
+      "blob": "1a4bd1ab637e1d5469016334b2f248aed633316b"
+    },
+    {
+      "path": "ci/scripts/runner/LICENSE.apache-2.0",
+      "mode": "100644",
+      "blob": "584149b6ee28c28d7a4463af9cbd534922533ced"
+    },
+    {
+      "path": "ci/scripts/runner/README.md",
+      "mode": "100644",
+      "blob": "1cb0706a6d0b01198c1225bc249f40026f603d15"
+    },
+    {
+      "path": "ci/scripts/runner/SOURCE-REPAIR.md",
+      "mode": "100644",
+      "blob": "424e06ca356486b969ff1f06613c04e4a136d499"
+    },
+    {
+      "path": "ci/scripts/runner/UPSTREAM.md",
+      "mode": "100644",
+      "blob": "01be22d6060a554fbee0dfdc0b8a271d203fcd4f"
+    },
+    {
+      "path": "ci/scripts/runner/capacity.py",
+      "mode": "100644",
+      "blob": "34b906c3332356fb76bdeba12a5aac99be0c5581"
+    },
+    {
+      "path": "ci/scripts/runner/container_preflight.py",
+      "mode": "100644",
+      "blob": "cd42c77d158606dcd298ddb9ef486d374a527ec1"
+    },
+    {
+      "path": "ci/scripts/runner/entrypoint.sh",
+      "mode": "100644",
+      "blob": "f78b6438cf863c3b072da5d616c25fc8a5d4399c"
+    },
+    {
+      "path": "ci/scripts/runner/native_preflight.py",
+      "mode": "100644",
+      "blob": "609b5c150fc39fb6b0651a2f437c96a290856fe9"
+    },
+    {
+      "path": "ci/scripts/runner/prepare-host.sh",
+      "mode": "100644",
+      "blob": "ec66e2cd41e9add3d52cc7c23972ef49139d9a60"
+    },
+    {
+      "path": "ci/scripts/runner/profiles.yaml",
+      "mode": "100644",
+      "blob": "7552fa01568bcb0a2dd165ff6a12e0797e23712f"
+    },
+    {
+      "path": "ci/scripts/runner/railshot-codex-bwrap.apparmor",
+      "mode": "100644",
+      "blob": "5c37d35edfdcdc9578c72dee34c426ae84441161"
+    },
+    {
+      "path": "ci/scripts/runner/railshot-codex-bwrap.json",
+      "mode": "100644",
+      "blob": "f0bba8c449082c5b001dc37a910d8b6a00c2c4b6"
+    },
+    {
+      "path": "ci/scripts/runner/repair_evidence.py",
+      "mode": "100644",
+      "blob": "27a269a80f920cc227f3ebdf007a8db272d3fa2d"
+    },
+    {
+      "path": "ci/scripts/runner/replenish.py",
+      "mode": "100644",
+      "blob": "44232f042fbfaac326cf44175b8da6022b7d76db"
+    },
+    {
+      "path": "ci/scripts/runner/run_agent.py",
+      "mode": "100644",
+      "blob": "465034cc25be5f66d0a126072e04cfe9e70ae309"
+    },
+    {
+      "path": "ci/scripts/runner/runtime_boundary.py",
+      "mode": "100644",
+      "blob": "7deb336e08a63997ee20baea767cdd7bd1f8c20c"
+    },
+    {
+      "path": "ci/scripts/runner/test_capacity.py",
+      "mode": "100644",
+      "blob": "e9e2eb65ae1365c1e3ea3d36904a8ba3559b841a"
+    },
+    {
+      "path": "ci/scripts/runner/test_container.py",
+      "mode": "100644",
+      "blob": "4b488c7ba725cafa69d9348733a74bb36674c50b"
+    },
+    {
+      "path": "ci/scripts/runner/test_entrypoint.py",
+      "mode": "100644",
+      "blob": "50145f1c0499f9987cd329aa529ca287f29a0ddf"
+    },
+    {
+      "path": "ci/scripts/runner/test_host_policy.py",
+      "mode": "100644",
+      "blob": "a33984fbfbaf0c42069c968c17fee3dc9ec3b22d"
+    },
+    {
+      "path": "ci/scripts/runner/test_repair_evidence.py",
+      "mode": "100644",
+      "blob": "ce5e81028348a6e81e74ac740aba9704ae15bc30"
+    },
+    {
+      "path": "ci/scripts/runner/test_replenish.py",
+      "mode": "100644",
+      "blob": "ad19fd1fb5d148b0fa3c4449007c47bd3b131c39"
+    },
+    {
+      "path": "ci/scripts/runner/test_runner.py",
+      "mode": "100644",
+      "blob": "1bee201dbc0caf15dd1b7997f9f77452d6aae96e"
+    },
+    {
+      "path": "ci/scripts/schemas/railshot.schema.json",
+      "mode": "100644",
+      "blob": "ebf65c05b061ac187770595e7507fbd34e6d66f2"
+    },
+    {
+      "path": "ci/scripts/schemas/report.schema.json",
+      "mode": "100644",
+      "blob": "161d1a2962da49180a68b4703c3d0ed212d0441e"
+    },
+    {
+      "path": "ci/scripts/source_snapshot.py",
+      "mode": "100644",
+      "blob": "ffd6266d6860b29a9d35dfc5cdc8347c96ec2aec"
+    },
+    {
+      "path": "ci/scripts/storage.py",
+      "mode": "100644",
+      "blob": "31725ecf381c625b6b8806ac1697b4769b40c5ce"
+    },
+    {
+      "path": "ci/scripts/test_ci_scope.py",
+      "mode": "100644",
+      "blob": "686b8f79342032a3ec631358af7e782309c7eadf"
+    },
+    {
+      "path": "ci/scripts/test_codebuild.py",
+      "mode": "100644",
+      "blob": "8b8ca784d5b9a3c55618d650fcb54abf61be06fb"
+    },
+    {
+      "path": "ci/scripts/test_container_smoke.py",
+      "mode": "100644",
+      "blob": "4ff8e36f26692b88dff355a7e974a1cb76b3293f"
+    },
+    {
+      "path": "ci/scripts/test_diagnostics.py",
+      "mode": "100644",
+      "blob": "5dd430e4fbb2d84addff92b312d5e9aaf1ff5144"
+    },
+    {
+      "path": "ci/scripts/test_integration_e2e.py",
+      "mode": "100644",
+      "blob": "de6050839d5e37fbcf48829d221a0499a1055c84"
+    },
+    {
+      "path": "ci/scripts/test_observability.py",
+      "mode": "100644",
+      "blob": "e644ba19162bbb4c5f7a4f34c58b6cc5159857df"
+    },
+    {
+      "path": "ci/scripts/test_prepare_cni_smoke.py",
+      "mode": "100644",
+      "blob": "0b48f5f9da246953c27811ee63aa8beeaffbbb75"
+    },
+    {
+      "path": "ci/scripts/test_process.py",
+      "mode": "100644",
+      "blob": "8f9ab247448d89c1d91e15bb070e6bb8e70968b0"
+    },
+    {
+      "path": "ci/scripts/test_publication.py",
+      "mode": "100644",
+      "blob": "8c82aa19733a0bdb589bda9246eee9a8f2dd0333"
+    },
+    {
+      "path": "ci/scripts/test_source_snapshot.py",
+      "mode": "100644",
+      "blob": "ed8843c0c048639461442ed2837528fbd89885ad"
+    },
+    {
+      "path": "ci/scripts/test_storage.py",
+      "mode": "100644",
+      "blob": "07f82e761fa1ed75b0acdb4ab091366cd6f11c47"
+    },
+    {
+      "path": "ci/scripts/test_workflow_policy.py",
+      "mode": "100644",
+      "blob": "d411070cd032a61f67bbfcccad883a488a41c357"
+    },
+    {
+      "path": "ci/tests/test_agent_jobs.py",
+      "mode": "100644",
+      "blob": "8e45a820f61a2a3dc30ddc223531b629ce5e5e88"
+    },
+    {
+      "path": "ci/tests/test_bootstrap_connection.py",
+      "mode": "100644",
+      "blob": "4c31c6cf470d7f96b2aa8b3d6120e7524f6680fd"
+    },
+    {
+      "path": "ci/tests/test_bootstrap_download.py",
+      "mode": "100644",
+      "blob": "d4632deacb4ede5987c6de819992150737378f90"
+    },
+    {
+      "path": "ci/tests/test_bootstrap_openstack.py",
+      "mode": "100644",
+      "blob": "2c0746104c8bd8171bf676d1ec7389282a4847bb"
+    },
+    {
+      "path": "ci/tests/test_bootstrap_security.py",
+      "mode": "100644",
+      "blob": "257b648a5141a6eb9665d598d06c00351f305d4e"
+    },
+    {
+      "path": "ci/tests/test_personal_identity.py",
+      "mode": "100644",
+      "blob": "9d40374e9ef7655001bda1d879dc6b17613030b6"
+    },
+    {
+      "path": "ci/tests/test_preflight.py",
+      "mode": "100644",
+      "blob": "93cc28e7a96aa20c80a0cfb41cd27618c1ca446b"
+    },
+    {
+      "path": "ci/tests/test_rendering.py",
+      "mode": "100644",
+      "blob": "07dad7f9b9d41bfaae161dcdcda2f44124411f6c"
+    },
+    {
+      "path": "ci/workflows/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "ci/workflows/codebuild-release.yml",
+      "mode": "100644",
+      "blob": "753a86396aa484958f3a4302c59b5aef45ef4435"
+    },
+    {
+      "path": "ci/workflows/railshot-deploy.yml",
+      "mode": "100644",
+      "blob": "855ea11b1c1ce7b24389f8138083ba90456e028e"
+    },
+    {
+      "path": "ci/workflows/railshot-pull-credential.yml",
+      "mode": "100644",
+      "blob": "fd33310a8fcc692ab00533a0a3872deb13eb90c2"
+    },
+    {
+      "path": "contracts/ansible-job.schema.json",
+      "mode": "100644",
+      "blob": "a5e8dd14c4072bf47ed80e42ec82e8f8260a66aa"
+    },
+    {
+      "path": "contracts/ansible-request.schema.json",
+      "mode": "100644",
+      "blob": "34b3d36eb4861596ef58e08eba342b5850328fa4"
+    },
+    {
+      "path": "contracts/application.mjs",
+      "mode": "100644",
+      "blob": "e38e1d6377254636682f9226bc5e433b468a495d"
+    },
+    {
+      "path": "deployment/.env.example",
+      "mode": "100644",
+      "blob": "45115cb1c23388775b64e47eb4e5e86e15d59ec7"
+    },
+    {
+      "path": "deployment/.gitignore",
+      "mode": "100644",
+      "blob": "2cca8fb85e23b0d310a635fa0bd8d0f36347ac77"
+    },
+    {
+      "path": "deployment/DEMO-RUNBOOK.md",
+      "mode": "100644",
+      "blob": "589f90ab9c6a5def03be2bf8ca4838ec6c7d102b"
+    },
+    {
+      "path": "deployment/README.md",
+      "mode": "100644",
+      "blob": "b7e66f9f9aeecb7cd6ddcb8e211b4c145e19da3e"
+    },
+    {
+      "path": "deployment/airgap/README.md",
+      "mode": "100644",
+      "blob": "c52ca5b8626b61743dce8bc7a8fca425e8ea8ad5"
+    },
+    {
+      "path": "deployment/airgap/check-updates.sh",
+      "mode": "100755",
+      "blob": "827d8f8b965a2257cde3fab928968b4e98a2b71a"
+    },
+    {
+      "path": "deployment/airgap/install-offline.sh",
+      "mode": "100755",
+      "blob": "91d869ac44cdd81de6e33f653e0d2a2a7b47b2dd"
+    },
+    {
+      "path": "deployment/airgap/metadata/v0.1.0/artifact-metadata-arm64.json",
+      "mode": "100644",
+      "blob": "f180e68316e80b4356942f68492b82d1a089c4d2"
+    },
+    {
+      "path": "deployment/airgap/metadata/v0.1.0/bundle-manifest-arm64.json",
+      "mode": "100644",
+      "blob": "766f5173de0863f7073e51c63c204da76bfcdee3"
+    },
+    {
+      "path": "deployment/airgap/metadata/v0.1.0/checksums-arm64.txt",
+      "mode": "100644",
+      "blob": "adf45823c54c9a413d4b4a97b7eca82cc8c2b29c"
+    },
+    {
+      "path": "deployment/airgap/preload-images.sh",
+      "mode": "100755",
+      "blob": "339e17986aef334048aafadbbfb8c626f2732a41"
+    },
+    {
+      "path": "deployment/airgap/prepare-bundle.sh",
+      "mode": "100755",
+      "blob": "ef46b1dc688d09b89286207032ca951d14f7a3c5"
+    },
+    {
+      "path": "deployment/airgap/release-download.sh",
+      "mode": "100755",
+      "blob": "aa643b8bab69a8db41c012a573cb5a77f37b9ede"
+    },
+    {
+      "path": "deployment/airgap/release-pack.sh",
+      "mode": "100755",
+      "blob": "ea9865c6b28321011665a6dd9b37e6caad453922"
+    },
+    {
+      "path": "deployment/airgap/release-upload.sh",
+      "mode": "100755",
+      "blob": "779a8c8512017f3724c18c6c8762b2f39503d136"
+    },
+    {
+      "path": "deployment/airgap/scripts/bundle.py",
+      "mode": "100644",
+      "blob": "ec5a4cc29f80335e31a88ef56db949a65515bfe2"
+    },
+    {
+      "path": "deployment/airgap/scripts/check_updates.py",
+      "mode": "100644",
+      "blob": "06cb5fb6e594990344ad5a957a22e99d3fe69643"
+    },
+    {
+      "path": "deployment/airgap/scripts/prepare.py",
+      "mode": "100644",
+      "blob": "5a21fd902e53ff9f9f7d51f689470cd4649b19c2"
+    },
+    {
+      "path": "deployment/airgap/scripts/release.py",
+      "mode": "100644",
+      "blob": "d01875e18cce5f1b0059371601efa801e977faa8"
+    },
+    {
+      "path": "deployment/airgap/verify-bundle.sh",
+      "mode": "100755",
+      "blob": "93ad1a9a97428b3f393d9b4251bcccca361699ef"
+    },
+    {
+      "path": "deployment/airgap/versions.json",
+      "mode": "100644",
+      "blob": "8d4c47a07c8f0896f569d62d2910ad58767f9816"
+    },
+    {
+      "path": "deployment/bootstrap/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "deployment/bootstrap/claim_token.py",
+      "mode": "100644",
+      "blob": "ad6c4342b33138dbf369093ce99925f3e21cd2ed"
+    },
+    {
+      "path": "deployment/bootstrap/cleanup.sh",
+      "mode": "100755",
+      "blob": "645a81f2bf14adce099773c63091558ca45236d1"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/__init__.py",
+      "mode": "100644",
+      "blob": "4b89707a9c00cc94433406d433f324c52fe9d268"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/credentials.py",
+      "mode": "100644",
+      "blob": "41c623aff9ac032f85be73412eb6d6349a8f8c09"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/main.py",
+      "mode": "100644",
+      "blob": "be39737a52365c33a4dad0191251461f505a9d33"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/personal_identity.py",
+      "mode": "100644",
+      "blob": "b56eb4eaffe18983395bf7624cdb395c22699e57"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/preflight.py",
+      "mode": "100644",
+      "blob": "b2022e8e245a7df3d7850f47bea6c114300661b0"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/report.py",
+      "mode": "100644",
+      "blob": "6b9bc6f0ea59f7b49ce1b061e84824f0513c1524"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/state.py",
+      "mode": "100644",
+      "blob": "382cc22e1c863f71c3190d80a3f930b4b0b9693c"
+    },
+    {
+      "path": "deployment/bootstrap/client_setup/wireguard.py",
+      "mode": "100644",
+      "blob": "ebc64b2260e2a0b8a04d234528a55e9603b606c7"
+    },
+    {
+      "path": "deployment/bootstrap/health.sh",
+      "mode": "100755",
+      "blob": "081c163e0e440d91e842d948fc56cd06530963f0"
+    },
+    {
+      "path": "deployment/bootstrap/install-k3s.sh",
+      "mode": "100755",
+      "blob": "7a3235e2a0844cfd513691ade505b1a9ce94ec55"
+    },
+    {
+      "path": "deployment/bootstrap/install.sh",
+      "mode": "100755",
+      "blob": "9c8cb968fb7c7db6aa279faf5beb6dc94b399722"
+    },
+    {
+      "path": "deployment/bootstrap/install_payload.py",
+      "mode": "100644",
+      "blob": "43057cbb57325d52647b3663a6160b75960de82e"
+    },
+    {
+      "path": "deployment/bootstrap/personal-install.sh",
+      "mode": "100755",
+      "blob": "fd9b3baa5004402e6329de9d111a9050846363c7"
+    },
+    {
+      "path": "deployment/bootstrap/personal-registration.sh",
+      "mode": "100644",
+      "blob": "e83bbb61a5b91c183b16dd31387d3d817226f65a"
+    },
+    {
+      "path": "deployment/bootstrap/preflight.sh",
+      "mode": "100755",
+      "blob": "6c78b83f2b6bee0b5afb2191938aedbd9ca0c6a0"
+    },
+    {
+      "path": "deployment/bootstrap/requirements.lock",
+      "mode": "100644",
+      "blob": "371c65a58f061d70c4bd4a7728449b01502630cc"
+    },
+    {
+      "path": "deployment/bootstrap/revoke_personal_identity.py",
+      "mode": "100644",
+      "blob": "fb74e8b6d30c8967aa7369e8751d2913ddf407f8"
+    },
+    {
+      "path": "deployment/bootstrap/runtime-healthz.py",
+      "mode": "100644",
+      "blob": "f2860b4c6e4b3a1bb15d942867ffddba55d81109"
+    },
+    {
+      "path": "deployment/bootstrap/templates/agent-authorized-keys.README",
+      "mode": "100644",
+      "blob": "a9e02d336c8dbaecc144c995dd5b5116337f0206"
+    },
+    {
+      "path": "deployment/bootstrap/uninstall.sh",
+      "mode": "100755",
+      "blob": "21705f2749eade6edae3861a3cde8ef70ce041fa"
+    },
+    {
+      "path": "deployment/cilium/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "deployment/cilium/health.sh",
+      "mode": "100755",
+      "blob": "1354f10b340a6f91f83f2b56321525aaa8e35882"
+    },
+    {
+      "path": "deployment/cilium/install.sh",
+      "mode": "100755",
+      "blob": "0ad95194fdc93bcb254c8f4d8f12aac691e1db8b"
+    },
+    {
+      "path": "deployment/cilium/network-policy.json.template",
+      "mode": "100644",
+      "blob": "8ae3e6c4c3cc05d5ce83640907617cb19cfbdc22"
+    },
+    {
+      "path": "deployment/cilium/preflight.py",
+      "mode": "100644",
+      "blob": "58df651c5878aa933ea592e29a3851b1f7d73cfe"
+    },
+    {
+      "path": "deployment/cinder/README.md",
+      "mode": "100644",
+      "blob": "0018aca178d0f73567310f6c62701879634b2edd"
+    },
+    {
+      "path": "deployment/cinder/values.yaml",
+      "mode": "100644",
+      "blob": "d9a6e6e1e2604299d18f0efbb0535355f21936e4"
+    },
+    {
+      "path": "deployment/cloudflared/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "deployment/cloudflared/README.md",
+      "mode": "100644",
+      "blob": "3dc2de7ba8a972c14024bce069668f1887d67895"
+    },
+    {
+      "path": "deployment/cloudflared/register.py",
+      "mode": "100644",
+      "blob": "73a3aa759f54d2ba21131a5ed069136347fbf3ff"
+    },
+    {
+      "path": "deployment/cloudflared/render.py",
+      "mode": "100644",
+      "blob": "ae4b2043712906623dd5a4f676fa051e84da97c7"
+    },
+    {
+      "path": "deployment/cloudflared/test_register.py",
+      "mode": "100644",
+      "blob": "3c23d5b078bbf4453efd7fc674aed45a0d677d42"
+    },
+    {
+      "path": "deployment/cloudflared/test_render.py",
+      "mode": "100644",
+      "blob": "86cd52dcbe03e2f028b5f39e848477a06472c9ba"
+    },
+    {
+      "path": "deployment/cnpg/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "deployment/cnpg/README.md",
+      "mode": "100644",
+      "blob": "9c22bd843d80cf08dd3b59ba423fda69f76980da"
+    },
+    {
+      "path": "deployment/compose.yaml",
+      "mode": "100644",
+      "blob": "e3aefc249f5a77f3009a5efd9ecdf4714bad5827"
+    },
+    {
+      "path": "deployment/manifests/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "deployment/manifests/aws-app-storage.md",
+      "mode": "100644",
+      "blob": "633390c828b7994c57c43df284cacaa80eac8f20"
+    },
+    {
+      "path": "deployment/manifests/aws-app-storage.yaml",
+      "mode": "100644",
+      "blob": "a43c2a99f28fbdff5b79830950107111cf0dd6ae"
+    },
+    {
+      "path": "deployment/manifests/build-controller.yaml",
+      "mode": "100644",
+      "blob": "ca0a64882db2db10b03529ed66ae1bbf12fb5a0a"
+    },
+    {
+      "path": "deployment/manifests/build-runner.yaml",
+      "mode": "100644",
+      "blob": "18739c6497ef8b8bafd12441324538bb15e4ddb5"
+    },
+    {
+      "path": "deployment/manifests/gcp-app-storage.md",
+      "mode": "100644",
+      "blob": "9daed527927fb80351f6d6636c62e10928b54652"
+    },
+    {
+      "path": "deployment/manifests/gcp-app-storage.yaml",
+      "mode": "100644",
+      "blob": "5e8cb2da7d3fce958816ee92a0a4d7cdc8cd2dd4"
+    },
+    {
+      "path": "deployment/manifests/namespace.json.template",
+      "mode": "100644",
+      "blob": "8ba3f3481d81203d95cdc33d60ff96b142ca088a"
+    },
+    {
+      "path": "deployment/manifests/personal/Dockerfile",
+      "mode": "100644",
+      "blob": "76eaac8db6983bcd6503ee5e5c6cb83378608357"
+    },
+    {
+      "path": "deployment/manifests/personal/README.md",
+      "mode": "100644",
+      "blob": "34ec1db25c3353745c4cdc1ccf66f9632bf09e94"
+    },
+    {
+      "path": "deployment/manifests/personal/compose.yaml",
+      "mode": "100644",
+      "blob": "8665f38f2f5bf568e3e825d2e22ed8ebc7f2be03"
+    },
+    {
+      "path": "deployment/manifests/personal/container-entrypoint.sh",
+      "mode": "100644",
+      "blob": "a582df39fcd98b190d8e759189a1e54abfa5cf30"
+    },
+    {
+      "path": "deployment/manifests/personal/container-init.py",
+      "mode": "100644",
+      "blob": "fea42cc8b59b86e0c04766c7a61afed4280e3b78"
+    },
+    {
+      "path": "deployment/manifests/personal/control-bootstrap.py",
+      "mode": "100644",
+      "blob": "1af0170421d6397b90ecd03c7ad94b10dcc22634"
+    },
+    {
+      "path": "deployment/manifests/personal/control-token-minter.py",
+      "mode": "100644",
+      "blob": "54a12f7a9aa149768a865d32fc287e6804f11595"
+    },
+    {
+      "path": "deployment/manifests/personal/control.compose.yaml",
+      "mode": "100644",
+      "blob": "62fd4d59ffad6d77f166f603980a47a840863956"
+    },
+    {
+      "path": "deployment/manifests/personal/gateway-service-entrypoint.sh",
+      "mode": "100644",
+      "blob": "ac34b1af2827acf6c4b30c3d459e7d1d2f0dc260"
+    },
+    {
+      "path": "deployment/manifests/personal/gateway.example.json",
+      "mode": "100644",
+      "blob": "7ab6f21b73c70ed2ad846d74d5bc572885e80381"
+    },
+    {
+      "path": "deployment/manifests/personal/gateway.sudoers",
+      "mode": "100644",
+      "blob": "fa43399d0cc49340de280fb02ad103e451efcb6a"
+    },
+    {
+      "path": "deployment/manifests/personal/personal.production.example.json",
+      "mode": "100644",
+      "blob": "96c81b22f30bdc8c8471d28f7d36841cd2e37b5c"
+    },
+    {
+      "path": "deployment/manifests/personal/production-compose-prepare.py",
+      "mode": "100644",
+      "blob": "56a642195ab38e11c4198b3516ffa31de682b141"
+    },
+    {
+      "path": "deployment/manifests/personal/production.compose.yaml",
+      "mode": "100644",
+      "blob": "9b7817d7614dca267019b2d899a30d8542c628ea"
+    },
+    {
+      "path": "deployment/manifests/personal/railshot-personal-gateway",
+      "mode": "100644",
+      "blob": "9dd24b2387c526a106ecb32cbde480f60cbe9b8e"
+    },
+    {
+      "path": "deployment/manifests/platform.yaml",
+      "mode": "100644",
+      "blob": "00e8e70cfb45c3bfee4d4fc848428a1895a9abbc"
+    },
+    {
+      "path": "deployment/manifests/product-access.yaml",
+      "mode": "100644",
+      "blob": "c83f48123bfee5d792b1601e865f8e4fa22569e8"
+    },
+    {
+      "path": "deployment/manifests/product-metadata.yaml",
+      "mode": "100644",
+      "blob": "e894f2c4b0055d543879cb26c830009751c52ff9"
+    },
+    {
+      "path": "deployment/manifests/runtime-registration-access.yaml",
+      "mode": "100644",
+      "blob": "9a5e40d3d998dbc1756c691a3fd2827485227a12"
+    },
+    {
+      "path": "deployment/manifests/service.json.template",
+      "mode": "100644",
+      "blob": "3e668ea9db7541360b965735ec5a387d0926c4ad"
+    },
+    {
+      "path": "deployment/manifests/workload.json.template",
+      "mode": "100644",
+      "blob": "e341e8abee04eb6b23bfc4ead91f5fbb949647b3"
+    },
+    {
+      "path": "deployment/scripts/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "deployment/scripts/application_lifecycle.py",
+      "mode": "100644",
+      "blob": "5878c36c1e0d3b02291580ed326d3f293238011f"
+    },
+    {
+      "path": "deployment/scripts/application_release.py",
+      "mode": "100644",
+      "blob": "c80516110a422da63715fa96fd9665c620ca72f1"
+    },
+    {
+      "path": "deployment/scripts/application_routes.py",
+      "mode": "100644",
+      "blob": "cefe790cf431a16d6e11436842e38fac27d2ebf2"
+    },
+    {
+      "path": "deployment/scripts/applications.py",
+      "mode": "100644",
+      "blob": "20d83ddb885091f62b143ea82e47152cc73985ae"
+    },
+    {
+      "path": "deployment/scripts/bootstrap-platform.py",
+      "mode": "100644",
+      "blob": "9e44245d88e8670f7950374e0c3d0f06ef6fcaaf"
+    },
+    {
+      "path": "deployment/scripts/bootstrap-release-tools.py",
+      "mode": "100644",
+      "blob": "02376f5fc0756c3da7608801f84c8b4e77994d3d"
+    },
+    {
+      "path": "deployment/scripts/cleanup.sh",
+      "mode": "100755",
+      "blob": "84e251dcc50d45fde1bf9ca6d44bf124a9fccbea"
+    },
+    {
+      "path": "deployment/scripts/common.sh",
+      "mode": "100755",
+      "blob": "a16a164cd2b590b920d1db0c7c5b1444a1f981dc"
+    },
+    {
+      "path": "deployment/scripts/demo_preflight.py",
+      "mode": "100644",
+      "blob": "3463497478c83dade733feb6b66363dd1b6a0fe7"
+    },
+    {
+      "path": "deployment/scripts/deploy.sh",
+      "mode": "100755",
+      "blob": "59e4eef1852e0174256450e7b2368edbc1620d38"
+    },
+    {
+      "path": "deployment/scripts/edge_update.py",
+      "mode": "100644",
+      "blob": "ebfad540fdf3b29db498098812637e67751fe9d7"
+    },
+    {
+      "path": "deployment/scripts/engine.py",
+      "mode": "100644",
+      "blob": "c075203d78e9911efb23e01d120adce6ef9e32a7"
+    },
+    {
+      "path": "deployment/scripts/environment-adopt.py",
+      "mode": "100644",
+      "blob": "974d397a371714d37e0e9c8fc06025e8b0e31208"
+    },
+    {
+      "path": "deployment/scripts/environment.py",
+      "mode": "100644",
+      "blob": "0a6767ef65317a7a0b035af5dfa1740fda36fec9"
+    },
+    {
+      "path": "deployment/scripts/exposure.py",
+      "mode": "100644",
+      "blob": "fde7c2e64df21a268b879ccd309053fa31ec3ba6"
+    },
+    {
+      "path": "deployment/scripts/input_adapter.py",
+      "mode": "100644",
+      "blob": "23e5eee9279926c89ce477eee0483dec36a440a6"
+    },
+    {
+      "path": "deployment/scripts/install-app-storage.py",
+      "mode": "100644",
+      "blob": "d2b3a36ae8db59245046e44fc55345ba89837416"
+    },
+    {
+      "path": "deployment/scripts/install-aws-app-storage.py",
+      "mode": "100644",
+      "blob": "2d6967c6ee933bb0e62bd0760ad03550bedf670f"
+    },
+    {
+      "path": "deployment/scripts/lifecycle_runtime.py",
+      "mode": "100644",
+      "blob": "da31fb77053b48e668ad04758a72a1439c0d505f"
+    },
+    {
+      "path": "deployment/scripts/models.py",
+      "mode": "100644",
+      "blob": "17f49c8dfcde7ad7d2b617aba474bc14b29064a7"
+    },
+    {
+      "path": "deployment/scripts/multicloud_release.py",
+      "mode": "100644",
+      "blob": "d2153fb7202c1f1973b6d70d18c516533134b590"
+    },
+    {
+      "path": "deployment/scripts/network_preflight.py",
+      "mode": "100644",
+      "blob": "916f4fb1218217dd9d8c15d554f1c24caca55e2d"
+    },
+    {
+      "path": "deployment/scripts/openstack_route_worker.py",
+      "mode": "100644",
+      "blob": "90e2af3909e423da5958782295719c441942d030"
+    },
+    {
+      "path": "deployment/scripts/package-personal-client.py",
+      "mode": "100644",
+      "blob": "ad57b93cc1a8359def6f6f1207b168259b804c7a"
+    },
+    {
+      "path": "deployment/scripts/package-personal-release.py",
+      "mode": "100644",
+      "blob": "f9f40a8f1afdf438d4f3d560891685d3948997b8"
+    },
+    {
+      "path": "deployment/scripts/personal-production-preflight.py",
+      "mode": "100644",
+      "blob": "75579b347215c87c0a2dd9a1bb8dc40d00cec44e"
+    },
+    {
+      "path": "deployment/scripts/personal-worker-update.py",
+      "mode": "100644",
+      "blob": "cb8f1d52bc250f0ea1aa58a92863b790dd4b18e9"
+    },
+    {
+      "path": "deployment/scripts/personal_gateway_service.py",
+      "mode": "100644",
+      "blob": "02c16a9e0833cd40a61c1aaab22f056a1c9e92aa"
+    },
+    {
+      "path": "deployment/scripts/personal_runtime.py",
+      "mode": "100644",
+      "blob": "4e67529bd965e9e2ce087f03bd6684d0593dc25f"
+    },
+    {
+      "path": "deployment/scripts/personal_wireguard.py",
+      "mode": "100644",
+      "blob": "88c37ed96c5e9b7a13c95429a43d8bd9eb65dda4"
+    },
+    {
+      "path": "deployment/scripts/platform_workers.py",
+      "mode": "100644",
+      "blob": "67e949d644f8114c05b190067f3f643cb8258b74"
+    },
+    {
+      "path": "deployment/scripts/prepare-personal-local-fixture.py",
+      "mode": "100644",
+      "blob": "2e201d49a2f36075d8b67ff691684eb099081ec1"
+    },
+    {
+      "path": "deployment/scripts/publish-platform.py",
+      "mode": "100644",
+      "blob": "7e9a0d22a697e368c91652cf8a883eb62f325523"
+    },
+    {
+      "path": "deployment/scripts/release_admission.py",
+      "mode": "100644",
+      "blob": "bf3d446cb994562e56ec7966534792a668d378cd"
+    },
+    {
+      "path": "deployment/scripts/release_host.py",
+      "mode": "100644",
+      "blob": "0bbb200f23d95e51380153476886c5d849a834a1"
+    },
+    {
+      "path": "deployment/scripts/remote_release.py",
+      "mode": "100644",
+      "blob": "e1ff59a481cb4da484610dc454e82cf6098e94cd"
+    },
+    {
+      "path": "deployment/scripts/render-platform.py",
+      "mode": "100644",
+      "blob": "9a77bc0297810f6578bea2ddaf264b34002997d9"
+    },
+    {
+      "path": "deployment/scripts/render.py",
+      "mode": "100644",
+      "blob": "316fb2a37e5429da624bb67ec9bb242e550f8cee"
+    },
+    {
+      "path": "deployment/scripts/runtime-update.py",
+      "mode": "100644",
+      "blob": "e2fcc1aa994419ca5e9f95ad2fdcae8070018bd1"
+    },
+    {
+      "path": "deployment/scripts/runtime.py",
+      "mode": "100755",
+      "blob": "39d4bb0fb650167b557e838fdc2a12653ceedaf2"
+    },
+    {
+      "path": "deployment/scripts/runtime_upgrade.py",
+      "mode": "100644",
+      "blob": "7d9b5cad6ff8132445ab603b0fb9529fa3a2cbe9"
+    },
+    {
+      "path": "deployment/scripts/schemas/input-v0.2.schema.json",
+      "mode": "100644",
+      "blob": "8c005468c1bde804c389afe1d4f26e179142aa4e"
+    },
+    {
+      "path": "deployment/scripts/schemas/input.schema.json",
+      "mode": "100644",
+      "blob": "1f3b50786afb834149363999647b192f5f8a5754"
+    },
+    {
+      "path": "deployment/scripts/schemas/output-v0.2.schema.json",
+      "mode": "100644",
+      "blob": "2f48e8d14b4f5821d6fe6c868a5c45a550abbf9a"
+    },
+    {
+      "path": "deployment/scripts/schemas/output.schema.json",
+      "mode": "100644",
+      "blob": "a96d1dc829804498233cca79c0869b3cb241bf1f"
+    },
+    {
+      "path": "deployment/scripts/test-poc.py",
+      "mode": "100755",
+      "blob": "7c3e308ca9ff356b9cba02a31df5856b3c877fb4"
+    },
+    {
+      "path": "deployment/scripts/test-poc.sh",
+      "mode": "100755",
+      "blob": "cf19891d48e1c496dab8665604220e9fb3568987"
+    },
+    {
+      "path": "deployment/scripts/tests/fixtures/aws.json",
+      "mode": "100644",
+      "blob": "fb5e6f58d16c2674aa2b5141a3b3d5b0e1ed5b45"
+    },
+    {
+      "path": "deployment/scripts/tests/fixtures/dashboard-handoff.json",
+      "mode": "100644",
+      "blob": "315e862c34f5b6a8f9549773c1ac8de7d7d94a68"
+    },
+    {
+      "path": "deployment/scripts/tests/fixtures/demo-golden-local.json",
+      "mode": "100644",
+      "blob": "7b322db055321a7645dc0c6df314380d63348be2"
+    },
+    {
+      "path": "deployment/scripts/tests/fixtures/gcp.json",
+      "mode": "100644",
+      "blob": "dd58e702abdbc7fdd3c162180d3186b5cde4f7dc"
+    },
+    {
+      "path": "deployment/scripts/tests/fixtures/openstack.json",
+      "mode": "100644",
+      "blob": "1f4bde11cba96df540328c89e4d5ebb57a91caea"
+    },
+    {
+      "path": "deployment/scripts/tests/fixtures/provider-simulation.json",
+      "mode": "100644",
+      "blob": "075c9895405247fe7368909a027321e0f088b0bc"
+    },
+    {
+      "path": "deployment/scripts/tests/provider_simulation.py",
+      "mode": "100755",
+      "blob": "a48b2266c87d5122b2ecc00460b093f09e1b4d09"
+    },
+    {
+      "path": "deployment/scripts/tests/requirements.txt",
+      "mode": "100644",
+      "blob": "ad5d466f1674647a55ad4b8fdda40f790dc28346"
+    },
+    {
+      "path": "deployment/scripts/tests/simulated_node.py",
+      "mode": "100755",
+      "blob": "730d03437c3f55b305e49abb1a687a9ea94891cc"
+    },
+    {
+      "path": "deployment/scripts/tests/test_airgap.py",
+      "mode": "100644",
+      "blob": "a8409716fa626a1b45d5643af0be33261ad20e78"
+    },
+    {
+      "path": "deployment/scripts/tests/test_airgap_vm.py",
+      "mode": "100644",
+      "blob": "5e5df0ec333cfec59ab1ae8058bf9df1e24fefda"
+    },
+    {
+      "path": "deployment/scripts/tests/test_app_storage.py",
+      "mode": "100644",
+      "blob": "09f53498869db1de74baea972baff512aa77dfcd"
+    },
+    {
+      "path": "deployment/scripts/tests/test_application_lifecycle.py",
+      "mode": "100644",
+      "blob": "a1d594e8c84717402aecd7b9b18555f7e44cbb44"
+    },
+    {
+      "path": "deployment/scripts/tests/test_application_release.py",
+      "mode": "100644",
+      "blob": "4127aacddeb271b2fe766205898ff4f060c4e102"
+    },
+    {
+      "path": "deployment/scripts/tests/test_application_routes.py",
+      "mode": "100644",
+      "blob": "cc9c438b1f2c316a9347e9ec5968958ed5453ca3"
+    },
+    {
+      "path": "deployment/scripts/tests/test_applications.py",
+      "mode": "100644",
+      "blob": "7a6a87d19472bd82ec3ba02e2c0091b8199ca986"
+    },
+    {
+      "path": "deployment/scripts/tests/test_bootstrap_platform.py",
+      "mode": "100644",
+      "blob": "c0b61a25a1b109a390f1a447dc3ccf795f5725c4"
+    },
+    {
+      "path": "deployment/scripts/tests/test_contract.py",
+      "mode": "100644",
+      "blob": "e2667e17853370b5d49284b1ffcea270269a0312"
+    },
+    {
+      "path": "deployment/scripts/tests/test_dashboard_handoff.py",
+      "mode": "100644",
+      "blob": "752b9afb4b7bc5c8017abbbde3e084969306d60e"
+    },
+    {
+      "path": "deployment/scripts/tests/test_demo_preflight.py",
+      "mode": "100644",
+      "blob": "780aa4584e2868a797fff10f1a6500c07a4fdfdd"
+    },
+    {
+      "path": "deployment/scripts/tests/test_edge_update.py",
+      "mode": "100644",
+      "blob": "dc58d46fd9f0977bd790b1df1ad3c4bf0cc20bba"
+    },
+    {
+      "path": "deployment/scripts/tests/test_engine.py",
+      "mode": "100644",
+      "blob": "fd27b3834568c36b3c754f050c25c6d9b807208a"
+    },
+    {
+      "path": "deployment/scripts/tests/test_environment.py",
+      "mode": "100644",
+      "blob": "8385842e425aee8fbab031b6fa22a01bd1411e1e"
+    },
+    {
+      "path": "deployment/scripts/tests/test_environment_adopt.py",
+      "mode": "100644",
+      "blob": "8ee98c6e89d2e2209d57f8d9c4551f4f5fa47adf"
+    },
+    {
+      "path": "deployment/scripts/tests/test_lifecycle_runtime.py",
+      "mode": "100644",
+      "blob": "83ded96cec6dc5e5cc2680b1b5d723000988e9ca"
+    },
+    {
+      "path": "deployment/scripts/tests/test_multicloud_release.py",
+      "mode": "100644",
+      "blob": "c15ace5e565d6876702c8b728325e681119b483e"
+    },
+    {
+      "path": "deployment/scripts/tests/test_openstack_route_worker.py",
+      "mode": "100644",
+      "blob": "5ed106af437e02884134faca42f35b155c712e5f"
+    },
+    {
+      "path": "deployment/scripts/tests/test_personal_control.py",
+      "mode": "100644",
+      "blob": "0ab46a5158c64300017afa223e97e39623017695"
+    },
+    {
+      "path": "deployment/scripts/tests/test_personal_gateway.py",
+      "mode": "100644",
+      "blob": "02891c66f71ba07764410e6ea30ec3980a990c51"
+    },
+    {
+      "path": "deployment/scripts/tests/test_personal_gateway_service.py",
+      "mode": "100644",
+      "blob": "eab3397f47a9141a9e29dea72eb7529e6261ebd6"
+    },
+    {
+      "path": "deployment/scripts/tests/test_personal_release.py",
+      "mode": "100644",
+      "blob": "6e4a4b1dc6412cb970adf741812bd0744332451b"
+    },
+    {
+      "path": "deployment/scripts/tests/test_personal_runtime_registration.py",
+      "mode": "100644",
+      "blob": "5cd147dce754d07f240397c409c3687cfd29c9c3"
+    },
+    {
+      "path": "deployment/scripts/tests/test_personal_worker_update.py",
+      "mode": "100644",
+      "blob": "84bed547d92bb81a0a64890d305830ad2ec1a84a"
+    },
+    {
+      "path": "deployment/scripts/tests/test_platform.py",
+      "mode": "100644",
+      "blob": "3e2245c57c236c0cecad674f46506ef457fe53f5"
+    },
+    {
+      "path": "deployment/scripts/tests/test_platform_release.py",
+      "mode": "100644",
+      "blob": "7173c3215f5fe2ddf4ca5df243609a5ebd97d25b"
+    },
+    {
+      "path": "deployment/scripts/tests/test_platform_verification.py",
+      "mode": "100644",
+      "blob": "7a7c85c3246b4c76e0dd40bd295d9c2c3d152a9f"
+    },
+    {
+      "path": "deployment/scripts/tests/test_platform_workers.py",
+      "mode": "100644",
+      "blob": "76285c9df37462af31c71c6246cb46e0f49bfa8b"
+    },
+    {
+      "path": "deployment/scripts/tests/test_product_edge_policy.py",
+      "mode": "100644",
+      "blob": "890af2801a6df98d715ea5309a9f7f50286b9c2e"
+    },
+    {
+      "path": "deployment/scripts/tests/test_provider_simulation.py",
+      "mode": "100644",
+      "blob": "6ee48f84884cc9f704de795765e64a7f5aa4c46c"
+    },
+    {
+      "path": "deployment/scripts/tests/test_release.py",
+      "mode": "100644",
+      "blob": "fa9fe94e1b7f35d2cf996a7c9085bc238dd14eda"
+    },
+    {
+      "path": "deployment/scripts/tests/test_release_publication.py",
+      "mode": "100644",
+      "blob": "60c4838582da3ecaf862fc54ee903af705db0062"
+    },
+    {
+      "path": "deployment/scripts/tests/test_remote_release.py",
+      "mode": "100644",
+      "blob": "e35ff91f1e0a9df636cb8bd3e18b0d16f3f54209"
+    },
+    {
+      "path": "deployment/scripts/tests/test_runtime_update.py",
+      "mode": "100644",
+      "blob": "d30a990324e3fe1b154fecdcf735183d254e8d4a"
+    },
+    {
+      "path": "deployment/scripts/verify-platform.py",
+      "mode": "100644",
+      "blob": "daa574aa6348792090cda6ac07b614e6dcac15e1"
+    },
+    {
+      "path": "deployment/scripts/verify.sh",
+      "mode": "100755",
+      "blob": "2dab435503a272ba92893e2a15c07613364c9861"
+    },
+    {
+      "path": "deployment/sealed-secrets/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "deployment/sealed-secrets/README.md",
+      "mode": "100644",
+      "blob": "20205b6e473ddae8a07bdded70faaeac9e54b1f4"
+    },
+    {
+      "path": "examples/ansible/api-targets.json",
+      "mode": "100644",
+      "blob": "27984b603efafe0d3815a67f98ccac22b269dfe6"
+    },
+    {
+      "path": "examples/ansible/aws-node-descriptor.json",
+      "mode": "100644",
+      "blob": "3fe5bff47be135e1807b07f4f1c4a7d2af1c5884"
+    },
+    {
+      "path": "examples/ansible/database-validate.json",
+      "mode": "100644",
+      "blob": "7247691c8cccb9f5d696ec7bcd884b831c6fc4ad"
+    },
+    {
+      "path": "examples/ansible/gcp-node-descriptor.json",
+      "mode": "100644",
+      "blob": "e57c01f7a8f0f74eaabfb387797048cc94605c57"
+    },
+    {
+      "path": "examples/ansible/guest-check.json",
+      "mode": "100644",
+      "blob": "41f95b30ca398f5c61fa349a0e9c8aba2dbb02cf"
+    },
+    {
+      "path": "examples/ansible/openstack-server.json",
+      "mode": "100644",
+      "blob": "2b1f8283bfdaedcfc0947f1b226ec1d04f81819c"
+    },
+    {
+      "path": "examples/ansible/patroni-placement-blocked.json",
+      "mode": "100644",
+      "blob": "c8b7f5391ad5370a69a4c764b1267925f0476f75"
+    },
+    {
+      "path": "examples/ansible/runtime-single-node.json",
+      "mode": "100644",
+      "blob": "770b26a48f57747e8b2f8f9c58dcc3879d4bf4c7"
+    },
+    {
+      "path": "examples/insights-demo/.dockerignore",
+      "mode": "100644",
+      "blob": "2d4193e774efc80a2f71470ddfc6a19ab4a64883"
+    },
+    {
+      "path": "examples/insights-demo/.railshot/railshot.yaml",
+      "mode": "100644",
+      "blob": "dd26e2d82e03046868eb05eb85c6714aa6ae5919"
+    },
+    {
+      "path": "examples/insights-demo/Dockerfile",
+      "mode": "100644",
+      "blob": "21f19c00f1d9ed1ebcb44d4b9231b3aee2587c65"
+    },
+    {
+      "path": "examples/insights-demo/compose.yml",
+      "mode": "100644",
+      "blob": "b111e39d81079b307db6e6f18e14dd28033c88ce"
+    },
+    {
+      "path": "examples/insights-demo/metrics-access.example.yaml",
+      "mode": "100644",
+      "blob": "0ad7c2c9c09e479c3321a3ee2308a176ff27f2fd"
+    },
+    {
+      "path": "examples/insights-demo/package-lock.json",
+      "mode": "100644",
+      "blob": "2cb303bf7e835af40540e8acba240701f0e8fff6"
+    },
+    {
+      "path": "examples/insights-demo/package.json",
+      "mode": "100644",
+      "blob": "a34937056af060f6eda249bb42333d0a2bed9f7d"
+    },
+    {
+      "path": "examples/insights-demo/prometheus.yml",
+      "mode": "100644",
+      "blob": "6adb1bfdefe50039157c4ed820708d9cc65d5c50"
+    },
+    {
+      "path": "examples/insights-demo/server.js",
+      "mode": "100644",
+      "blob": "999e84aeb7fd23bc3e55e64e809079ce9bf92a42"
+    },
+    {
+      "path": "examples/insights-demo/server.test.js",
+      "mode": "100644",
+      "blob": "97559977d7562348df9682676fb7135c9c81d1a0"
+    },
+    {
+      "path": "gitops/README.md",
+      "mode": "100644",
+      "blob": "55879d0bf9e48ed9d844c8601e3f1ea17f818c05"
+    },
+    {
+      "path": "gitops/application_cleanup.py",
+      "mode": "100644",
+      "blob": "1cf47bc21ac3acc666505273f90e1b52f1e424fc"
+    },
+    {
+      "path": "gitops/applications/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "gitops/applications/inference-atlas-c0f420a64777/k3s-aws/workload.json",
+      "mode": "100644",
+      "blob": "a97488e38462bd263fb979f1c9404f95e84e39f0"
+    },
+    {
+      "path": "gitops/applications/railshot-platform.yaml",
+      "mode": "100644",
+      "blob": "47672a3370c4c5078a59a479895919d436386da3"
+    },
+    {
+      "path": "gitops/argo.py",
+      "mode": "100644",
+      "blob": "28bdabe548d9f605f79150b86eac1665d612ae21"
+    },
+    {
+      "path": "gitops/argo/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "gitops/argo/kustomization.yaml",
+      "mode": "100644",
+      "blob": "6e6699b628c3709980c720591c4fab8e78304913"
+    },
+    {
+      "path": "gitops/bridge.py",
+      "mode": "100644",
+      "blob": "835758a6b9d3d77e57ecf4b17c0d78ace4f098f5"
+    },
+    {
+      "path": "gitops/credentials-customer.yaml",
+      "mode": "100644",
+      "blob": "42762f8c86ed8ebbcc735f37ea4e09566185015a"
+    },
+    {
+      "path": "gitops/credentials.py",
+      "mode": "100644",
+      "blob": "880c6fd0583be3b1cc96ca07c690fe2790d5e86f"
+    },
+    {
+      "path": "gitops/dns.py",
+      "mode": "100644",
+      "blob": "4f67d88347a44d9f9f1d97ca2ab93993e4852fb4"
+    },
+    {
+      "path": "gitops/edge.py",
+      "mode": "100644",
+      "blob": "1f504f8103ef155958385856057561217fd7cc73"
+    },
+    {
+      "path": "gitops/gcp_routes.py",
+      "mode": "100644",
+      "blob": "2a1346a55b4c280f28d932a64c87c8782d8714ce"
+    },
+    {
+      "path": "gitops/handoff.py",
+      "mode": "100644",
+      "blob": "dbd99efdc5d61e40f279f3ebcc01aa8d1e2393d8"
+    },
+    {
+      "path": "gitops/logs.py",
+      "mode": "100644",
+      "blob": "02fe3a4d1ccf302b99c7644b79620441dfac9748"
+    },
+    {
+      "path": "gitops/openstack_routes.py",
+      "mode": "100644",
+      "blob": "7c2a12a351c5ce766363dec183b443216e3c8108"
+    },
+    {
+      "path": "gitops/rollouts/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "gitops/service_name.py",
+      "mode": "100644",
+      "blob": "53c6ff72b2fc0f460e28286e8125d0dff89cf946"
+    },
+    {
+      "path": "gitops/test_application_cleanup.py",
+      "mode": "100644",
+      "blob": "19c4000c1e553badb9ea7c18c03ef6ed8edb7908"
+    },
+    {
+      "path": "gitops/test_argo.py",
+      "mode": "100644",
+      "blob": "752f6a2fee372ec350a6e2aed07363a99249e199"
+    },
+    {
+      "path": "gitops/test_bridge.py",
+      "mode": "100644",
+      "blob": "cc11582b041345acbf1486da3e959de2b06adb20"
+    },
+    {
+      "path": "gitops/test_credentials.py",
+      "mode": "100644",
+      "blob": "fc393241c35ba9ac7e00cc380c51acecc485cade"
+    },
+    {
+      "path": "gitops/test_dns.py",
+      "mode": "100644",
+      "blob": "e074d5044f09afa275f2fd2d661090a182c1c2a7"
+    },
+    {
+      "path": "gitops/test_edge.py",
+      "mode": "100644",
+      "blob": "6fed9d29f121088fc9254d7f70b0ce2caff5647e"
+    },
+    {
+      "path": "gitops/test_gcp_routes.py",
+      "mode": "100644",
+      "blob": "d7d3609cdb24966c5510af769a0580a5d369d55a"
+    },
+    {
+      "path": "gitops/test_handoff.py",
+      "mode": "100644",
+      "blob": "c88cef9410853999794e77c1dec97d8bf2de4567"
+    },
+    {
+      "path": "gitops/test_logs.py",
+      "mode": "100644",
+      "blob": "dfae55644a2a0221b6fad139aec22aac92038d22"
+    },
+    {
+      "path": "gitops/test_openstack_routes.py",
+      "mode": "100644",
+      "blob": "2f55cc1f192071bc97a139035518651cd2ac72b3"
+    },
+    {
+      "path": "gitops/test_service_name.py",
+      "mode": "100644",
+      "blob": "e30ed6e4e910f329e92843f628636a9280cb7982"
+    },
+    {
+      "path": "gitops/test_workload_diagnostics.py",
+      "mode": "100644",
+      "blob": "a4fc440fb1913163a6ca2a508cb1154202cbd041"
+    },
+    {
+      "path": "gitops/workload_diagnostics.py",
+      "mode": "100644",
+      "blob": "1fc2b166b6ffef88db01504a92e556e2205bc4bf"
+    },
+    {
+      "path": "infrastructure/ansible/.ansible-lint",
+      "mode": "100644",
+      "blob": "9e5503e6417a6774e41a3c7f96906dd58753f0b1"
+    },
+    {
+      "path": "infrastructure/ansible/README.md",
+      "mode": "100644",
+      "blob": "8b431b9f504c5598d49c82a04825fbd0a2fb9e4e"
+    },
+    {
+      "path": "infrastructure/ansible/ansible.cfg",
+      "mode": "100644",
+      "blob": "5cbbf33b24f1256dc52f30f685059b47cb74c0a6"
+    },
+    {
+      "path": "infrastructure/ansible/api.py",
+      "mode": "100644",
+      "blob": "53dcfc390840dc3c85a7d13ea1e5d90558d17882"
+    },
+    {
+      "path": "infrastructure/ansible/application-database.yml",
+      "mode": "100644",
+      "blob": "76eda2947da9bd03986a9dba6fa7b1ae84607293"
+    },
+    {
+      "path": "infrastructure/ansible/application_database.py",
+      "mode": "100644",
+      "blob": "c0f18b3f2c585a18e405011ebe7386502bc15856"
+    },
+    {
+      "path": "infrastructure/ansible/ci.yml",
+      "mode": "100644",
+      "blob": "ddd121cb21f3283b0bf3e0b902916861bc8c7b80"
+    },
+    {
+      "path": "infrastructure/ansible/cluster.py",
+      "mode": "100644",
+      "blob": "b0f013fbbbfe63e5e6a1927455d6b2081ac44dc7"
+    },
+    {
+      "path": "infrastructure/ansible/control.sh",
+      "mode": "100644",
+      "blob": "9272d272cd3e82d32913cd5617d2c77b041eacf9"
+    },
+    {
+      "path": "infrastructure/ansible/database.py",
+      "mode": "100644",
+      "blob": "054a2e3971e04f38e8677a5b202f4b697375eeb3"
+    },
+    {
+      "path": "infrastructure/ansible/database.yml",
+      "mode": "100644",
+      "blob": "e44c66c9053d4c82236d373c739641358f64ddb2"
+    },
+    {
+      "path": "infrastructure/ansible/group_vars/all.yml",
+      "mode": "100644",
+      "blob": "cdb992ab00363436ca15edfc5ddd2f2aac07e789"
+    },
+    {
+      "path": "infrastructure/ansible/guest.yml",
+      "mode": "100644",
+      "blob": "45a9a91e122d3f86262a7d5730e7b355972ff3dd"
+    },
+    {
+      "path": "infrastructure/ansible/inputs.py",
+      "mode": "100644",
+      "blob": "accf0e5f2bd933d47389d2909655601e5be4ff8e"
+    },
+    {
+      "path": "infrastructure/ansible/inventories/example/group_vars/all.yml",
+      "mode": "100644",
+      "blob": "e42ce185afa9dec08d05f9af15a657506e8910d9"
+    },
+    {
+      "path": "infrastructure/ansible/inventories/example/group_vars/vault.example.yml",
+      "mode": "100644",
+      "blob": "e5ac6881c4bc728b62726bf89a0fdd71e94a9630"
+    },
+    {
+      "path": "infrastructure/ansible/inventories/example/host_vars/db01.yml",
+      "mode": "100644",
+      "blob": "619afaabdab5e156e37afa9d3cae99c3b41839ce"
+    },
+    {
+      "path": "infrastructure/ansible/inventories/example/hosts.yml",
+      "mode": "100644",
+      "blob": "812fd00705ed29e9e24ae8868eb968a6110fdeb3"
+    },
+    {
+      "path": "infrastructure/ansible/inventory/hosts.example.yml",
+      "mode": "100644",
+      "blob": "22b08629dbae5c8f9a8e6c6a8529c4d0821473ae"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/backup.yml",
+      "mode": "100644",
+      "blob": "c30032596b43f3d3113dd2b08e986b0f39f47080"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/common.yml",
+      "mode": "100644",
+      "blob": "cf3d42dad359c43c8c0e8205c9b5ad6b806da294"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/etcd.yml",
+      "mode": "100644",
+      "blob": "dfe3b8a8fc653207a8102fda0677feb7d281d81e"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/patroni.yml",
+      "mode": "100644",
+      "blob": "d7cc61695640db50a35d11561e7d3a8de4eb37a0"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/preflight.yml",
+      "mode": "100644",
+      "blob": "a6301356bbdba90570914a8632fce42d1f8eaaea"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/restore.yml",
+      "mode": "100644",
+      "blob": "74124d9d7b261357430f3968ae4341d66c18f500"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/routing.yml",
+      "mode": "100644",
+      "blob": "bb8df93840dcb4f9c30fb1d985020568e663a38e"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/site.yml",
+      "mode": "100644",
+      "blob": "3f080a0a0f311ff8001683870e077ed4a07efb35"
+    },
+    {
+      "path": "infrastructure/ansible/playbooks/verify.yml",
+      "mode": "100644",
+      "blob": "bf99a8498afbfb8e03b6bd44a3a62dd71b4abd1d"
+    },
+    {
+      "path": "infrastructure/ansible/requirements.yml",
+      "mode": "100644",
+      "blob": "1062b362a65a9ea79f90bcc980fd91f7bcdb3ae2"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/defaults/main.yml",
+      "mode": "100644",
+      "blob": "70042725046bc05442f84937dd5dfaa9c11e5ba9"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/tasks/configure.yml",
+      "mode": "100644",
+      "blob": "6e4ee259287245f7db7a408a954fed3f81f213da"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/tasks/main.yml",
+      "mode": "100644",
+      "blob": "ed3bcfd7c43694d4c18dcded8aa143acce0c9b8c"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/tasks/restore.yml",
+      "mode": "100644",
+      "blob": "29789a1651dfe31c1b1d38e253b2f43285a76ca7"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/templates/jasmin-backup.service.j2",
+      "mode": "100644",
+      "blob": "c2d32c9ceb80f37ec255a673a2c47aa329196b43"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/templates/jasmin-backup.sh.j2",
+      "mode": "100644",
+      "blob": "c076b7673719fee10524faa1497f0a7e17ecff83"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/templates/jasmin-backup.timer.j2",
+      "mode": "100644",
+      "blob": "a49bc232192f7b1b69028219951b0a13a1a0f701"
+    },
+    {
+      "path": "infrastructure/ansible/roles/backup/templates/pgbackrest.conf.j2",
+      "mode": "100644",
+      "blob": "78ee344241ea63764b4f8b3a88ddd49d5d7d978a"
+    },
+    {
+      "path": "infrastructure/ansible/roles/common/tasks/main.yml",
+      "mode": "100644",
+      "blob": "42dbccaeb22167844a854e1167bf1f701f7ef3db"
+    },
+    {
+      "path": "infrastructure/ansible/roles/deployment_defaults/defaults/main.yml",
+      "mode": "100644",
+      "blob": "745b089337c3e7922bb54c10d1932d17641ceca1"
+    },
+    {
+      "path": "infrastructure/ansible/roles/deployment_defaults/tasks/main.yml",
+      "mode": "100644",
+      "blob": "fe925944368328b3116059c8d4f69ce449a235b4"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/README.md",
+      "mode": "100644",
+      "blob": "946e1d745ebd0cf6c525b344b0f15a6bf4a74d03"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/defaults/main.yml",
+      "mode": "100644",
+      "blob": "c0ccd1f6d3516650f7a4cf1a7ee1e3336158f74f"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/tasks/configure.yml",
+      "mode": "100644",
+      "blob": "764fcf3c00807bf9c396e2d6cd24919c2dcbfb1f"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/tasks/inspect.yml",
+      "mode": "100644",
+      "blob": "12635c19b53c2ddfc795ee6286cc033ec2f1a720"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/tasks/install.yml",
+      "mode": "100644",
+      "blob": "46851f841843f9c2506012735c186a6af5edb285"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/tasks/main.yml",
+      "mode": "100644",
+      "blob": "5b9480fbb71135aa310407aaf90a8a1204ecaded"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/tasks/verify.yml",
+      "mode": "100644",
+      "blob": "77538c5309816d2909e92430701fc05a904a4927"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/templates/etcd.service.j2",
+      "mode": "100644",
+      "blob": "1ee3305afc1b13eacbe3a916c0720bb7322991bc"
+    },
+    {
+      "path": "infrastructure/ansible/roles/etcd/templates/etcd.yml.j2",
+      "mode": "100644",
+      "blob": "92042d2b9ccf039510b322f0d6db11cc34ab3f82"
+    },
+    {
+      "path": "infrastructure/ansible/roles/haproxy/README.md",
+      "mode": "100644",
+      "blob": "91ef9f45e7a66d43e97c966e8ee80d03b07aae75"
+    },
+    {
+      "path": "infrastructure/ansible/roles/haproxy/defaults/main.yml",
+      "mode": "100644",
+      "blob": "8ef377ceb9aa870a0932eeec309fcf7412a09d26"
+    },
+    {
+      "path": "infrastructure/ansible/roles/haproxy/handlers/main.yml",
+      "mode": "100644",
+      "blob": "f1ca562a4ad1195975bfdea5d78aeadbfae8c968"
+    },
+    {
+      "path": "infrastructure/ansible/roles/haproxy/tasks/main.yml",
+      "mode": "100644",
+      "blob": "48f16abc1d17c50e3ae9bcd36501c546c025b549"
+    },
+    {
+      "path": "infrastructure/ansible/roles/haproxy/templates/haproxy.cfg.j2",
+      "mode": "100644",
+      "blob": "ce45d64e2cafd4c1260eba98eb829640ceb15cf1"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/defaults/main.yml",
+      "mode": "100644",
+      "blob": "2ff7df10f84aba7a14f70468ac733e7f10e88d3d"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/handlers/main.yml",
+      "mode": "100644",
+      "blob": "74395b9d9e0bac3db779d00d9777e40e9461efe9"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/tasks/configure.yml",
+      "mode": "100644",
+      "blob": "d2d05d2419e972e194efeee50a57b890799ed6a7"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/tasks/dynamic_config.yml",
+      "mode": "100644",
+      "blob": "a3c393702c3b3bcc3f7f60530db7f665256d023a"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/tasks/guard.yml",
+      "mode": "100644",
+      "blob": "b9dde275a78d3386f4e145c22793dcdf51e0728c"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/tasks/install.yml",
+      "mode": "100644",
+      "blob": "dd33d6fc14366824283797af98bd9d2581c79b69"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/tasks/main.yml",
+      "mode": "100644",
+      "blob": "621ee0a6b3cbc375be4114a536bb04bd69308644"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/templates/patroni.service.j2",
+      "mode": "100644",
+      "blob": "3283bf69cb6d8ed597443a900f0a65009645f06a"
+    },
+    {
+      "path": "infrastructure/ansible/roles/patroni/templates/patroni.yml.j2",
+      "mode": "100644",
+      "blob": "f8fd726e48e04a77fff1ae95d717a95738845a5b"
+    },
+    {
+      "path": "infrastructure/ansible/roles/preflight/tasks/check_certificates.yml",
+      "mode": "100644",
+      "blob": "934b24050b1b6958af25195e6178c75c39ae7489"
+    },
+    {
+      "path": "infrastructure/ansible/roles/preflight/tasks/check_hosts.yml",
+      "mode": "100644",
+      "blob": "b4c29b44ca6f462570cb7f02299b59637cb84a70"
+    },
+    {
+      "path": "infrastructure/ansible/roles/preflight/tasks/main.yml",
+      "mode": "100644",
+      "blob": "3e2b7c6251b788da63c753d1b2dc8e4ecbca5dbe"
+    },
+    {
+      "path": "infrastructure/ansible/roles/preflight/tasks/validate_inputs.yml",
+      "mode": "100644",
+      "blob": "0aec5bce66d5c30e7f13046f623ba67c52d3cac7"
+    },
+    {
+      "path": "infrastructure/ansible/roles/verify/tasks/main.yml",
+      "mode": "100644",
+      "blob": "64318b3500cead34f280f7aaea63458c15f18cda"
+    },
+    {
+      "path": "infrastructure/ansible/run.py",
+      "mode": "100644",
+      "blob": "456e3bb890e34065e5dfa30bd3fa26b4cd515b3b"
+    },
+    {
+      "path": "infrastructure/ansible/runtime.yml",
+      "mode": "100644",
+      "blob": "11fe981f218db199deb6a53c532d4302d1840695"
+    },
+    {
+      "path": "infrastructure/ansible/site.yml",
+      "mode": "100644",
+      "blob": "6caa7a479df797107148ce51e737732c8d717b3e"
+    },
+    {
+      "path": "infrastructure/ansible/tasks/guest-checks.yml",
+      "mode": "100644",
+      "blob": "16d951caba1e1b7975120f3bdf4301a5823f422c"
+    },
+    {
+      "path": "infrastructure/ansible/templates/config.yaml.j2",
+      "mode": "100644",
+      "blob": "aff2473a579228889b4f0128f5e8811a561ea0f5"
+    },
+    {
+      "path": "infrastructure/ansible/templates/k3s.service.j2",
+      "mode": "100644",
+      "blob": "9fe1ff51e408e3e18b001c99112318527738eee3"
+    },
+    {
+      "path": "infrastructure/ansible/templates/kubeconfig.yaml.j2",
+      "mode": "100644",
+      "blob": "25d97adfac263fed0d20388b2da1c3a5694797fb"
+    },
+    {
+      "path": "infrastructure/ansible/test-ci-network.sh",
+      "mode": "100644",
+      "blob": "0fcd92d102e0c81c838264e8630c54fbc19f5d26"
+    },
+    {
+      "path": "infrastructure/ansible/test-control-cilium.sh",
+      "mode": "100755",
+      "blob": "30ab8a040e6a23a76f10616a9570a6e719fe9547"
+    },
+    {
+      "path": "infrastructure/ansible/test_api.py",
+      "mode": "100644",
+      "blob": "1fc9dba0136aee3cc0dccbe504d68efaceb8ac0e"
+    },
+    {
+      "path": "infrastructure/ansible/test_cilium.py",
+      "mode": "100644",
+      "blob": "75380e541769c028a663e1eb6f86bb5cb008a783"
+    },
+    {
+      "path": "infrastructure/ansible/test_cluster.py",
+      "mode": "100644",
+      "blob": "7acc5ac471e04ff288091f7c3e2bd883e4a78919"
+    },
+    {
+      "path": "infrastructure/ansible/test_control_cilium.py",
+      "mode": "100644",
+      "blob": "6a383f01aaf8dd4cb04451b63f37687fb05fb0e1"
+    },
+    {
+      "path": "infrastructure/ansible/test_database.py",
+      "mode": "100644",
+      "blob": "a57050c14d326020879e614e6560c9ccf89a757d"
+    },
+    {
+      "path": "infrastructure/ansible/test_run.py",
+      "mode": "100644",
+      "blob": "4b9264669e3218b5b4482eca2eac84849f05f002"
+    },
+    {
+      "path": "infrastructure/ansible/test_transport.py",
+      "mode": "100644",
+      "blob": "87eaa516a1c7cc0a9c2ebe72bfa7cd2d65e0d78e"
+    },
+    {
+      "path": "infrastructure/ansible/tests/render.yml",
+      "mode": "100644",
+      "blob": "e628e8fae1601291b44cb06d126eadfbcd577012"
+    },
+    {
+      "path": "infrastructure/ansible/transport.py",
+      "mode": "100644",
+      "blob": "72f14f1217df702b7779f936e0e7301835cb5c88"
+    },
+    {
+      "path": "infrastructure/providers/aws/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/README.md",
+      "mode": "100644",
+      "blob": "dd54c7c069a56410f52b7ffa52f595dcec3b4f3e"
+    },
+    {
+      "path": "infrastructure/providers/openstack/__init__.py",
+      "mode": "100644",
+      "blob": "f3cdc8fb4daa69a9013410c06c40e76f6fe59806"
+    },
+    {
+      "path": "infrastructure/providers/openstack/access.py",
+      "mode": "100644",
+      "blob": "f0d3efdeeafd6e821f003e4c24c4234490a3b9ef"
+    },
+    {
+      "path": "infrastructure/providers/openstack/cli.py",
+      "mode": "100644",
+      "blob": "0d0f3f2e6ee481447185832e268ebd55a7360bad"
+    },
+    {
+      "path": "infrastructure/providers/openstack/discovery.py",
+      "mode": "100644",
+      "blob": "d9cada3ab2669b9b8ed4777c0268da3a0d154148"
+    },
+    {
+      "path": "infrastructure/providers/openstack/docs/api-guide.md",
+      "mode": "100644",
+      "blob": "c661c04dcefac54d23a961740487b06c9fdb99ce"
+    },
+    {
+      "path": "infrastructure/providers/openstack/docs/contracts.md",
+      "mode": "100644",
+      "blob": "8d1188fcec5463ef4aab80ed5358ab59f7e7ca86"
+    },
+    {
+      "path": "infrastructure/providers/openstack/docs/openapi.json",
+      "mode": "100644",
+      "blob": "9b39d84d8f9b15f7e8d0f5b7fae9035cadf582bd"
+    },
+    {
+      "path": "infrastructure/providers/openstack/docs/validation.md",
+      "mode": "100644",
+      "blob": "adfeac281343f47be0c1d06faf45def2bb3d8b54"
+    },
+    {
+      "path": "infrastructure/providers/openstack/identity.py",
+      "mode": "100644",
+      "blob": "acae014a34dd85c47cf2d9a010e4972b11646cd4"
+    },
+    {
+      "path": "infrastructure/providers/openstack/pyproject.toml",
+      "mode": "100644",
+      "blob": "309064e1586faf25d0788c90ee56fb876c902d2f"
+    },
+    {
+      "path": "infrastructure/providers/openstack/scripts/check_api.py",
+      "mode": "100644",
+      "blob": "9fb2f3bdf9e6c58d36bf0c132ebafc8e7a5f12ee"
+    },
+    {
+      "path": "infrastructure/providers/openstack/scripts/run_local.py",
+      "mode": "100644",
+      "blob": "d893b27f76fb2cba0999b3752679c85b4590b5b3"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/api/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/api/error_handlers.py",
+      "mode": "100644",
+      "blob": "1d6a94391f50aa8128690b370d3abf7ac89f68b9"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/api/router.py",
+      "mode": "100644",
+      "blob": "f85c14ee733119b62eb9e657f11f64f7f79f5644"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/api/schemas.py",
+      "mode": "100644",
+      "blob": "60f0643dcdd6717af2e378e45d82df4da2256149"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/application/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/application/catalog.py",
+      "mode": "100644",
+      "blob": "03698525a75d45e10016d82e563bb0a09669ff19"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/application/compute.py",
+      "mode": "100644",
+      "blob": "86267b7102d19065f5005104b1c872f4347c0423"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/application/health.py",
+      "mode": "100644",
+      "blob": "2b92581d9fc1e5f7152001ecd69b6dd0f4315606"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/application/validation.py",
+      "mode": "100644",
+      "blob": "fbe9c328592ec1841fbc561b77c2880766c91c58"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/auth.py",
+      "mode": "100644",
+      "blob": "04765ee18450915feae012e260e9c90050b32100"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/bootstrap.py",
+      "mode": "100644",
+      "blob": "ea50a6a2a031ba9c3dd71b36fe7687fe34ddece3"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/config.py",
+      "mode": "100644",
+      "blob": "464c8fb0c3d75dd1b2833a7a76984005ed017d06"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/domain/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/domain/errors.py",
+      "mode": "100644",
+      "blob": "482c6b50f199209359659345305b180a92a13c98"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/domain/models.py",
+      "mode": "100644",
+      "blob": "2ae4eae3e41980a1b30313b84abec0fc6183edad"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/__init__.py",
+      "mode": "100644",
+      "blob": "846d58f9eb31a0643d04d61a7e5fae28523e5c2e"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/base.py",
+      "mode": "100644",
+      "blob": "b4ee7bba663adabc2cc91333f5ae44da07be1421"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/catalog.py",
+      "mode": "100644",
+      "blob": "37f4ceee8238c0a5ebeb6a1581dc34476153c959"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/compute.py",
+      "mode": "100644",
+      "blob": "3c296d635a2b0be2be9fa5be147e1591a5bf66a9"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/connection.py",
+      "mode": "100644",
+      "blob": "8b4c83d1ca996277ee8ac3d04b01ee12700d628c"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/errors.py",
+      "mode": "100644",
+      "blob": "18f97ba1920ae4f4e65c45e8cfa399d9b42aa2d3"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/health.py",
+      "mode": "100644",
+      "blob": "7d34f06ddbceeed275e444b175b37ee166334306"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/infrastructure/openstack/mapping.py",
+      "mode": "100644",
+      "blob": "456e76deb195fb5105705a7ef8075985ba2231d6"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/main.py",
+      "mode": "100644",
+      "blob": "2ea43049db0acfb89f5bf562c3b7b7d1bdd13f4b"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/ports/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/ports/catalog.py",
+      "mode": "100644",
+      "blob": "3fbbb3b5e5493626dd5b8e4f8abc05b32316ab44"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/ports/compute.py",
+      "mode": "100644",
+      "blob": "93d177c3cbc3012b31f30c21daecf09a4376497b"
+    },
+    {
+      "path": "infrastructure/providers/openstack/src/control_plane/ports/health.py",
+      "mode": "100644",
+      "blob": "03386e390fbb43bda88f5cfd1e7b4f17dc058569"
+    },
+    {
+      "path": "infrastructure/providers/openstack/templates/cloud-init.yaml.tmpl",
+      "mode": "100644",
+      "blob": "ebee4f4a6f916e9193cf23f93e12c4a7c81858b5"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/conftest.py",
+      "mode": "100644",
+      "blob": "397ba8fe3e1d4a41eaf52b97927b21b466c4626b"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/contract/test_boundaries.py",
+      "mode": "100644",
+      "blob": "0850fcf6056e003c53f621a17d8c2613294fc462"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/demo_app.py",
+      "mode": "100644",
+      "blob": "e49ea19e0b49b54844afbfd70ed93ca81d78ebe1"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/fakes/__init__.py",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/fakes/providers.py",
+      "mode": "100644",
+      "blob": "ac0d2946aa82f59f4aeaa785cd1acee53b15d8c6"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/integration/test_config.py",
+      "mode": "100644",
+      "blob": "c4f44c24ba9239812adc26474b2d26256a299fb7"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/integration/test_http_journeys.py",
+      "mode": "100644",
+      "blob": "31f4cf5067f966930b7f5fb4fd658463ddb27b78"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/unit/api/test_http.py",
+      "mode": "100644",
+      "blob": "d2387aad97a1120a30abf0857a2eeb0969ecc405"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/unit/application/test_services.py",
+      "mode": "100644",
+      "blob": "80a9682e60b4d79aaa5c79937b44c79b85bdf030"
+    },
+    {
+      "path": "infrastructure/providers/openstack/tests/unit/infrastructure/test_openstack.py",
+      "mode": "100644",
+      "blob": "6417c87c6cec190f2aaf114427f64c58fe6b2432"
+    },
+    {
+      "path": "infrastructure/providers/openstack/uv.lock",
+      "mode": "100644",
+      "blob": "08e58b44d1cbb16a58521d34b323f0bc8e913bc7"
+    },
+    {
+      "path": "infrastructure/providers/proxmox/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/README.md",
+      "mode": "100644",
+      "blob": "4439b2a49a27b2262d921cc006badb8505cda951"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/access.py",
+      "mode": "100644",
+      "blob": "f019a8a3112382fffbcc35062b0995320faf5eaf"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/budget.py",
+      "mode": "100644",
+      "blob": "b5fbc04e6f819ed5f544f79088dbe5ccf219bc5f"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/capabilities.py",
+      "mode": "100644",
+      "blob": "49847669474af646cb244be32cd56642f9fcb50e"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/costs.py",
+      "mode": "100644",
+      "blob": "0b870a365d4e54b05e4c183efaa16cb1b951587a"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/provision.py",
+      "mode": "100644",
+      "blob": "e0af461a47e24837bb8ebc851073291df44a32e7"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/specsheet.py",
+      "mode": "100644",
+      "blob": "dcc0520059a62c4fd94ab5f57299c3ac63ef3321"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/test_access.py",
+      "mode": "100644",
+      "blob": "195f6931d6c1087d8fafb46d6eed0cf03928a66c"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/test_budget.py",
+      "mode": "100644",
+      "blob": "9eddd7bc9a901c12721bced2eef0800533e9e414"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/test_costs.py",
+      "mode": "100644",
+      "blob": "ff932ee0b88e3fc0b839a15f62a0442fc43c25fb"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/test_provision.py",
+      "mode": "100644",
+      "blob": "5b2026aa94ba185dad35299e012fbb816ac0af8d"
+    },
+    {
+      "path": "infrastructure/providers/terraform_tools/test_specsheet.py",
+      "mode": "100644",
+      "blob": "5efa32e851a166aeda6bf0771d5e1f97cabf9828"
+    },
+    {
+      "path": "infrastructure/terraform/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "infrastructure/terraform/aws-edge/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "db1d5f35c018aabbe601d498d5ed081421411f21"
+    },
+    {
+      "path": "infrastructure/terraform/aws-edge/README.md",
+      "mode": "100644",
+      "blob": "4d541f86b91848edfedfdd51a5978fb73ae1de01"
+    },
+    {
+      "path": "infrastructure/terraform/aws-edge/main.tf",
+      "mode": "100644",
+      "blob": "7a772936c0e0c1a5ca7e52dbe36b27d7f98ea447"
+    },
+    {
+      "path": "infrastructure/terraform/aws-edge/test_inputs.py",
+      "mode": "100644",
+      "blob": "0fce9c9b17637a7c41448bfc36bfcb3b445e0e97"
+    },
+    {
+      "path": "infrastructure/terraform/aws-edge/variables.tf",
+      "mode": "100644",
+      "blob": "3abdbfd9e79774fea5306d4a207d08c8d79c892c"
+    },
+    {
+      "path": "infrastructure/terraform/aws/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "30527661fe90be21ec1223e45ec2a9934e130a78"
+    },
+    {
+      "path": "infrastructure/terraform/aws/README.md",
+      "mode": "100644",
+      "blob": "8c45945c8eb6a14056d01410901272aa82fe0362"
+    },
+    {
+      "path": "infrastructure/terraform/aws/bootstrap.sh.tftpl",
+      "mode": "100644",
+      "blob": "60c055df9e3f5102e4db782f28fdb3b0bdc05e34"
+    },
+    {
+      "path": "infrastructure/terraform/aws/cloud-init.yaml.tftpl",
+      "mode": "100644",
+      "blob": "0d0c760658db553c70428b1cfaa8f93033bc28c2"
+    },
+    {
+      "path": "infrastructure/terraform/aws/main.tf",
+      "mode": "100644",
+      "blob": "d32a0abc827bcabcb59c71ce920cb31fdf133782"
+    },
+    {
+      "path": "infrastructure/terraform/aws/outputs.tf",
+      "mode": "100644",
+      "blob": "b6d37b46098e78133b958956af0422440591fcfe"
+    },
+    {
+      "path": "infrastructure/terraform/aws/test_bootstrap.py",
+      "mode": "100644",
+      "blob": "efddcb7ea84492ef0042f00f5ca338ea469023ba"
+    },
+    {
+      "path": "infrastructure/terraform/aws/variables.tf",
+      "mode": "100644",
+      "blob": "8eea36c11422b6d7cad7f80587734bbce4afdac2"
+    },
+    {
+      "path": "infrastructure/terraform/aws/versions.tf",
+      "mode": "100644",
+      "blob": "243d53192725e3fd07e82f37937060835157fec4"
+    },
+    {
+      "path": "infrastructure/terraform/azure/.gitignore",
+      "mode": "100644",
+      "blob": "916f7665563d01072bde47654ed57e1ee10562d2"
+    },
+    {
+      "path": "infrastructure/terraform/azure/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "6d61e67a5dbb78e53140b03be0b585025b097155"
+    },
+    {
+      "path": "infrastructure/terraform/azure/README.md",
+      "mode": "100644",
+      "blob": "ce00cbc4cf1b28f673713070c8e1fc569614846e"
+    },
+    {
+      "path": "infrastructure/terraform/azure/cloud-init.yaml.tftpl",
+      "mode": "100644",
+      "blob": "3ef533801114c2af4f83d9922e5927b5fa2c3713"
+    },
+    {
+      "path": "infrastructure/terraform/azure/main.tf",
+      "mode": "100644",
+      "blob": "e250d87d5c2161d1e3489d2e5be8ae5fc88d35e4"
+    },
+    {
+      "path": "infrastructure/terraform/azure/outputs.tf",
+      "mode": "100644",
+      "blob": "49031e5cb29dbbaf3c4c8539e7332e0cb30b7817"
+    },
+    {
+      "path": "infrastructure/terraform/azure/tests/test_bootstrap.py",
+      "mode": "100644",
+      "blob": "6bb5ca209d864083f4dc9180790178aabc2c9473"
+    },
+    {
+      "path": "infrastructure/terraform/azure/variables.tf",
+      "mode": "100644",
+      "blob": "96d95a2a4ef90c92a196e0ff6bbed93be346ad2a"
+    },
+    {
+      "path": "infrastructure/terraform/azure/versions.tf",
+      "mode": "100644",
+      "blob": "6ca0bee0b2a478debaf6413629f47a742d8ba3e5"
+    },
+    {
+      "path": "infrastructure/terraform/ci/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "eee30a88df5378a193e1d1f96bb63f7d3bba5e40"
+    },
+    {
+      "path": "infrastructure/terraform/ci/README.md",
+      "mode": "100644",
+      "blob": "17f5490c82a82dad44d1ea21acf3642fc0768c76"
+    },
+    {
+      "path": "infrastructure/terraform/ci/cloud-init.yaml.tftpl",
+      "mode": "100644",
+      "blob": "2f10de1ce52a226a6cc57157b62d1365f8f27826"
+    },
+    {
+      "path": "infrastructure/terraform/ci/main.tf",
+      "mode": "100644",
+      "blob": "6d72cb42550a44cd7a535bb06dfcf4106f34f380"
+    },
+    {
+      "path": "infrastructure/terraform/ci/test_bootstrap.py",
+      "mode": "100644",
+      "blob": "93b5826d654ff370ffa551ca7be9d19e5573f14c"
+    },
+    {
+      "path": "infrastructure/terraform/codebuild/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "eee30a88df5378a193e1d1f96bb63f7d3bba5e40"
+    },
+    {
+      "path": "infrastructure/terraform/codebuild/README.md",
+      "mode": "100644",
+      "blob": "766664787d0c8c20d0f45420dcb08f869220c494"
+    },
+    {
+      "path": "infrastructure/terraform/codebuild/main.tf",
+      "mode": "100644",
+      "blob": "5171d5cf89317532617959f99672621b81a3b348"
+    },
+    {
+      "path": "infrastructure/terraform/control/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "eee30a88df5378a193e1d1f96bb63f7d3bba5e40"
+    },
+    {
+      "path": "infrastructure/terraform/control/README.md",
+      "mode": "100644",
+      "blob": "c39d37e287b84aa150439388440058885a59fcab"
+    },
+    {
+      "path": "infrastructure/terraform/control/connectivity.tf",
+      "mode": "100644",
+      "blob": "835c270bd5776e211ba4842749e52257677140de"
+    },
+    {
+      "path": "infrastructure/terraform/control/control.tftest.hcl",
+      "mode": "100644",
+      "blob": "f945f3f5279e3ef296cc077e84e64518da7f4634"
+    },
+    {
+      "path": "infrastructure/terraform/control/external-api.tf",
+      "mode": "100644",
+      "blob": "d9e8bb1f4d0f6eb700d7c5accab2f729d5615967"
+    },
+    {
+      "path": "infrastructure/terraform/control/main.tf",
+      "mode": "100644",
+      "blob": "36d6399b54489cb04c4ab46050cc5a3bc4f20dbf"
+    },
+    {
+      "path": "infrastructure/terraform/control/product-edge-policy.json",
+      "mode": "100644",
+      "blob": "c96d9580e4cd4d5367dd591873fe7acf4b58bf4f"
+    },
+    {
+      "path": "infrastructure/terraform/control/product-executor-policy.json",
+      "mode": "100644",
+      "blob": "ffac42113c7a6e8f50b49fb3450f4b051593bf67"
+    },
+    {
+      "path": "infrastructure/terraform/control/registry.tf",
+      "mode": "100644",
+      "blob": "5463cf8879344b76ea178cf259928eba5957b030"
+    },
+    {
+      "path": "infrastructure/terraform/gcp-edge/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "5351a3ba8bf4235e15247a37b236e939ab5ee8e6"
+    },
+    {
+      "path": "infrastructure/terraform/gcp-edge/README.md",
+      "mode": "100644",
+      "blob": "bf711cb46f21257073c49f51f906ab5df994d1e4"
+    },
+    {
+      "path": "infrastructure/terraform/gcp-edge/edge.tftest.hcl",
+      "mode": "100644",
+      "blob": "262e3a748b16b3feb6ed78360504f33f29817331"
+    },
+    {
+      "path": "infrastructure/terraform/gcp-edge/main.tf",
+      "mode": "100644",
+      "blob": "7c848fce107b238434baafe4f4e48bc452a2776c"
+    },
+    {
+      "path": "infrastructure/terraform/gcp-edge/terraform.tfvars.example",
+      "mode": "100644",
+      "blob": "cf8dd0b194d1bd7c5b58a910cc9f7ec8da94eb21"
+    },
+    {
+      "path": "infrastructure/terraform/gcp-edge/variables.tf",
+      "mode": "100644",
+      "blob": "bc5b1d6880a42dc9109f75320d8303727a1060ad"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/.gitignore",
+      "mode": "100644",
+      "blob": "4bd3edee7668cb0b999a9128e823f055f04c6820"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "c7b52d928783767db8d6e2754e3e41572ac75765"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/README.md",
+      "mode": "100644",
+      "blob": "aee6a3f4fb181eb5bd94da8a46c2da4f47643173"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/bootstrap.sh.tftpl",
+      "mode": "100644",
+      "blob": "2410b9d19e6e6e34ca1c9aecdcb53f60672b5dc9"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/cloud-init.yaml.tftpl",
+      "mode": "100644",
+      "blob": "78c9804aeeacf2664b18ba0eccb6f63cdf1bb434"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/control-api.tf",
+      "mode": "100644",
+      "blob": "7f892cc3a6790a5d873ad7160004dc2ec752c6de"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/main.tf",
+      "mode": "100644",
+      "blob": "474151c37a43e5e641ec52dcd3d76862c45f0c95"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/outputs.tf",
+      "mode": "100644",
+      "blob": "f1eeaacecf985a746a2c0ccd4a37a9c655df3ca3"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/test_bootstrap.py",
+      "mode": "100644",
+      "blob": "8d0c63ef9a5fb636d2bb6a7c1a75e282317fc922"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/variables.tf",
+      "mode": "100644",
+      "blob": "7279edfa72ec70288e37ba06d8349088c1f496f5"
+    },
+    {
+      "path": "infrastructure/terraform/gcp/versions.tf",
+      "mode": "100644",
+      "blob": "41be30cdd4b1ebcb7013ec2473c6c75ca8d3bd2a"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "79ed6440822cfca9a3eea6f0cb57d338f23f4a2a"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/README.md",
+      "mode": "100644",
+      "blob": "61893daed3fb561903b6bfbdf5d24beeb444f7ef"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/main.tf",
+      "mode": "100644",
+      "blob": "1c1531ed7ec59bd4672b32a79c3d4d96a4abadd1"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/outputs.tf",
+      "mode": "100644",
+      "blob": "7eff4c6a041205e21c8cc8713bcaffbd5b726eab"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/routes.tf",
+      "mode": "100644",
+      "blob": "192040cb75b20278607044e7705d711ae82c7291"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/test_inputs.py",
+      "mode": "100644",
+      "blob": "d869a000ce69ea4a797904cebd6a29ee06ecadcd"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/variables.tf",
+      "mode": "100644",
+      "blob": "4e51d0b948036ae555b04f59bc83177317fe8174"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-edge/versions.tf",
+      "mode": "100644",
+      "blob": "2b638f26414b724d54a53151eee73446b3d808c7"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-relay-edge/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "6bb2ec17113a66b929b87d24e31d6ba57a4676f6"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-relay-edge/main.tf",
+      "mode": "100644",
+      "blob": "30dbb57a54a83746ea12bc963a04d6c8fa6eb4e8"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-relay-edge/test_inputs.py",
+      "mode": "100644",
+      "blob": "e072ee4d358d9d8e6349425103ea6ff921ec8e91"
+    },
+    {
+      "path": "infrastructure/terraform/openstack-relay-edge/variables.tf",
+      "mode": "100644",
+      "blob": "b3efb9e836e6361b6b28032d04fa8edf6bb1ecfe"
+    },
+    {
+      "path": "infrastructure/terraform/platform-release/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "459dd5af7a1788b738c781793b2ed0a7d41d24da"
+    },
+    {
+      "path": "infrastructure/terraform/platform-release/README.md",
+      "mode": "100644",
+      "blob": "b91fed6039bcad76bb409824ae3f432ea352d781"
+    },
+    {
+      "path": "infrastructure/terraform/platform-release/gcp.tf",
+      "mode": "100644",
+      "blob": "2d65740c774459c8840a674db1cdaf2e6d2b95fd"
+    },
+    {
+      "path": "infrastructure/terraform/platform-release/main.tf",
+      "mode": "100644",
+      "blob": "0b5f04472ad13d7d979af7f9aae6cd059d1db458"
+    },
+    {
+      "path": "infrastructure/terraform/platform-release/observer.tf",
+      "mode": "100644",
+      "blob": "f59e1a453d70c97edfafbc2d23d1a246e322da11"
+    },
+    {
+      "path": "infrastructure/terraform/platform-release/tests/gcp_wif.tftest.hcl",
+      "mode": "100644",
+      "blob": "3caf6b0b48672abecc1b0fe8715360a0ff6674be"
+    },
+    {
+      "path": "infrastructure/terraform/platform-verification/.terraform.lock.hcl",
+      "mode": "100644",
+      "blob": "eee30a88df5378a193e1d1f96bb63f7d3bba5e40"
+    },
+    {
+      "path": "infrastructure/terraform/platform-verification/README.md",
+      "mode": "100644",
+      "blob": "a42d3d7630e5b91e1ae1be07d7d6c0dcd3a202e0"
+    },
+    {
+      "path": "infrastructure/terraform/platform-verification/main.tf",
+      "mode": "100644",
+      "blob": "ac757c5aabb85efe3d9664f70705c786f160abc8"
+    },
+    {
+      "path": "observability/README.md",
+      "mode": "100644",
+      "blob": "8ffc5e6fb92cd2ca12d580b1a314bf1b6564420d"
+    },
+    {
+      "path": "observability/bootstrap.py",
+      "mode": "100644",
+      "blob": "32e42457b44e72530c800017178031c854067be0"
+    },
+    {
+      "path": "observability/compose.yaml",
+      "mode": "100644",
+      "blob": "ed49ed6b22eb5267c6ac9e37202a40311be4c4b8"
+    },
+    {
+      "path": "observability/dashboards/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "observability/dashboards/patroni-overview.json",
+      "mode": "100644",
+      "blob": "df21e1dd6119f0c62b11275e12aae6c0f0f1a753"
+    },
+    {
+      "path": "observability/logs/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "observability/metrics/.gitkeep",
+      "mode": "100644",
+      "blob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391"
+    },
+    {
+      "path": "observability/metrics/patroni-alerts.yml",
+      "mode": "100644",
+      "blob": "d0b4db0dba9210e4e17c7946c052f4e286c31ed1"
+    },
+    {
+      "path": "observability/product.example.json",
+      "mode": "100644",
+      "blob": "af7d533df04838284385bc86882814780d3ea2f2"
+    },
+    {
+      "path": "observability/register.py",
+      "mode": "100644",
+      "blob": "3933e1015e6fd2ea643ef5d09299c5e62684fa32"
+    },
+    {
+      "path": "observability/registration.example.json",
+      "mode": "100644",
+      "blob": "6dc481ec6c5e6a28b1c27f49ec5ca604084a58b0"
+    },
+    {
+      "path": "observability/render.py",
+      "mode": "100644",
+      "blob": "028124ab7ed48b68962754a825782a55e9661bb5"
+    },
+    {
+      "path": "observability/runtime_health.py",
+      "mode": "100644",
+      "blob": "64b4585e3f56ab4ddf9b43c8035771b96ff66037"
+    },
+    {
+      "path": "observability/target.example.json",
+      "mode": "100644",
+      "blob": "b3ed501a7c76afa7bc891ce7bebe8a2d34393c56"
+    },
+    {
+      "path": "observability/test_api_metrics.py",
+      "mode": "100644",
+      "blob": "868e8d003cd2b7320e6853f0b64afbf086e71e3f"
+    },
+    {
+      "path": "observability/test_probe.py",
+      "mode": "100644",
+      "blob": "d19aa12ff3065cab4ea413b6eb965ecd4028ec2b"
+    },
+    {
+      "path": "observability/test_register.py",
+      "mode": "100644",
+      "blob": "18f04e18deb36ad07298c4f693b81b44e20c122a"
+    },
+    {
+      "path": "observability/test_registrar_authority.py",
+      "mode": "100644",
+      "blob": "7f7e589e1137b35c1f27862068869cfe144d14c3"
+    },
+    {
+      "path": "observability/test_render.py",
+      "mode": "100644",
+      "blob": "cf94689c84b486bc806e61baa0d8803f8b3f5c4a"
+    },
+    {
+      "path": "observability/test_runtime_health.py",
+      "mode": "100644",
+      "blob": "94f08bbaad603f04c8e077975b06fa421c2af1a4"
+    },
+    {
+      "path": "package-lock.json",
+      "mode": "100644",
+      "blob": "aca5b22af6364a52ff3b59d3a343146e47bb9e31"
+    },
+    {
+      "path": "package.json",
+      "mode": "100644",
+      "blob": "d30c29f61031b0b8136f1cf2cbf52c426cf46c56"
+    }
+  ]
+}

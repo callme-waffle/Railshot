@@ -60,13 +60,22 @@ def download(url, maximum, expected=None):
     return observed, size
 
 
-def gateway_health(socket_path, token):
-    require(Path(socket_path).is_absolute(), 'GATEWAY_SOCKET_INVALID')
+def gateway_health(gateway, token):
     message = (f'GET /healthz HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {token}'
                '\r\nConnection: close\r\n\r\n').encode()
-    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+    if isinstance(gateway.get('service_host'), str):
+        host, port = gateway['service_host'], gateway.get('service_port')
+        require(re.fullmatch(r'[A-Za-z0-9.-]+', host) and type(port) is int and 1 <= port <= 65535,
+                'GATEWAY_CONFIG_INVALID')
+        client = socket.create_connection((host, port), timeout=5)
+    else:
+        path = gateway.get('socket_path')
+        require(isinstance(path, str) and Path(path).is_absolute(), 'GATEWAY_SOCKET_INVALID')
+        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         client.settimeout(5)
-        client.connect(socket_path)
+        client.connect(path)
+    with client:
+        client.settimeout(5)
         client.sendall(message)
         response = b''
         while len(response) <= 16 * 1024:
@@ -91,11 +100,14 @@ def check(configuration, allow_http=False):
     digest = config['artifact_sha256']
     require(isinstance(digest, str) and SHA256.fullmatch(digest), 'ARTIFACT_HASH_INVALID')
     gateway = config['gateway']
-    require(isinstance(gateway, dict) and isinstance(gateway.get('socket_path'), str)
-            and isinstance(gateway.get('token_file'), str), 'GATEWAY_CONFIG_INVALID')
+    require(isinstance(gateway, dict) and isinstance(gateway.get('token_file'), str), 'GATEWAY_CONFIG_INVALID')
     token = private_file(gateway['token_file'], 512).read_text().strip()
     require(TOKEN.fullmatch(token), 'GATEWAY_TOKEN_INVALID')
-    gateway_health(gateway['socket_path'], token)
+    gateway_health(gateway, token)
+    if 'vault' in config:
+        vault = config['vault']
+        require(isinstance(vault, dict) and isinstance(vault.get('private_key_file'), str), 'VAULT_CONFIG_INVALID')
+        private_file(vault['private_key_file'], 16 * 1024)
 
     suffix = f'/personal/{digest}'
     require(urls['installer_url'].path == suffix + '/install.sh'

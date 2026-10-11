@@ -1,0 +1,30 @@
+global
+    log /dev/log local0
+    user haproxy
+    group haproxy
+    daemon
+    maxconn 2048
+    ssl-default-server-options ssl-min-ver TLSv1.2
+
+defaults
+    log global
+    mode tcp
+    option tcplog
+    timeout connect 5s
+    timeout client {{ haproxy_client_timeout }}
+    timeout server {{ haproxy_server_timeout }}
+    timeout check 5s
+
+frontend postgres_writer
+    bind {{ private_ip }}:{{ haproxy_writer_port }}
+    default_backend postgres_primary
+
+backend postgres_primary
+    option httpchk
+    http-check send meth GET uri /primary ver HTTP/1.1 hdr Host patroni hdr Authorization "Basic {{ ('patroni:' ~ vault_patroni_api_password) | b64encode }}"
+    http-check expect status 200
+    default-server inter 2s fall 3 rise 2 on-marked-down shutdown-sessions
+{% for node in groups['db_nodes'] | sort %}
+    # Only checks use TLS on 8008; PostgreSQL on 5432 stays TCP passthrough.
+    server {{ node }} {{ hostvars[node].private_ip }}:5432 check port 8008 check-ssl verify required ca-file /etc/haproxy/tls/patroni-ca.crt verifyhost {{ node }}
+{% endfor %}

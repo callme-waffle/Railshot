@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "lifecycle": "systemd",
+  "interface": "railshotwg",
+  "address_pool": "10.253.240.0/24",
+  "server_address": "10.253.240.1/32",
+  "endpoint": "gateway.example.com:51820",
+  "listen_port": 51820,
+  "private_key_file": "/etc/railshot-personal-gateway/private.key",
+  "ledger_path": "/var/lib/railshot-personal-gateway/peers.json",
+  "request_root": "/var/lib/railshot/personal/gateway",
+  "request_owner_uid": 1000
+}

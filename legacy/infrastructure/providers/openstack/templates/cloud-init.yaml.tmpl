@@ -1,0 +1,9 @@
+# Reference only: access.py renders validated values using JSON, also valid YAML.
+#cloud-config
+ssh_pwauth: false
+disable_root: true
+users:
+  - name: <validated-ssh-username>
+    lock_passwd: true
+    ssh_authorized_keys:
+      - <public-key-only>

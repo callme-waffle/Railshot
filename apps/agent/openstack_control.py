@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Project-bound structured OpenStack CLI, invoked only by a fixed SSH command."""
 import fcntl
+import base64
 import hashlib
 import json
 import os
@@ -64,9 +65,18 @@ def decode(raw):
                              parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
     except (ValueError, UnicodeError, RecursionError):
         raise ProtocolError('invalid_request') from None
-    require(isinstance(request, dict) and set(request) == {'version', 'job_id', 'action', 'params'})
+    legacy_keys = {'version', 'job_id', 'action', 'params'}
+    assisted_keys = legacy_keys | {'target_id', 'generation', 'unlock_key'}
+    require(isinstance(request, dict) and set(request) in (legacy_keys, assisted_keys))
     require(type(request['version']) is int and request['version'] == 1 and request['action'] == 'openstack.execute')
     require(isinstance(request['job_id'], str) and re.fullmatch(r'[A-Za-z0-9_-]{1,64}', request['job_id']))
+    if set(request) == assisted_keys:
+        require(isinstance(request['target_id'], str) and IDENT.fullmatch(request['target_id']))
+        require(type(request['generation']) is int and request['generation'] > 0)
+        try:
+            require(len(base64.b64decode(request['unlock_key'], validate=True)) == 32)
+        except (TypeError, ValueError, base64.binascii.Error):
+            raise ProtocolError('command_rejected') from None
     params = request['params']
     require(isinstance(params, dict) and 'argv' in params and set(params) <= {'argv', 'delete_data', 'public_key'})
     require('delete_data' not in params or type(params['delete_data']) is bool)
@@ -275,9 +285,32 @@ def execute_raw(raw, original_command, credential_loader, config, cli_factory=Op
     try:
         require(original_command == COMMAND)
         request = decode(raw)
-        auth = credential_loader()
+        require(isinstance(config['project_id'], str) and IDENT.fullmatch(config['project_id']))
+        if 'unlock_key' in request:
+            require(request['target_id'] == config['target_id'] and request['generation'] == config['generation'])
+            # Persist replay state before handling the unlock key. A crashed
+            # job is unknown and cannot reuse its ID.
+            private_directory(home)
+            replay = home / ('unlock-job-' + request['job_id'] + '.json')
+            fd = os.open(replay, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            with os.fdopen(fd, 'w') as stream:
+                json.dump({'target_id': request['target_id'], 'generation': request['generation'],
+                           'action': request['action']}, stream)
+                stream.flush(); os.fsync(stream.fileno())
+            auth = credential_loader(request['unlock_key'], target_id=config['target_id'],
+                                     generation=config['generation'], project_id=config['project_id'])
+        else:
+            # The old request is valid only for an installation that predates
+            # the assisted vault. Presence of v2 state is an irreversible gate.
+            require(config.get('vault_version') != 2
+                    and not (home / 'credentials.vault').exists()
+                    and not (home / 'credentials.vault').is_symlink())
+            auth = credential_loader()
         require(isinstance(auth, dict))
-        secrets = tuple(v for k, v in auth.items() if any(word in k for word in ('secret', 'password', 'token')) and isinstance(v, str))
+        secrets = tuple(v for k, v in auth.items()
+                        if any(word in k for word in ('secret', 'password', 'token')) and isinstance(v, str))
+        if 'unlock_key' in request:
+            secrets = (request['unlock_key'], *secrets)
         result = execute(request, config, cli_factory(auth), home, secrets)
         return success_response(request, result)
     except Exception as exc:
@@ -304,8 +337,17 @@ def main():
         os.environ.clear()
         os.environ.update(PATH='/usr/bin:/bin', HOME=str(HOME), LANG='C.UTF-8')
         config = load(HOME / 'control.json', {})
+        vault = HOME / 'credentials.vault'
+        if vault.exists() or vault.is_symlink():
+            from client_setup.credentials import AssistedCredentialStore
+            credential_loader = AssistedCredentialStore(HOME).unlock
+        elif config.get('vault_version') != 2 and (HOME / 'credentials.key').exists() and (HOME / 'credentials.enc').exists():
+            credential_loader = CredentialStore(HOME).load
+        else:
+            raise ValueError('CREDENTIAL_STORE_MISSING')
         response = execute_raw(_read_bounded(sys.stdin.buffer), original,
-                               lambda: CredentialStore(HOME).load(), config)
+                               credential_loader, config,
+                               cli_factory=lambda auth: OpenStackCLI(auth, temp_parent='/dev/shm'))
     except Exception:
         response = error_response('execution_failed')
     print(json.dumps(response))

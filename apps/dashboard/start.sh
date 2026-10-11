@@ -13,7 +13,7 @@ cat > /tmp/railshot-proxy.conf <<EOF
 # Personal clients authenticate with an enrollment or client token. These exact
 # routes must preserve that bearer value instead of replacing it with the
 # dashboard's operator token.
-location ~ ^/api/v1/(enrollments/[A-Za-z0-9._-]+/claims|targets/[A-Za-z0-9._-]+/(heartbeats|receipts|runtimes))$ {
+location ~ ^/api/v1/(enrollments/[A-Za-z0-9._-]+/claims|targets/[A-Za-z0-9._-]+/(heartbeats|receipts|runtimes|vaults))$ {
     proxy_pass http://$upstream;
     proxy_http_version 1.1;
     proxy_set_header Host \$http_host;

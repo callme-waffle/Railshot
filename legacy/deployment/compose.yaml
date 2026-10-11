@@ -1,0 +1,113 @@
+# Local process smoke only. The CI worker belongs on a separate, dedicated Linux VM.
+name: railshot-platform
+services:
+  state:
+    image: railshot/api:local
+    pull_policy: never
+    user: '0:0'
+    network_mode: none
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    environment:
+      STATE_UID: ${RAILSHOT_LOCAL_UID:-1000}
+      STATE_GID: ${RAILSHOT_LOCAL_GID:-1000}
+    entrypoint: [sh, -ec, 'chown "$$STATE_UID:$$STATE_GID" /state; chmod 0700 /state']
+    volumes: ["api-state:/state"]
+  dashboard:
+    user: "${RAILSHOT_LOCAL_UID:-1000}:${RAILSHOT_LOCAL_GID:-1000}"
+    image: railshot/dashboard:local
+    build:
+      context: ..
+      dockerfile: apps/dashboard/Dockerfile
+      target: dashboard
+    ports: ["127.0.0.1:4181:8080"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 128m
+    cpus: 0.5
+    environment:
+      RAILSHOT_API_UPSTREAM: api:4173
+      RAILSHOT_MCP_UPSTREAM: mcp-remote:4185
+      RAILSHOT_API_TOKEN_FILE: /run/secrets/api_token
+    secrets: [api_token]
+    depends_on: [api, mcp-remote]
+  api:
+    depends_on:
+      state: {condition: service_completed_successfully}
+    image: railshot/api:local
+    user: "${RAILSHOT_LOCAL_UID:-1000}:${RAILSHOT_LOCAL_GID:-1000}"
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: api
+    ports: ["127.0.0.1:4173:4173"]
+    environment:
+      RAILSHOT_BIND_HOST: 0.0.0.0
+      RAILSHOT_ALLOWED_HOSTS: localhost,127.0.0.1,api
+      RAILSHOT_ALLOWED_ORIGINS: http://127.0.0.1:4181,http://localhost:4181
+      RAILSHOT_API_TOKEN_FILE: /run/secrets/api_token
+      RAILSHOT_STATE_DIR: /var/lib/railshot/state
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_OWNER: ${GITHUB_OWNER:-Jasmin-Softbank}
+      GITHUB_REPO: ${GITHUB_REPO:-railshot-apps}
+      GITHUB_REF: ${GITHUB_REF:-main}
+      GITHUB_WORKFLOW: ${GITHUB_WORKFLOW:-railshot-deploy.yml}
+      RAILSHOT_TENANT: ${RAILSHOT_TENANT:-${JASMIN_TENANT:-demo}}
+      RAILSHOT_TARGET_ID: ${RAILSHOT_TARGET_ID:-}
+    secrets: [api_token]
+    volumes: ["api-state:/var/lib/railshot"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    cpus: 1
+  mcp:
+    profiles: [mcp]
+    image: railshot/mcp:local
+    user: "${RAILSHOT_LOCAL_UID:-1000}:${RAILSHOT_LOCAL_GID:-1000}"
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: mcp
+    environment:
+      RAILSHOT_API_URL: http://api:4173
+      RAILSHOT_API_TOKEN_FILE: /run/secrets/api_token
+      RAILSHOT_AGENT_SESSION_DIR: /var/lib/railshot-agent
+    secrets: [api_token]
+    volumes: ["../.local/mcp-sessions:/var/lib/railshot-agent"]
+    stdin_open: true
+    tty: false
+    init: true
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+  mcp-remote:
+    image: railshot/mcp:local
+    user: "${RAILSHOT_LOCAL_UID:-1000}:${RAILSHOT_LOCAL_GID:-1000}"
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+      target: mcp
+    command: [node, src/remote-mcp.js]
+    environment:
+      RAILSHOT_API_URL: http://api:4173
+      RAILSHOT_PUBLIC_ORIGIN: http://127.0.0.1:4181
+      RAILSHOT_API_TOKEN_FILE: /run/secrets/api_token
+    secrets: [api_token]
+    depends_on: [api]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 256m
+secrets:
+  api_token:
+    file: ${RAILSHOT_API_TOKEN_PATH:?Set an absolute path to a private API token file}
+volumes:
+  api-state:

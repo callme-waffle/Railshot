@@ -1,0 +1,11 @@
+{{ {
+  'node-name': k3s_node_name,
+  'flannel-backend': 'none',
+  'disable-network-policy': true,
+  'write-kubeconfig-mode': '0600',
+  'cluster-cidr': k3s_cluster_cidr,
+  'service-cidr': k3s_service_cidr,
+  'cluster-dns': k3s_cluster_dns,
+  'tls-san': ([k3s_api_host] + k3s_tls_sans) | unique | list,
+  'disable': ['traefik', 'servicelb', 'metrics-server', 'local-storage']
+} | to_nice_yaml }}

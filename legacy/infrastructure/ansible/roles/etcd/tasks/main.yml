@@ -1,0 +1,15 @@
+---
+- name: Inspect and protect existing state
+  ansible.builtin.import_tasks: inspect.yml
+- name: Install etcd
+  ansible.builtin.import_tasks: install.yml
+- name: Configure etcd
+  ansible.builtin.import_tasks: configure.yml
+- name: Start all members before checking quorum
+  ansible.builtin.systemd_service:
+    name: etcd
+    enabled: true
+    state: started
+    daemon_reload: true
+- name: Verify etcd health
+  ansible.builtin.import_tasks: verify.yml

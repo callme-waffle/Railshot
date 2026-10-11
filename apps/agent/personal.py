@@ -2,6 +2,7 @@
 """Outbound personal environment client. No remote shell or arbitrary command API."""
 import argparse
 import base64
+import getpass
 import fcntl
 import hashlib
 import ipaddress
@@ -23,7 +24,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'deployment/bootstrap'))
 from client_setup.state import atomic_private_write, private_directory, read_private
-from client_setup.credentials import CredentialStore
+from client_setup.credentials import CredentialStore, AssistedCredentialStore, validate_server_key
 from infrastructure.providers.openstack.cli import OpenStackCLI
 
 VERSION = '1.0.0'
@@ -136,11 +137,8 @@ def checks(config, runner=run, cli_factory=OpenStackCLI):
                                for parts in (row.split() for row in rows))
     except Exception:
         pass
-    try:
-        cli_factory(CredentialStore(CONFIG).load()).run(['server', 'list'])
-        result['openstack'] = True
-    except Exception:
-        pass
+    # The client has no locally usable control credential. The backend sets
+    # readiness only after its own SSH job unlocks the vault and lists servers.
     try:
         result['runtime'] = runner(['systemctl', 'is-active', 'railshot-personal-runtime']) == 'active'
     except Exception:
@@ -164,29 +162,18 @@ def enroll(args):
         require(config['api_url'] == api_url and config['enrollment_id'] == args.enrollment_id
                 and config.get('test_allow_http', False) is test_allow_http, 'INSTALLATION_BINDING_CHANGED')
         install_tunnel(config)
+        finish_identity(config, args)
         install_runtime_access(config)
         install_service()
         wait_control_ready(config)
-        prepare_runtime(config, args)
         return
     require(IDENT.fullmatch(args.enrollment_id))
-    from client_setup.personal_identity import prepare_personal_identity
-    identity = prepare_personal_identity(CONFIG, STATE, project_id=args.project_id,
-                                         test_allow_http=test_allow_http)
-    require(isinstance(identity, dict) and set(identity) == {'auth', 'project_id', 'ownership'},
-            'OPENSTACK_IDENTITY_INVALID')
-    auth = identity['auth']
-    https_url(auth['auth_url'], test_allow_http=test_allow_http)
-    project_id = identity['project_id']
-    require(IDENT.fullmatch(project_id))
-    token_info = OpenStackCLI(auth).run(['token', 'issue'])
-    require(token_info.get('project_id') == project_id, 'OPENSTACK_PROJECT_MISMATCH')
     key_path = CONFIG / 'wireguard.key'
     if not key_path.exists():
         atomic_private_write(key_path, (wireguard_key(run(['wg', 'genkey'])) + '\n').encode())
     public_key = wireguard_key(run(['wg', 'pubkey'], input=read_private(key_path).decode()))
     token = os.environ.pop('RAILSHOT_ENROLLMENT_TOKEN', '') or getpass.getpass('RailShot 일회용 등록 토큰: ')
-    body = {'public_key': public_key, 'client_version': VERSION, 'project_id': project_id, 'capabilities': CAPABILITIES}
+    body = {'public_key': public_key, 'client_version': VERSION, 'capabilities': CAPABILITIES}
     host_key = CONFIG / 'runtime_host_key'
     if not host_key.exists():
         run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-f', str(host_key)])
@@ -198,19 +185,69 @@ def enroll(args):
     del token
     require(IDENT.fullmatch(response['target_id']) and type(response['generation']) is int and response['generation'] > 0)
     require(isinstance(response['client_token'], str) and response['client_token'])
+    require(isinstance(response.get('vault_public_key'), str) and isinstance(response.get('vault_key_id'), str), 'VAULT_KEY_REQUIRED')
+    validate_server_key(response['vault_public_key'], response['vault_key_id'])
     validate_tunnel(response['tunnel'])
-    config = {k: response[k] for k in ('target_id', 'generation', 'client_token', 'tunnel')}
+    config = {k: response[k] for k in ('target_id', 'generation', 'client_token', 'tunnel', 'vault_public_key', 'vault_key_id')}
     if response.get('runtime_access'):
         config['runtime_access'] = response['runtime_access']
-    config.update(api_url=api_url, enrollment_id=args.enrollment_id, project_id=project_id, test_allow_http=test_allow_http)
+    config.update(api_url=api_url, enrollment_id=args.enrollment_id, test_allow_http=test_allow_http)
     # Save the issued credential before any OS configuration. A subsequent local
     # failure is resumable without replaying the consumed enrollment credential.
     save_config(config)
     install_tunnel(config)
+    finish_identity(config, args)
     install_runtime_access(config)
     install_service()
     wait_control_ready(config)
-    prepare_runtime(config, args)
+
+
+def finish_identity(config, args):
+    """Create the project credential after the one-time claim and tunnel setup."""
+    from client_setup.personal_identity import prepare_personal_identity
+    validate_server_key(config['vault_public_key'], config['vault_key_id'])
+    vault = AssistedCredentialStore(CONFIG)
+    require(not any((CONFIG / name).exists() for name in ('credentials.key', 'credentials.enc')),
+            'LEGACY_VAULT_REQUIRES_MIGRATION')
+    if vault.path.exists():
+        ownership = json.loads(read_private(STATE / 'identity-ownership.json'))
+        progress = json.loads(read_private(STATE / 'identity-progress.json'))
+        require(progress.get('status') in ('complete', 'recorded'), 'IDENTITY_PRIOR_OUTCOME_UNKNOWN')
+        project_id = ownership.get('project_id')
+        require(vault.document()['project_id'] == project_id and any(
+            item.get('type') == 'application_credential' and item.get('id') for item in ownership.get('resources', [])),
+            'VAULT_BINDING_INVALID')
+        if any(item.get('type') == 'user' and item.get('created') for item in ownership.get('resources', [])):
+            require(AssistedCredentialStore(CONFIG / 'identity-owner').path.exists(), 'OWNER_VAULT_REQUIRED')
+    else:
+        # The service-user password and Application Credential share one
+        # transient DEK, but use separate AES-GCM nonces and vault files.
+        shared_dek = os.urandom(32)
+        class BoundVault:
+            path = vault.path
+            def save(self, auth):
+                project_id = json.loads(read_private(STATE / 'identity-ownership.json'))['project_id']
+                vault.save(auth, target_id=config['target_id'], generation=config['generation'],
+                           project_id=project_id, public_key_pem=config['vault_public_key'],
+                           key_id=config['vault_key_id'], data_key=shared_dek)
+            def load(self):
+                raise ValueError('VAULT_UNLOCK_REQUIRED')
+        owner_store = AssistedCredentialStore(CONFIG / 'identity-owner')
+        class OwnerVault:
+            def save(self, auth):
+                project_id = json.loads(read_private(STATE / 'identity-ownership.json'))['project_id']
+                owner_store.save(auth, target_id=config['target_id'], generation=config['generation'],
+                                 project_id=project_id, public_key_pem=config['vault_public_key'],
+                                 key_id=config['vault_key_id'], data_key=shared_dek)
+        identity = prepare_personal_identity(CONFIG, STATE, project_id=getattr(args, 'project_id', None),
+                   test_allow_http=config.get('test_allow_http') is True, control_vault=BoundVault(),
+                   owner_control_vault=OwnerVault())
+        project_id = identity['project_id']
+        require(IDENT.fullmatch(project_id) and vault.document()['project_id'] == project_id, 'OPENSTACK_PROJECT_MISMATCH')
+    config['project_id'] = project_id
+    save_config(config)
+    api(config['api_url'], '/api/v1/targets/' + config['target_id'] + '/vaults', config['client_token'],
+        vault.metadata(), test_allow_http=config.get('test_allow_http') is True)
 
 
 def prepare_runtime(config, args):
@@ -300,14 +337,22 @@ def install_cli_account(config):
     require(owned == {'user': CLI_USER, 'uid': account.pw_uid, 'gid': account.pw_gid}
             and account.pw_uid != 0 and account.pw_dir == str(CLI_HOME) and account.pw_shell == '/bin/sh', 'CLI_ACCOUNT_NOT_OWNED')
     control = {key: config[key] for key in ('project_id', 'target_id', 'generation')}
+    control['vault_version'] = 2
     if CLI_HOME.exists():
         require(not CLI_HOME.is_symlink() and CLI_HOME.stat().st_uid == account.pw_uid
                 and not CLI_HOME.stat().st_mode & 0o077, 'CLI_HOME_UNSAFE')
         require(json.loads((CLI_HOME / 'control.json').read_text()) == control, 'CLI_BINDING_CHANGED')
+        require((CLI_HOME / 'credentials.vault').exists() and not (CLI_HOME / 'credentials.vault').is_symlink()
+                and (CLI_HOME / 'credentials.vault').stat().st_uid == account.pw_uid,
+                'VAULT_REQUIRED')
         return
     staging = Path(tempfile.mkdtemp(prefix='.railshot-cli-', dir=CLI_HOME.parent))
     try:
-        CredentialStore(staging).save(CredentialStore(CONFIG).load())
+        source_vault = AssistedCredentialStore(CONFIG)
+        require(source_vault.path.exists(), 'VAULT_REQUIRED')
+        read_private(source_vault.path)
+        shutil.copyfile(source_vault.path, staging / 'credentials.vault')
+        (staging / 'credentials.vault').chmod(0o600)
         atomic_private_write(staging / 'control.json', json.dumps(control).encode())
         for path in staging.iterdir():
             os.chown(path, account.pw_uid, account.pw_gid)

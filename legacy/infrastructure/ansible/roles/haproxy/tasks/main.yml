@@ -1,0 +1,62 @@
+---
+- name: Require a dedicated proxy and certificate authority
+  ansible.builtin.assert:
+    that:
+      - inventory_hostname not in groups['db_nodes']
+      - patroni_api_ca_src | default('') | length > 0
+      - vault_patroni_api_password | default('') | length > 0
+    fail_msg: Proxy must be separate from database hosts and have API CA and authentication configured.
+  no_log: true
+
+- name: Install HAProxy without starting package default configuration
+  ansible.builtin.apt:
+    name: haproxy
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Create private proxy certificate directory
+  ansible.builtin.file:
+    path: /etc/haproxy/tls
+    state: directory
+    owner: root
+    group: haproxy
+    mode: '0750'
+
+- name: Install Patroni API trust root
+  ansible.builtin.copy:
+    src: '{{ patroni_api_ca_src }}'
+    dest: /etc/haproxy/tls/patroni-ca.crt
+    owner: root
+    group: haproxy
+    mode: '0640'
+  notify: Reload HAProxy
+
+- name: Validate and install proxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: haproxy
+    mode: '0640'
+    validate: /usr/sbin/haproxy -c -f %s
+  no_log: true
+  diff: false
+  notify: Reload HAProxy
+
+- name: Enable proxy
+  ansible.builtin.systemd_service:
+    name: haproxy
+    enabled: true
+    state: started
+
+- name: Apply validated proxy changes
+  ansible.builtin.meta: flush_handlers
+
+- name: Verify proxy listener
+  ansible.builtin.wait_for:
+    host: '{{ private_ip }}'
+    port: '{{ haproxy_writer_port }}'
+    timeout: 30
+  when: not ansible_check_mode

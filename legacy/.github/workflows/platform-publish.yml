@@ -1,0 +1,302 @@
+name: Publish platform containers
+
+on:
+  workflow_call:
+    inputs:
+      components: {type: string, default: '["dashboard","api","mcp","personal-gateway","ci-runner"]'}
+      publish: {type: boolean, default: true}
+      deploy: {type: boolean, default: true}
+      multicloud: {type: boolean, default: false}
+      ci_run_id: {type: string, required: true}
+      skip_build:
+        description: Reuse published digest artifacts from this same trusted CI run
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      components:
+        description: JSON array of components to build
+        type: string
+        default: '["dashboard","api","mcp","personal-gateway","ci-runner"]'
+      publish:
+        description: Publish tested images to GHCR (trusted branch only)
+        type: boolean
+        default: false
+      multicloud:
+        description: Reconcile central workers and all three registered providers after platform verification
+        type: boolean
+        default: false
+      ci_run_id:
+        description: Optional exact Railshot CI run; otherwise locate a successful gate for this SHA
+        type: string
+        default: ''
+      deploy:
+        description: Update the platform deployment branch after publication (unchanged component is preserved)
+        type: boolean
+        default: false
+
+permissions: {contents: read}
+concurrency:
+  group: platform-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: ${{ !inputs.skip_build }}
+    uses: ./.github/workflows/platform-containers.yml
+    with:
+      components: ${{ inputs.components }}
+      publish: ${{ inputs.publish }}
+    permissions: {contents: read, packages: write}
+
+  deploy:
+    if: ${{ always() && !cancelled() && inputs.deploy && inputs.publish && (needs.publish.result == 'success' || (inputs.skip_build && needs.publish.result == 'skipped')) }}
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions: {contents: write, actions: read, id-token: write}
+    outputs:
+      admitted: ${{ steps.source.outputs.admitted }}
+      revision: ${{ steps.declaration.outputs.revision }}
+      dashboard_digest: ${{ steps.declaration.outputs.dashboard_digest }}
+      api_digest: ${{ steps.declaration.outputs.api_digest }}
+    steps:
+      - name: Validate publication and deployment inputs
+        env:
+          PUBLISH: ${{ inputs.publish }}
+          DEPLOY: ${{ inputs.deploy }}
+          MULTICLOUD: ${{ inputs.multicloud }}
+          MULTICLOUD_ENABLED: ${{ vars.RAILSHOT_MULTICLOUD_RELEASE }}
+          SKIP_BUILD: ${{ inputs.skip_build || false }}
+          AUTO_RELEASE: ${{ vars.RAILSHOT_AUTO_RELEASE }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          COMPONENTS: ${{ inputs.components }}
+          PLATFORM_TARGET: ${{ vars.RAILSHOT_PLATFORM_TARGET_ID }}
+          PLATFORM_PORT: ${{ vars.RAILSHOT_PLATFORM_NODE_PORT }}
+          PROVIDER_TARGETS: ${{ vars.RAILSHOT_PROVIDER_TARGETS || '{}' }}
+          PERSONAL_ENABLED: ${{ vars.RAILSHOT_PERSONAL_ENABLED || 'false' }}
+          VERIFY_REF: ${{ vars.RAILSHOT_PLATFORM_VERIFY_REF }}
+          VERIFY_ROLE: ${{ vars.RAILSHOT_PLATFORM_VERIFY_ROLE_ARN }}
+          VERIFY_VERSION: ${{ vars.RAILSHOT_PLATFORM_VERIFY_DOCUMENT_VERSION }}
+          VERIFY_HASH: ${{ vars.RAILSHOT_PLATFORM_VERIFY_DOCUMENT_SHA256 }}
+          RELEASE_VERSION: ${{ vars.RAILSHOT_RELEASE_DOCUMENT_VERSION }}
+          RELEASE_HASH: ${{ vars.RAILSHOT_RELEASE_DOCUMENT_SHA256 }}
+        run: |
+          set -euo pipefail
+          if [ "$PUBLISH" = true ]; then
+            case "$GITHUB_REF" in refs/heads/main|refs/heads/integration/*) ;; *) echo 'Publish requires a reviewed main or integration ref' >&2; exit 1 ;; esac
+          fi
+          python3 - <<'PYCODE'
+          import json, os, re
+          components = json.loads(os.environ['COMPONENTS'])
+          allowed = {'dashboard', 'api', 'mcp', 'personal-gateway', 'ci-runner'}
+          assert isinstance(components, list) and components and all(isinstance(value, str) for value in components), 'components must be a nonempty string array'
+          assert len(components) == len(set(components)) and set(components) <= allowed, 'components must be unique supported names'
+          if os.environ['SKIP_BUILD'] == 'true':
+              assert os.environ['GITHUB_EVENT_NAME'] == 'push' and os.environ['AUTO_RELEASE'] == 'true', 'artifact reuse requires the enabled automatic push release'
+              assert os.environ['DEPLOY'] == 'true', 'artifact reuse requires platform deployment'
+              assert os.environ['CI_RUN_ID'] == os.environ['GITHUB_RUN_ID'], 'artifact reuse requires the calling CI run gate'
+          if os.environ['MULTICLOUD'] == 'true':
+              assert os.environ['GITHUB_EVENT_NAME'] == 'workflow_dispatch', 'multicloud maintenance must be requested manually'
+              assert os.environ.get('MULTICLOUD_ENABLED') == 'true', 'multicloud release requires RAILSHOT_MULTICLOUD_RELEASE=true'
+              assert os.environ['DEPLOY'] == 'true', 'multicloud release requires platform deployment'
+          if os.environ['DEPLOY'] == 'true':
+              assert os.environ['PERSONAL_ENABLED'] in {'true', 'false'}, 'RAILSHOT_PERSONAL_ENABLED must be true or false'
+              assert os.environ['GITHUB_REPOSITORY'] == 'Jasmin-Softbank/Railshot' and os.environ['GITHUB_REPOSITORY_ID'] == '1400202256', 'deploy requires the registered platform repository'
+              assert os.environ['VERIFY_REF'] and os.environ['GITHUB_REF'] == os.environ['VERIFY_REF'], 'deploy requires the exact OIDC trusted ref'
+              assert os.environ['VERIFY_ROLE'] == 'arn:aws:iam::721622471953:role/railshot-platform-verifier', 'verification bootstrap role is required'
+              assert re.fullmatch(r'[1-9][0-9]*', os.environ['VERIFY_VERSION']) and re.fullmatch(r'[a-f0-9]{64}', os.environ['VERIFY_HASH']), 'verification document version and hash are required'
+              assert os.environ['PUBLISH'] == 'true', 'deploy requires publish=true'
+              assert {'dashboard', 'api', 'mcp'} & set(components), 'deploy requires a changed platform component'
+              assert re.fullmatch(r'[a-z][a-z0-9-]{0,62}', os.environ['PLATFORM_TARGET']), 'RAILSHOT_PLATFORM_TARGET_ID is required'
+              providers = json.loads(os.environ['PROVIDER_TARGETS'])
+              assert isinstance(providers, dict) and set(providers) <= {'aws', 'gcp', 'openstack', 'proxmox'}, 'RAILSHOT_PROVIDER_TARGETS must be a supported provider-to-target JSON map'
+              assert all(isinstance(value, str) and re.fullmatch(r'[a-z][a-z0-9-]{0,62}', value) for value in providers.values()), 'provider target IDs must be valid'
+              assert providers.get('aws', os.environ['PLATFORM_TARGET']) == os.environ['PLATFORM_TARGET'], 'provider targets must preserve the default AWS target'
+              selections = {'aws': os.environ['PLATFORM_TARGET'], **providers}
+              assert len(set(selections.values())) == len(selections), 'provider target IDs must be distinct'
+              if 'ci-runner' in components:
+                  assert {'dashboard', 'api'} <= set(components), 'worker rollout requires the platform images'
+                  assert re.fullmatch(r'[1-9][0-9]*', os.environ['RELEASE_VERSION']) and re.fullmatch(r'[a-f0-9]{64}', os.environ['RELEASE_HASH']), 'release document version and hash are required'
+              if os.environ.get('MULTICLOUD') == 'true':
+                  assert {'dashboard', 'api', 'ci-runner'} <= set(components), 'multicloud release requires the central worker images'
+                  assert set(selections) == {'aws', 'gcp', 'openstack'}, 'multicloud release requires all three provider bindings'
+                  assert re.fullmatch(r'[1-9][0-9]*', os.environ['RELEASE_VERSION']) and re.fullmatch(r'[a-f0-9]{64}', os.environ['RELEASE_HASH']), 'release document version and hash are required'
+              port = os.environ['PLATFORM_PORT']
+              assert re.fullmatch(r'[0-9]+', port) and 30000 <= int(port) <= 32767, 'RAILSHOT_PLATFORM_NODE_PORT must be 30000..32767'
+          PYCODE
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          # Only this ephemeral job needs authenticated, non-force Git push.
+          persist-credentials: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: platform-image-*-${{ github.sha }}
+          path: ${{ runner.temp }}/platform-published
+          merge-multiple: true
+      - name: Install renderer dependency from existing CI pin
+        run: |
+          pin=$(sed -n '/^PyYAML==[0-9.]*$/p' ci/requirements-test.txt)
+          test -n "$pin"
+          python3 -m pip install --disable-pip-version-check "$pin"
+      - name: Recheck current source and CI gate immediately before platform publication
+        id: source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: python3 deployment/scripts/release_admission.py --source-sha "$GITHUB_SHA" --ref "$GITHUB_REF" --ci-run-id "$CI_RUN_ID" --skip-superseded
+      - name: Commit the tested digest declaration to the platform branch
+        if: steps.source.outputs.admitted == 'true'
+        id: declaration
+        env:
+          PLATFORM_TARGET: ${{ vars.RAILSHOT_PLATFORM_TARGET_ID }}
+          PLATFORM_PORT: ${{ vars.RAILSHOT_PLATFORM_NODE_PORT }}
+          PROVIDER_TARGETS: ${{ vars.RAILSHOT_PROVIDER_TARGETS || '{}' }}
+          PERSONAL_ENABLED: ${{ vars.RAILSHOT_PERSONAL_ENABLED || 'false' }}
+        run: |
+          personal=()
+          if [ "$PERSONAL_ENABLED" = true ]; then personal=(--personal); fi
+          python3 deployment/scripts/publish-platform.py \
+            --artifacts "$RUNNER_TEMP/platform-published" \
+            --source-sha "$GITHUB_SHA" \
+            --target-id "$PLATFORM_TARGET" \
+            --dashboard-node-port "$PLATFORM_PORT" \
+            --provider-targets "$PROVIDER_TARGETS" \
+            "${personal[@]}"
+
+      - name: Assume the fixed read-only verification role
+        if: steps.source.outputs.admitted == 'true'
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c # v4
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: arn:aws:iam::721622471953:role/railshot-platform-verifier
+          role-duration-seconds: 1800
+          role-session-name: railshot-platform-${{ github.run_id }}
+          allowed-account-ids: '721622471953'
+      - name: Verify the exact Argo revision, running digests and public edge
+        if: steps.source.outputs.admitted == 'true'
+        env:
+          REVISION: ${{ steps.declaration.outputs.revision }}
+          DASHBOARD_DIGEST: ${{ steps.declaration.outputs.dashboard_digest }}
+          API_DIGEST: ${{ steps.declaration.outputs.api_digest }}
+          DOCUMENT_VERSION: ${{ vars.RAILSHOT_PLATFORM_VERIFY_DOCUMENT_VERSION }}
+          DOCUMENT_HASH: ${{ vars.RAILSHOT_PLATFORM_VERIFY_DOCUMENT_SHA256 }}
+        run: |
+          git switch --detach "$GITHUB_SHA"
+          python3 deployment/scripts/verify-platform.py remote \
+            --revision "$REVISION" --dashboard-digest "$DASHBOARD_DIGEST" --api-digest "$API_DIGEST" \
+            --document-version "$DOCUMENT_VERSION" --document-hash "$DOCUMENT_HASH" \
+            --receipt "$RUNNER_TEMP/platform-verification.json"
+      - name: Preserve the verification outcome
+        if: always() && steps.source.outputs.admitted == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: platform-verification-${{ github.sha }}
+          path: ${{ runner.temp }}/platform-verification.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  ci-runtime:
+    outputs:
+      admitted: ${{ steps.source.outputs.admitted }}
+    if: ${{ always() && !cancelled() && contains(fromJSON(inputs.components), 'ci-runner') && inputs.deploy && inputs.publish && needs.deploy.result == 'success' && needs.deploy.outputs.admitted == 'true' }}
+    needs: deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions: {contents: read, actions: read, id-token: write}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {ref: '${{ github.sha }}', persist-credentials: false}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: platform-image-*-${{ github.sha }}
+          path: ${{ runner.temp }}/platform-published
+          merge-multiple: true
+      - name: Assume the fixed release document role
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: arn:aws:iam::721622471953:role/railshot-multicloud-release
+          role-duration-seconds: 1800
+          role-session-name: railshot-release-${{ github.run_id }}
+          allowed-account-ids: '721622471953'
+      - name: Recheck current source and CI gate immediately before remote release
+        id: source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: python3 deployment/scripts/release_admission.py --source-sha "$GITHUB_SHA" --ref "$GITHUB_REF" --ci-run-id "$CI_RUN_ID" --skip-superseded
+      - name: Promote the tested CI controller runner and workflow source
+        if: steps.source.outputs.admitted == 'true'
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          REVISION: ${{ needs.deploy.outputs.revision }}
+          DOCUMENT_VERSION: ${{ vars.RAILSHOT_RELEASE_DOCUMENT_VERSION }}
+          DOCUMENT_HASH: ${{ vars.RAILSHOT_RELEASE_DOCUMENT_SHA256 }}
+        run: |
+          python3 deployment/scripts/remote_release.py --scope ci-runtime \
+            --source-sha "$SOURCE_SHA" --revision "$REVISION" \
+            --publication-run-id "$GITHUB_RUN_ID" --publication-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --artifacts "$RUNNER_TEMP/platform-published" \
+            --document-version "$DOCUMENT_VERSION" --document-hash "$DOCUMENT_HASH" \
+            --receipt "$RUNNER_TEMP/ci-runtime-release.json"
+      - name: Preserve the CI runtime rollout result
+        if: ${{ always() && steps.source.outputs.admitted == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ci-runtime-release-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci-runtime-release.json
+          if-no-files-found: warn
+          retention-days: 30
+
+  multicloud:
+    if: ${{ always() && !cancelled() && github.event_name == 'workflow_dispatch' && inputs.multicloud && vars.RAILSHOT_MULTICLOUD_RELEASE == 'true' && inputs.deploy && inputs.publish && needs.deploy.result == 'success' && needs.deploy.outputs.admitted == 'true' && needs.ci-runtime.result == 'success' && needs.ci-runtime.outputs.admitted == 'true' }}
+    needs: [deploy, ci-runtime]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions: {contents: read, actions: read, id-token: write}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with: {ref: '${{ github.sha }}', persist-credentials: false}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: platform-image-*-${{ github.sha }}
+          path: ${{ runner.temp }}/platform-published
+          merge-multiple: true
+      - name: Assume the fixed release document role
+        uses: aws-actions/configure-aws-credentials@ff717079ee2060e4bcee96c4779b553acc87447c
+        with:
+          aws-region: ap-northeast-2
+          role-to-assume: arn:aws:iam::721622471953:role/railshot-multicloud-release
+          role-duration-seconds: 7200
+          role-session-name: railshot-release-${{ github.run_id }}
+          allowed-account-ids: '721622471953'
+      - name: Recheck current source and CI gate immediately before remote release
+        id: source
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+        run: python3 deployment/scripts/release_admission.py --source-sha "$GITHUB_SHA" --ref "$GITHUB_REF" --ci-run-id "$CI_RUN_ID" --skip-superseded
+      - name: Apply the same approved release and require three verified providers
+        if: steps.source.outputs.admitted == 'true'
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          REVISION: ${{ needs.deploy.outputs.revision }}
+          DOCUMENT_VERSION: ${{ vars.RAILSHOT_RELEASE_DOCUMENT_VERSION }}
+          DOCUMENT_HASH: ${{ vars.RAILSHOT_RELEASE_DOCUMENT_SHA256 }}
+        run: |
+          python3 deployment/scripts/remote_release.py \
+            --source-sha "$SOURCE_SHA" --revision "$REVISION" \
+            --publication-run-id "$GITHUB_RUN_ID" --publication-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --artifacts "$RUNNER_TEMP/platform-published" \
+            --document-version "$DOCUMENT_VERSION" --document-hash "$DOCUMENT_HASH" \
+            --receipt "$RUNNER_TEMP/multicloud-release.json"
+      - name: Preserve all provider outcomes
+        if: ${{ always() && steps.source.outputs.admitted == 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: multicloud-release-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/multicloud-release.json
+          if-no-files-found: warn
+          retention-days: 30

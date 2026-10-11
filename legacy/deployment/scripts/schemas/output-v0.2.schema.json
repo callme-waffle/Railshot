@@ -1,0 +1,293 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Railshot Deployment Output — provisional 0.2",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "0.2"
+    },
+    "action": {
+      "anyOf": [
+        {
+          "enum": [
+            "deploy",
+            "verify",
+            "cleanup"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "enum": [
+            "aws",
+            "gcp",
+            "openstack"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "environment_id": {
+      "anyOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "status": {
+      "enum": [
+        "ready",
+        "failed",
+        "cleaned"
+      ]
+    },
+    "cluster_status": {
+      "enum": [
+        "unknown",
+        "api_ready",
+        "ready",
+        "failed",
+        "absent"
+      ]
+    },
+    "cilium_status": {
+      "enum": [
+        "unknown",
+        "healthy",
+        "failed",
+        "absent"
+      ]
+    },
+    "workload_status": {
+      "enum": [
+        "unknown",
+        "ready",
+        "failed",
+        "absent"
+      ]
+    },
+    "endpoint": {
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "uri"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "endpoint_scope": {
+      "anyOf": [
+        {
+          "enum": [
+            "node-local",
+            "node-local-with-additional-url",
+            "public-url-verified"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "stage": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "exit_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "diagnostics": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "code",
+            "stage",
+            "message",
+            "exit_code",
+            "diagnostics"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "enum": [
+              "NODE_READY",
+              "K3S_INSTALLING",
+              "K3S_READY",
+              "CILIUM_INSTALLING",
+              "CILIUM_READY",
+              "WORKLOAD_DEPLOYING",
+              "WORKLOAD_READY",
+              "ENDPOINT_READY",
+              "FAILED"
+            ]
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state",
+          "timestamp"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "deployment_mode": {
+      "enum": [
+        "online",
+        "airgap",
+        null
+      ]
+    },
+    "bundle_version": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "bundle_verified": {
+      "type": "boolean"
+    },
+    "network_capabilities": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "boolean",
+          "null"
+        ]
+      }
+    },
+    "network_details": {
+      "type": "object"
+    },
+    "network_states": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "enum": [
+              "NETWORK_CHECKING",
+              "BUNDLE_VERIFYING",
+              "AIRGAP_PRELOADING"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "state",
+          "timestamp"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "fallback_used": {
+      "type": "boolean"
+    },
+    "fallback_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "preload": {
+      "type": "object"
+    },
+    "exposure_status": {
+      "type": "object"
+    },
+    "update_available": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "action",
+    "provider",
+    "environment_id",
+    "status",
+    "cluster_status",
+    "cilium_status",
+    "workload_status",
+    "endpoint",
+    "endpoint_scope",
+    "error",
+    "states",
+    "deployment_mode",
+    "bundle_version",
+    "bundle_verified",
+    "network_capabilities",
+    "network_details",
+    "network_states",
+    "fallback_used",
+    "fallback_reason",
+    "preload",
+    "exposure_status",
+    "update_available"
+  ],
+  "additionalProperties": false
+}

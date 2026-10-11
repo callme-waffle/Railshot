@@ -1,0 +1,9 @@
+{
+  "name": "aws-demo",
+  "node_ip": "192.0.2.10",
+  "observer_source_cidr": "192.0.2.20/32",
+  "node_metrics_port": 30910,
+  "cluster_metrics_port": 30081,
+  "probe_urls": ["https://app.example.com/health"],
+  "argocd_metrics": null
+}

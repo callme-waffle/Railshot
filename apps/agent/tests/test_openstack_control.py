@@ -17,7 +17,9 @@ AUTH = {'auth_url': 'https://keystone.example/v3', 'application_credential_id': 
 
 
 def request(argv, job='job1', **params):
-    return {'version': 1, 'job_id': job, 'action': 'openstack.execute', 'params': {'argv': argv, **params}}
+    return {'version': 1, 'job_id': job, 'action': 'openstack.execute',
+            'target_id': CONFIG['target_id'], 'generation': CONFIG['generation'],
+            'unlock_key': base64.b64encode(b'k' * 32).decode(), 'params': {'argv': argv, **params}}
 
 
 @pytest.mark.parametrize('argv', [
@@ -108,8 +110,8 @@ def test_mutation_timeout_is_unknown_and_never_replayed(tmp_path):
     cli = FakeCloud()
     cli.fail_create = True
     payload = json.dumps(request(['server', 'create', '--image', 'image1', '--flavor', 'small', 'web'])).encode()
-    first = control.execute_raw(payload, control.COMMAND, lambda: AUTH, CONFIG, cli_factory=lambda _: cli, home=tmp_path)
-    second = control.execute_raw(payload, control.COMMAND, lambda: AUTH, CONFIG, cli_factory=lambda _: cli, home=tmp_path)
+    first = control.execute_raw(payload, control.COMMAND, lambda *a, **k: AUTH, CONFIG, cli_factory=lambda _: cli, home=tmp_path)
+    second = control.execute_raw(payload, control.COMMAND, lambda *a, **k: AUTH, CONFIG, cli_factory=lambda _: cli, home=tmp_path)
     assert first['error']['code'] == second['error']['code'] == 'execution_unknown'
     assert len([c for c in cli.calls if c[:2] == ['server', 'create']]) == 1
 
@@ -125,7 +127,6 @@ def test_job_id_rebinding_does_not_create_other_resource(tmp_path):
 
 def test_real_openstack_cli_adapter_keeps_credentials_off_argv(tmp_path):
     tmp_path.chmod(0o700)
-    control.CredentialStore(tmp_path).save(AUTH)
     invoked = []
     def cloud_process(argv, **kwargs):
         invoked.append(argv)
@@ -139,7 +140,7 @@ def test_real_openstack_cli_adapter_keeps_credentials_off_argv(tmp_path):
         body = {'project_id': 'project1', 'id': 'secret-issued-token'} if argv[3:5] == ['token', 'issue'] else [{'ID': 'server1', 'Name': 'web', 'Status': 'ACTIVE'}]
         return SimpleNamespace(returncode=0, stdout=json.dumps(body), stderr='')
     response = control.execute_raw(json.dumps(request(['server', 'list'])).encode(), control.COMMAND,
-                                  lambda: control.CredentialStore(tmp_path).load(), CONFIG,
+                                  lambda *a, **k: AUTH, CONFIG,
                                   cli_factory=lambda auth: control.OpenStackCLI(auth, runner=cloud_process), home=tmp_path)
     assert response['ok'] and response['result'][0]['ID'] == 'server1'
     assert [args[3:5] for args in invoked] == [['token', 'issue'], ['server', 'list']]

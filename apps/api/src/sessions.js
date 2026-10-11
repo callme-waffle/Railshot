@@ -1,6 +1,7 @@
 import { createHash, randomBytes, randomUUID, createCipheriv } from 'node:crypto';
 import { lstat, open, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createAccountData } from './accounts.js';
 
 // OAuth MCP bearer tokens are bound to product sessions. Keep both durable so
 // an established AI connection is not silently revoked by session expiry.
@@ -53,6 +54,7 @@ export async function createDashboardData(db, root) {
   const visible = (row) => ({ id: row.id, provider: row.provider, label: row.label, console_url: row.console_url,
     username: row.username, has_password: row.password_encrypted !== null, created_at: row.created_at, updated_at: row.updated_at });
   return {
+    accounts: createAccountData(db),
     isOwnerSession(id) { return Boolean(id && db.prepare('SELECT 1 FROM owners WHERE session_id = ?').get(id)); },
     owner(token) {
       if (!token) return null;

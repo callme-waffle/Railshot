@@ -1,0 +1,12 @@
+{
+  "name": "railshot-insights-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test server.test.js"
+  },
+  "dependencies": {
+    "@prometheus-io/client": "0.16.1"
+  }
+}

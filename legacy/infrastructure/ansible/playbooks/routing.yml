@@ -1,0 +1,9 @@
+---
+- name: Routing
+  hosts: proxy_nodes
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  roles:
+    - role: deployment_defaults
+    - role: haproxy

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "targets": [{
+    "target_id": "demo-aws",
+    "app": "demo-app",
+    "namespace": "tenant-demo-app",
+    "prometheus_url": "http://192.0.2.20:9090",
+    "node_instance": "192.0.2.10:30910",
+    "cluster_instance": "192.0.2.10:30081",
+    "probe_url": "https://app.example.com/health"
+  }]
+}

@@ -1,0 +1,61 @@
+---
+- name: Create the application owner and restricted runtime role on the current primary
+  hosts: db_nodes
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Identify the current primary over its local peer-authenticated socket
+      ansible.builtin.command:
+        argv: [psql, -X, -A, -t, -v, ON_ERROR_STOP=1, -d, postgres, -c, 'SELECT pg_is_in_recovery()']
+      become_user: postgres
+      register: recovery
+      changed_when: false
+    - name: Require exactly one primary before changing application privileges
+      ansible.builtin.assert:
+        that:
+          - groups['db_nodes'] | map('extract', hostvars, 'recovery') | map(attribute='stdout') | select('equalto', 'f') | list | length == 1
+      run_once: true
+    - name: Set up application credentials only on the primary
+      when: recovery.stdout == 'f'
+      block:
+        - name: Make a private remote workspace
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: railshot-app-db-
+          register: application_work
+          become_user: postgres
+        - name: Copy the fixed application role installer
+          ansible.builtin.copy:
+            src: application_database.py
+            dest: '{{ application_work.path }}/install.py'
+            owner: postgres
+            mode: '0600'
+        - name: Supply only the generated private binding
+          ansible.builtin.copy:
+            content: '{{ railshot_binding | to_json }}'
+            dest: '{{ application_work.path }}/binding.json'
+            owner: postgres
+            mode: '0600'
+          no_log: true
+        - name: Create roles and verify both TLS logins through the proxy
+          ansible.builtin.command:
+            argv: [python3, '{{ application_work.path }}/install.py', '{{ application_work.path }}/binding.json']
+          become_user: postgres
+          changed_when: true
+          no_log: true
+        - name: Record completion with the executor nonce and binding digest
+          ansible.builtin.copy:
+            dest: '{{ railshot_application_receipt_path }}'
+            content: '{{ railshot_application_receipt | to_json }}'
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          no_log: true
+      always:
+        - name: Remove the remote credential workspace
+          ansible.builtin.file:
+            path: '{{ application_work.path }}'
+            state: absent
+          when: application_work is defined and application_work.path is defined
+          no_log: true

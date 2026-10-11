@@ -1,0 +1,19 @@
+plugins {
+    id 'java'
+    id 'checkstyle'
+    id 'org.springframework.boot' version '3.5.16'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+group = 'dev.railshot'
+version = '1.0.0'
+ext['tomcat.version'] = '10.1.60'
+java { toolchain { languageVersion = JavaLanguageVersion.of(21) } }
+repositories { mavenCentral() }
+dependencies {
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+dependencyLocking { lockAllConfigurations() }
+tasks.named('test') { useJUnitPlatform() }
+checkstyle { toolVersion = '10.26.1' }

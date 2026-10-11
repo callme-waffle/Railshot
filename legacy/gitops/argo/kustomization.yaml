@@ -1,0 +1,27 @@
+# Fresh operations cluster only. Existing Argo CD is reused, not reinstalled.
+# Argo CD v3.5.3 at an exact upstream commit; official container manifests.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+  - https://raw.githubusercontent.com/argoproj/argo-cd/c9c369efcc5b2a0bd720803f8d14a1c3eaddf579/manifests/install.yaml
+patches:
+  - target:
+      kind: ConfigMap
+      name: argocd-cmd-params-cm
+    patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: argocd-cmd-params-cm
+      data:
+        controller.resource.health.persist: "true"
+  - target:
+      group: apps
+      version: v1
+      kind: (Deployment|StatefulSet)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          railshot.io/node-role: platform

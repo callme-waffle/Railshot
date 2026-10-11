@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "builder": {
+    "name": "railshot-ci",
+    "driver": "remote",
+    "container": "railshot-buildkit",
+    "image": "moby/buildkit:v0.33.0",
+    "network": "railshot-quality",
+    "memory_bytes": 4294967296,
+    "cpu_period": 100000,
+    "cpu_quota": 200000,
+    "flags": [
+      "--oci-worker-net=bridge"
+    ]
+  },
+  "concurrency": {
+    "gate": 2,
+    "agent": 1
+  }
+}

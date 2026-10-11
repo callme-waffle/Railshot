@@ -1,0 +1,244 @@
+# Based on rancher/local-path-provisioner v0.0.37. Upstream SHA256: 9781b39c24f3f651bd6d6e41b561e04e4904bbdb6d4f8c7a6009df3a702dcd65
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: railshot-storage
+  labels:
+    app.kubernetes.io/managed-by: railshot
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: railshot-local-path-service-account
+  namespace: railshot-storage
+  labels:
+    app.kubernetes.io/managed-by: railshot
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: railshot-local-path-role
+  namespace: railshot-storage
+  labels:
+    app.kubernetes.io/managed-by: railshot
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - patch
+  - update
+  - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: railshot-local-path-role
+  labels:
+    app.kubernetes.io/managed-by: railshot
+rules:
+- apiGroups:
+  - ''
+  resources:
+  - nodes
+  - persistentvolumeclaims
+  - configmaps
+  - pods
+  - pods/log
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - ''
+  resources:
+  - persistentvolumes
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - patch
+  - update
+  - delete
+- apiGroups:
+  - ''
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: railshot-local-path-bind
+  namespace: railshot-storage
+  labels:
+    app.kubernetes.io/managed-by: railshot
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: railshot-local-path-role
+subjects:
+- kind: ServiceAccount
+  name: railshot-local-path-service-account
+  namespace: railshot-storage
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: railshot-local-path-bind
+  labels:
+    app.kubernetes.io/managed-by: railshot
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: railshot-local-path-role
+subjects:
+- kind: ServiceAccount
+  name: railshot-local-path-service-account
+  namespace: railshot-storage
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: railshot-local-path
+  namespace: railshot-storage
+  labels:
+    app.kubernetes.io/managed-by: railshot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: railshot-local-path
+  template:
+    metadata:
+      labels:
+        app: railshot-local-path
+    spec:
+      serviceAccountName: railshot-local-path-service-account
+      containers:
+      - name: railshot-local-path
+        image: docker.io/rancher/local-path-provisioner:v0.0.37
+        imagePullPolicy: IfNotPresent
+        command:
+        - local-path-provisioner
+        - --debug
+        - start
+        - --configmap-name
+        - railshot-local-path-config
+        - --service-account-name
+        - railshot-local-path-service-account
+        - --helper-image
+        - docker.io/library/busybox:1.37.0
+        - --config
+        - /etc/config/config.json
+        ports:
+        - name: health
+          containerPort: 8080
+          protocol: TCP
+        startupProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 12
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: health
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: health
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config/
+        env:
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+        - name: CONFIG_MOUNT_PATH
+          value: /etc/config/
+        - name: HEALTH_PORT
+          value: '8080'
+        resources:
+          requests:
+            cpu: 10m
+            memory: 32Mi
+          limits:
+            cpu: 200m
+            memory: 128Mi
+      volumes:
+      - name: config-volume
+        configMap:
+          name: railshot-local-path-config
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: railshot-persistent
+  labels:
+    app.kubernetes.io/managed-by: railshot
+  annotations:
+    defaultVolumeType: local
+provisioner: rancher.io/local-path
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: railshot-local-path-config
+  namespace: railshot-storage
+  labels:
+    app.kubernetes.io/managed-by: railshot
+data:
+  config.json: '{"nodePathMap": [{"node": "DEFAULT_PATH_FOR_NON_LISTED_NODES", "paths":
+    []}, {"node": "railshot-gcp-poc", "paths": ["/var/lib/rancher/railshot-volumes"]}]}'
+  setup: '#!/bin/sh
+
+    set -eu
+
+    case "$VOL_DIR" in /var/lib/rancher/railshot-volumes/pvc-*_app-*_*) ;; *) exit
+    1;; esac
+
+    mkdir -m 0770 -p "$VOL_DIR"
+
+    chown 65532:65532 "$VOL_DIR"
+
+    '
+  teardown: '#!/bin/sh
+
+    set -eu
+
+    case "$VOL_DIR" in /var/lib/rancher/railshot-volumes/pvc-*_app-*_*) ;; *) exit
+    1;; esac
+
+    rm -rf -- "$VOL_DIR"
+
+    '
+  helperPod.yaml: "apiVersion: v1\nkind: Pod\nmetadata:\n  name: helper-pod\nspec:\n\
+    \  priorityClassName: system-node-critical\n  tolerations:\n  - key: node.kubernetes.io/disk-pressure\n\
+    \    operator: Exists\n    effect: NoSchedule\n  containers:\n  - name: helper-pod\n\
+    \    image: docker.io/library/busybox:1.37.0\n    imagePullPolicy: IfNotPresent\n"

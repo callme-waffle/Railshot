@@ -9,11 +9,13 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import socket
 import socketserver
 import stat
 import sys
 import tempfile
+import threading
 
 import personal_wireguard as gateway
 
@@ -127,6 +129,42 @@ class UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer)
         super().__init__(path, handler)
 
 
+class TCPHTTPServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    """Private service endpoint; Kubernetes NetworkPolicy restricts callers."""
+    daemon_threads = True
+    block_on_close = True
+    allow_reuse_address = True
+
+    def __init__(self, address, handler, *, config, token):
+        self.gateway_config = config
+        self.gateway_token = token
+        self.gateway_client_uid = None
+        self.stream_slots = threading.BoundedSemaphore(64)
+        super().__init__(address, handler)
+
+    def process_request(self, request, client_address):
+        if not self.stream_slots.acquire(blocking=False):
+            request.close()
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.stream_slots.release()
+            raise
+
+    def get_request(self):
+        connection, address = super().get_request()
+        # Bound unauthenticated connections that stall before HTTP headers.
+        connection.settimeout(10)
+        return connection, address
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self.stream_slots.release()
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = 'railshot-personal-gateway/1'
     sys_version = ''
@@ -154,7 +192,8 @@ class Handler(BaseHTTPRequestHandler):
         if not hmac.compare_digest(supplied, self.server.gateway_token):
             self.answer(401, {'status': 'failed', 'error': 'GATEWAY_UNAUTHENTICATED'})
             return False
-        if mutation and peer_uid(self.connection) != self.server.gateway_client_uid:
+        if mutation and self.server.gateway_client_uid is not None \
+                and peer_uid(self.connection) != self.server.gateway_client_uid:
             self.answer(403, {'status': 'failed', 'error': 'GATEWAY_CLIENT_REJECTED'})
             return False
         return True
@@ -192,6 +231,62 @@ class Handler(BaseHTTPRequestHandler):
             self.answer(200, result)
         except Exception:
             self.answer(422, {'status': 'failed', 'error': 'GATEWAY_OPERATION_FAILED'})
+
+    def do_CONNECT(self):
+        """Bridge only a registered peer's management SSH socket, without parsing SSH."""
+        if not self.authenticated():
+            return
+        match = re.fullmatch(r'/streams/([A-Za-z0-9_-]{1,128})/([1-9][0-9]*)', self.path)
+        if not match or self.headers.get('Content-Length') or self.headers.get('Transfer-Encoding'):
+            self.answer(400, {'status': 'failed', 'error': 'GATEWAY_STREAM_INVALID'})
+            return
+        target_id, generation = match.groups()
+        try:
+            with gateway.locked_ledger(self.server.gateway_config) as ledger:
+                peer = ledger.get(f'{target_id}:{generation}')
+                require(peer and not peer['removed'], 'GATEWAY_PEER_UNKNOWN')
+                address = str(gateway.ipaddress.ip_interface(peer['address']).ip)
+                allowed = gateway.run(['wg', 'show', self.server.gateway_config['interface'], 'allowed-ips'])
+                require(any(row.split() == [peer['public_key'], peer['address']]
+                            for row in allowed.splitlines()), 'GATEWAY_PEER_NOT_APPLIED')
+            upstream = socket.create_connection((address, 2222), timeout=5)
+        except ValueError:
+            self.answer(404, {'status': 'failed', 'error': 'GATEWAY_PEER_UNKNOWN'})
+            return
+        except (OSError, TimeoutError):
+            self.answer(502, {'status': 'failed', 'error': 'GATEWAY_PEER_UNREACHABLE'})
+            return
+        with upstream:
+            self.send_response(200, 'Connection Established')
+            self.send_header('Cache-Control', 'no-store')
+            self.end_headers()
+            self.wfile.flush()
+            self.connection.settimeout(None)
+            upstream.settimeout(None)
+            self.close_connection = True
+            sockets = (self.connection, upstream)
+            # A finite stream lifetime prevents abandoned API connections from
+            # retaining an approved route indefinitely after target removal.
+            import time
+            deadline = time.monotonic() + 300
+            next_peer_check = time.monotonic() + 5
+            try:
+                while time.monotonic() < deadline:
+                    wait = max(0, min(next_peer_check, deadline) - time.monotonic())
+                    readable, _, _ = select.select(sockets, [], [], wait)
+                    if time.monotonic() >= next_peer_check:
+                        with gateway.locked_ledger(self.server.gateway_config) as ledger:
+                            current = ledger.get(f'{target_id}:{generation}')
+                            if not current or current['removed'] or current['public_key'] != peer['public_key']:
+                                return
+                        next_peer_check = time.monotonic() + 5
+                    for source in readable:
+                        chunk = source.recv(65536)
+                        if not chunk:
+                            return
+                        (upstream if source is self.connection else self.connection).sendall(chunk)
+            except (BrokenPipeError, ConnectionResetError, OSError, ValueError):
+                return
 
 
 def acquire_instance_lock(path, owner_uid=None):
@@ -276,6 +371,23 @@ def serve(socket_path, config_path, token_path, client_uid):
         os.close(lock)
 
 
+def serve_tcp(host, port, config_path, token_path):
+    require(os.geteuid() == 0, 'GATEWAY_ROOT_REQUIRED')
+    config = json.loads(gateway.private(config_path))
+    gateway.validate(config)
+    address = gateway.ipaddress.ip_address(host)
+    require(address.version == 4 and address not in gateway.ipaddress.ip_network(config['address_pool'])
+            and address != gateway.ipaddress.ip_address('0.0.0.0') and 1 <= port <= 65535,
+            'GATEWAY_LISTEN_INVALID')
+    token = private_token(token_path)
+    lock = acquire_instance_lock(Path(config['ledger_path']).parent / 'gateway.lock')
+    try:
+        with TCPHTTPServer((host, port), Handler, config=config, token=token) as server:
+            server.serve_forever(poll_interval=0.5)
+    finally:
+        os.close(lock)
+
+
 def probe(socket_path, token_path):
     request = (f'GET /healthz HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {private_token(token_path)}'
                '\r\nConnection: close\r\n\r\n').encode()
@@ -293,12 +405,25 @@ def probe(socket_path, token_path):
     require(response.startswith(b'HTTP/1.0 200 ') or response.startswith(b'HTTP/1.1 200 '), 'GATEWAY_NOT_READY')
 
 
+def probe_tcp(host, port, token_path):
+    require(gateway.ipaddress.ip_address(host).version == 4 and 1 <= port <= 65535, 'GATEWAY_PROBE_INVALID')
+    request = (f'GET /healthz HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer {private_token(token_path)}'
+               '\r\nConnection: close\r\n\r\n').encode()
+    with socket.create_connection((host, port), timeout=5) as client:
+        client.sendall(request)
+        response = client.recv(256)
+    require(response.startswith(b'HTTP/1.0 200 ') or response.startswith(b'HTTP/1.1 200 '), 'GATEWAY_NOT_READY')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--socket', default='/run/railshot-personal-gateway/gateway.sock')
     parser.add_argument('--config', default='/var/lib/railshot-personal-gateway/config.json')
     parser.add_argument('--token-file', default='/run/secrets/personal-gateway-ipc/ipc-token')
     parser.add_argument('--client-uid', type=int, default=1000)
+    parser.add_argument('--listen-host', default=os.environ.get('PERSONAL_GATEWAY_RPC_BIND'),
+                        help='Use private TCP service instead of the legacy Unix socket')
+    parser.add_argument('--listen-port', type=int, default=4184)
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--serve', action='store_true')
     mode.add_argument('--probe', action='store_true')
@@ -310,9 +435,15 @@ def main():
         if args.initialize:
             initialize(args.config, args.key_file, args.endpoint)
         elif args.probe:
-            probe(args.socket, args.token_file)
+            if args.listen_host:
+                probe_tcp(args.listen_host, args.listen_port, args.token_file)
+            else:
+                probe(args.socket, args.token_file)
         else:
-            serve(args.socket, args.config, args.token_file, args.client_uid)
+            if args.listen_host:
+                serve_tcp(args.listen_host, args.listen_port, args.config, args.token_file)
+            else:
+                serve(args.socket, args.config, args.token_file, args.client_uid)
         return 0
     except Exception:
         print('Personal gateway service refused invalid private state or local IPC configuration.', file=sys.stderr)

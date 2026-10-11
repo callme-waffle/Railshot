@@ -1,0 +1,10 @@
+apiVersion: railshot/v0
+app: fixture-npm-ts
+services:
+  - name: web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    port: 8080
+    health: /health
+    route: /health

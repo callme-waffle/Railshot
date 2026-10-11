@@ -49,8 +49,7 @@ def render(artifacts, target, port, provider_targets="{}", previous=None, person
                             if item.get('kind') == 'Deployment'
                             and item.get('metadata', {}).get('namespace') == 'railshot-system'}
     previous_api = previous_deployments.get('api')
-    previous_personal = any(container.get('name') == 'personal-gateway'
-                            for container in (previous_api or {}).get('spec', {}).get('template', {}).get('spec', {}).get('initContainers', []))
+    previous_personal = 'personal-gateway' in previous_deployments
     personal_mode_changed = previous is not None and previous_personal != personal
     if personal_mode_changed and personal and not {'api', 'personal-gateway'} <= changed:
         raise ValueError('initial personal enablement requires tested api and personal-gateway artifacts')
@@ -63,9 +62,9 @@ def render(artifacts, target, port, provider_targets="{}", previous=None, person
         images[component] = next(c['image'] for c in deployment['spec']['template']['spec']['containers']
                                  if c['name'] == component)
     if personal and 'personal-gateway' not in changed:
-        previous_api = previous_deployments.get('api')
-        gateway = next((container for container in (previous_api or {}).get('spec', {}).get('template', {}).get('spec', {}).get('initContainers', [])
-                        if container.get('name') == 'personal-gateway'), None)
+        gateway = next((container for container in (previous_deployments.get('personal-gateway') or {})
+                        .get('spec', {}).get('template', {}).get('spec', {}).get('containers', [])
+                        if container.get('name') == 'gateway'), None)
         if not gateway:
             raise ValueError('initial personal gateway deployment requires its image artifact')
         images['personal-gateway'] = gateway['image']

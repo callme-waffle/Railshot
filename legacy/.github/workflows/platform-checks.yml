@@ -1,0 +1,261 @@
+name: Platform full checks
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions: {contents: read}
+concurrency:
+  group: platform-full-checks-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  contracts:
+    name: Python contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: ci/requirements-test.txt
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - run: python -m pip install -r ci/requirements-test.txt
+      - name: Verify pinned cloudflared for native connector contract checks
+        run: |
+          curl --fail --silent --show-error --location --max-time 60 \
+            https://github.com/cloudflare/cloudflared/releases/download/2026.9.3/cloudflared-linux-amd64 \
+            -o "$RUNNER_TEMP/cloudflared"
+          printf '%s  %s\n' 77e26d8d900e0b8469f416239d14b5f296525fdf79fee6f511ef55609e3fbac2 "$RUNNER_TEMP/cloudflared" | sha256sum --check --strict
+          chmod 0755 "$RUNNER_TEMP/cloudflared"
+      - name: Render pinned Argo CD installation and CRD schemas
+        run: kubectl kustomize gitops/argo > "$RUNNER_TEMP/railshot-argocd-schema.yaml"
+      - name: CI, Ansible, runtime, GitOps and provider contracts
+        env:
+          RAILSHOT_ARGO_SCHEMA_MANIFEST: ${{ runner.temp }}/railshot-argocd-schema.yaml
+          CLOUDFLARED: ${{ runner.temp }}/cloudflared
+        run: |
+          for suite in ci/scripts ci/scripts/gate ci/scripts/loop ci/scripts/runner ci/scripts/poc ci/scripts/infra infrastructure/ansible deployment/scripts/tests deployment/cloudflared gitops infrastructure/providers/terraform_tools; do
+            echo "::group::$suite"
+            python -m unittest discover -s "$suite" -p 'test_*.py' -v
+            echo "::endgroup::"
+          done
+      - name: OpenAPI structure
+        run: |
+          python - <<'PY'
+          import json
+          from openapi_spec_validator import validate
+          for path in ['docs/api/ansible.openapi.json', 'docs/api/product.openapi.json']:
+              with open(path) as stream:
+                  validate(json.load(stream))
+          PY
+
+  observability:
+    name: Observability configuration and probes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: ci/requirements-test.txt
+      - run: python -m pip install PyYAML==6.0.3 jsonschema==4.23.0
+      - name: Observability config and real loopback probes
+        run: |
+          python - <<'PY'
+          import os, pathlib, subprocess, yaml
+          destination = pathlib.Path(os.environ['RUNNER_TEMP']) / 'observer-tools'
+          destination.mkdir()
+          services = yaml.safe_load(pathlib.Path('observability/compose.yaml').read_text())['services']
+          for service, binary in [('prometheus', 'promtool'), ('blackbox', 'blackbox_exporter')]:
+              container = subprocess.check_output(['docker', 'create', services[service]['image']], text=True).strip()
+              try:
+                  subprocess.run(['docker', 'cp', f'{container}:/bin/{binary}', str(destination / binary)], check=True)
+              finally:
+                  subprocess.run(['docker', 'rm', '-f', container], check=True)
+          PY
+          PROMTOOL="$RUNNER_TEMP/observer-tools/promtool" BLACKBOX="$RUNNER_TEMP/observer-tools/blackbox_exporter" \
+            python -m unittest discover -s observability -p 'test_*.py' -v
+
+  openstack:
+    name: OpenStack contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install uv==0.10.2
+      - run: uv sync --frozen --project infrastructure/providers/openstack --group dev
+      - working-directory: infrastructure/providers/openstack
+        run: |
+          uv run --frozen ruff check src tests scripts
+          uv run --frozen ruff format --check src tests scripts
+          uv run --frozen mypy
+          uv run --frozen pytest -q
+      - name: Customer OpenStack bootstrap and restricted SSH jobs
+        run: uv run --frozen --project infrastructure/providers/openstack --with-requirements deployment/bootstrap/requirements.lock bash ci/scripts/check-bootstrap.sh
+
+  database-ansible:
+    name: Database Ansible contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: ci/requirements-dev.txt
+      - run: python -m pip install -r ci/requirements-dev.txt
+      - name: Native Ansible inventory, syntax, lint and local rendering
+        run: bash ci/scripts/check-ansible.sh
+      - name: Existing guest and runtime syntax
+        working-directory: infrastructure/ansible
+        run: |
+          ansible-playbook -i inventory/hosts.example.yml guest.yml --syntax-check
+          ansible-playbook -i inventory/hosts.example.yml runtime.yml --syntax-check
+
+  api-browser:
+    name: HTTP publication and browser E2E
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - run: python -m pip install PyYAML==6.0.3 jsonschema==4.23.0 openapi-spec-validator==0.7.2
+      - name: Product OpenAPI structure
+        run: |
+          python - <<'PY'
+          import json
+          from openapi_spec_validator import validate
+          with open('docs/api/product.openapi.json') as stream:
+              validate(json.load(stream))
+          PY
+      - name: Install current workspace and build packaged dashboard
+        run: |
+          if test -f package.json; then
+            npm ci --ignore-scripts --no-audit --no-fund
+            npm run build
+          else
+            npm ci --prefix apps/api --workspaces=false --ignore-scripts --no-audit --no-fund
+          fi
+      - name: Real HTTP upload to verified publication (external services mocked)
+        run: npm test --prefix apps/api --workspaces=false
+      - run: npm ci --prefix ci/browser --ignore-scripts --no-audit --no-fund
+      - run: npm exec --prefix ci/browser -- playwright install --with-deps chromium
+      - name: Chromium UI journeys
+        env:
+          CI_OUTPUT_DIR: ${{ runner.temp }}/railshot-browser
+        run: npm test --prefix ci/browser
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: browser-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/railshot-browser
+          if-no-files-found: ignore
+          retention-days: 7
+
+  terraform:
+    name: Terraform validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13'
+      - uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3
+        with:
+          terraform_version: 1.7.5
+          terraform_wrapper: false
+      - run: python -m pip install PyYAML==6.0.3
+      - name: Validate without credentials, backend or apply
+        run: |
+          terraform fmt -check -recursive infrastructure/terraform
+          for module in aws aws-edge openstack-edge ci control gcp gcp-edge azure platform-verification platform-release openstack-relay-edge; do
+            terraform -chdir="infrastructure/terraform/$module" init -backend=false -input=false
+            terraform -chdir="infrastructure/terraform/$module" validate
+          done
+          for module in gcp-edge platform-release; do
+            terraform -chdir="infrastructure/terraform/$module" test
+          done
+          for suite in infrastructure/terraform/aws infrastructure/terraform/aws-edge infrastructure/terraform/openstack-edge infrastructure/terraform/openstack-relay-edge infrastructure/terraform/ci infrastructure/terraform/gcp infrastructure/terraform/azure/tests; do
+            python -m unittest discover -s "$suite" -p 'test_*.py' -v
+          done
+
+  runtime-smoke:
+    name: Linux amd64 runtime E2E and cleanup
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Preserve unused hosted-runner Podman CNI config
+        run: |
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            RUNNER_TEMP="$RUNNER_TEMP" bash ci/scripts/prepare-cni-smoke.sh prepare
+      - name: Install, deploy and verify on this disposable runner
+        id: runtime
+        run: |
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            GITHUB_JOB="$GITHUB_JOB" GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKSPACE="$GITHUB_WORKSPACE" RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 ci/scripts/integration_e2e.py run --output-dir "$RUNNER_TEMP/railshot-runtime-e2e"
+      - name: Retry owned-resource cleanup even after failure
+        if: always() && steps.runtime.outcome != 'skipped'
+        run: |
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            GITHUB_RUN_ID="$GITHUB_RUN_ID" GITHUB_RUN_ATTEMPT="$GITHUB_RUN_ATTEMPT" \
+            GITHUB_JOB="$GITHUB_JOB" GITHUB_SHA="$GITHUB_SHA" \
+            GITHUB_WORKSPACE="$GITHUB_WORKSPACE" RUNNER_TEMP="$RUNNER_TEMP" \
+            python3 ci/scripts/integration_e2e.py cleanup --output-dir "$RUNNER_TEMP/railshot-runtime-e2e"
+      - name: Restore preserved hosted-runner Podman config after teardown
+        if: always()
+        run: |
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            RUNNER_TEMP="$RUNNER_TEMP" bash ci/scripts/prepare-cni-smoke.sh restore
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: runtime-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/railshot-runtime-e2e
+          if-no-files-found: ignore
+          retention-days: 7
+
+  containers:
+    name: Container build and smoke
+    uses: ./.github/workflows/platform-containers.yml
+    with:
+      components: '["dashboard","api","mcp","ci-runner"]'
+      publish: false
+    permissions: {contents: read, packages: write}

@@ -1,0 +1,10 @@
+[Unit]
+Description=Schedule local PostgreSQL backups
+
+[Timer]
+OnCalendar={{ pgbackrest_backup_calendar }}
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

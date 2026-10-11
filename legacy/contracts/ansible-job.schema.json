@@ -1,0 +1,210 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "request_id",
+    "target_id",
+    "operation"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
+    },
+    "target_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z][a-z0-9-]{0,62}$"
+    },
+    "operation": {
+      "type": "string",
+      "enum": [
+        "guest.check",
+        "runtime.install",
+        "database.configure"
+      ]
+    },
+    "parameters": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "wait_timeout_seconds": {
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 600
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "standalone",
+            "patroni"
+          ]
+        },
+        "nodes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "target_id",
+              "roles"
+            ],
+            "properties": {
+              "target_id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z][a-z0-9-]{0,62}$"
+              },
+              "roles": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "database",
+                    "dcs",
+                    "proxy"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "placements": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "provider",
+              "site",
+              "database_nodes",
+              "dcs_voters"
+            ],
+            "properties": {
+              "provider": {
+                "type": "string",
+                "enum": [
+                  "aws",
+                  "gcp",
+                  "openstack",
+                  "onprem"
+                ]
+              },
+              "site": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 63,
+                "pattern": "^[a-z0-9][a-z0-9._-]*$"
+              },
+              "database_nodes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 16
+              },
+              "dcs_voters": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 16
+              },
+              "proxy_nodes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 16
+              }
+            }
+          }
+        },
+        "profile_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 63,
+          "pattern": "^[a-z][a-z0-9-]{0,62}$"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "guest.check"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {}
+          }
+        }
+      },
+      "else": {}
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "runtime.install"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "wait_timeout_seconds": {}
+            }
+          }
+        }
+      },
+      "else": {}
+    },
+    {
+      "if": {
+        "properties": {
+          "operation": {
+            "const": "database.configure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "parameters": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "mode": {},
+              "nodes": {},
+              "placements": {},
+              "profile_id": {}
+            },
+            "required": [
+              "mode",
+              "nodes",
+              "placements"
+            ]
+          }
+        },
+        "required": [
+          "parameters"
+        ]
+      },
+      "else": {}
+    }
+  ]
+}

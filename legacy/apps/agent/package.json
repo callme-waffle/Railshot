@@ -1,0 +1,26 @@
+{
+  "name": "@railshot/agent",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "mcp": "node src/mcp.js",
+    "mcp:local": "node src/mcp-local.js",
+    "mcp:remote": "node src/remote-mcp.js",
+    "test": "node --test",
+    "build:insights": "node ui/build.mjs",
+    "check:insights": "node ui/build.mjs --check"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/server": "^2.2.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
+  }
+}

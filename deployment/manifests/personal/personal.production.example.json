@@ -6,8 +6,12 @@
   "artifact_sha256": "<artifact-sha256>",
   "gateway": {
     "config_path": "/var/lib/railshot-personal-gateway/config.json",
-    "socket_path": "/run/railshot-personal-gateway/gateway.sock",
+    "service_host": "railshot-personal-gateway",
+    "service_port": 4184,
     "token_file": "/var/lib/railshot/config/personal-gateway-token"
+  },
+  "vault": {
+    "private_key_file": "/var/lib/railshot/config/personal-vault-private.pem"
   },
   "runtime": {
     "config_path": "/var/lib/railshot/config/personal-runtime.json"

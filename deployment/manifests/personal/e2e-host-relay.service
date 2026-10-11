@@ -1,0 +1,40 @@
+# Diagnostic transport for one approved test host only. It does not satisfy
+# public UDP acceptance and is not part of the production platform deployment.
+[Unit]
+Description=Railshot on-prem E2E loopback UDP diagnostic relay
+After=network.target docker.service
+StartLimitIntervalSec=30
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=codex
+Group=codex
+WorkingDirectory=/
+ExecStart=/usr/bin/python3 /usr/local/libexec/railshot-onprem-e2e/udp-relay.py tcp --bind 127.0.0.1 --port 8444 --destination 127.0.0.1 --destination-port 51920
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+KillMode=control-group
+UMask=0077
+Environment=PYTHONDONTWRITEBYTECODE=1
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+StandardOutput=null
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

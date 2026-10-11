@@ -1,0 +1,131 @@
+name: railshot-personal-control
+services:
+  control:
+    image: rancher/k3s@sha256:5d52389a0f4fd7ebdb5a1fb2d7c67c35da966230782c4abb0667d86bcccea9c2
+    container_name: railshot-personal-control
+    platform: linux/arm64
+    privileged: true
+    network_mode: "container:${RAILSHOT_PERSONAL_GATEWAY_CONTAINER:-railshot-personal-local}"
+    restart: unless-stopped
+    command:
+      - server
+      - --node-name=railshot-personal-control
+      - --node-label=railshot.io/node-role=platform
+      - --node-label=railshot.local.control=20261004
+      - --cluster-cidr=10.52.0.0/16
+      - --service-cidr=10.53.0.0/16
+      - --cluster-dns=10.53.0.10
+      - --disable=traefik
+      - --disable=servicelb
+      - --disable=metrics-server
+      - --disable-network-policy
+      - --write-kubeconfig-mode=0600
+      - --tls-san=127.0.0.1
+    volumes:
+      - control-state:/var/lib/rancher/k3s
+      - control-config:/etc/rancher/k3s
+    healthcheck:
+      test: [CMD, kubectl, --request-timeout=5s, get, --raw=/readyz]
+      interval: 10s
+      timeout: 6s
+      retries: 60
+      start_period: 20s
+
+  bootstrap:
+    image: railshot-personal-local:test
+    pull_policy: never
+    user: "0:0"
+    network_mode: "container:${RAILSHOT_PERSONAL_GATEWAY_CONTAINER:-railshot-personal-local}"
+    depends_on:
+      control: {condition: service_healthy}
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, CHOWN, DAC_OVERRIDE, FOWNER]
+    environment:
+      HOME: /tmp
+    entrypoint:
+      - python3
+      - /opt/railshot/deployment/manifests/personal/control-bootstrap.py
+      - apply
+      - --policy
+      - /run/railshot-control/credentials-policy.json
+      - --provenance
+      - /run/railshot-control/local-image-provenance.json
+      - --github-token
+      - /run/secrets/github-token
+      - --github-user
+      - ${RAILSHOT_GITHUB_USER:?set the authenticated GitHub user}
+    secrets: [github-token]
+    volumes:
+      - control-config:/etc/rancher/k3s:ro
+      - control-bootstrap-state:/var/lib/railshot-control
+      - control-auth:/var/lib/railshot-control-auth
+      - ${RAILSHOT_LOCAL_CONTROL_CONFIG_DIR:?set the private local control config directory}:/run/railshot-control:ro
+      - gateway-config:/etc/railshot-personal-gateway:ro
+      - gateway-state:/var/lib/railshot-personal-gateway
+      - gateway-wireguard:/etc/wireguard
+      - gateway-api-state:/var/lib/railshot
+    tmpfs: [/tmp:mode=1777]
+    restart: "no"
+
+  token-minter:
+    image: railshot-personal-local:test
+    pull_policy: never
+    user: "0:0"
+    network_mode: "container:${RAILSHOT_PERSONAL_GATEWAY_CONTAINER:-railshot-personal-local}"
+    depends_on:
+      bootstrap: {condition: service_completed_successfully}
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, CHOWN, DAC_OVERRIDE, FOWNER]
+    environment:
+      HOME: /tmp
+    entrypoint:
+      - python3
+      - /opt/railshot/deployment/manifests/personal/control-token-minter.py
+      - --output
+      - /var/lib/railshot-control-auth
+      - --interval
+      - "2400"
+      - --guard-interval
+      - "30"
+    volumes:
+      - control-config:/etc/rancher/k3s:ro
+      - control-auth:/var/lib/railshot-control-auth
+      - gateway-config:/etc/railshot-personal-gateway:ro
+      - gateway-state:/var/lib/railshot-personal-gateway
+      - gateway-wireguard:/etc/wireguard
+      - gateway-api-state:/var/lib/railshot
+    tmpfs: [/tmp:mode=1777]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD, python3, -c, "import json,time,datetime; r=json.load(open('/var/lib/railshot-control-auth/receipt.json')); assert datetime.datetime.fromisoformat(r['expires_at']).timestamp()-time.time()>600"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+secrets:
+  github-token:
+    file: ${RAILSHOT_GITHUB_TOKEN_PATH:?set an absolute private GitHub token file}
+
+volumes:
+  control-state:
+    name: railshot-personal-control-state
+  control-config:
+    name: railshot-personal-control-config
+  control-bootstrap-state:
+    name: railshot-personal-control-bootstrap-state
+  control-auth:
+    name: railshot-personal-control-auth
+  gateway-config:
+    external: true
+    name: ${RAILSHOT_GATEWAY_CONFIG_VOLUME:-railshot-personal-live-gateway-config}
+  gateway-state:
+    external: true
+    name: ${RAILSHOT_GATEWAY_STATE_VOLUME:-railshot-personal-live-gateway-state}
+  gateway-wireguard:
+    external: true
+    name: ${RAILSHOT_GATEWAY_WIREGUARD_VOLUME:-railshot-personal-live-wireguard}
+  gateway-api-state:
+    external: true
+    name: ${RAILSHOT_GATEWAY_API_STATE_VOLUME:-railshot-personal-live-api}

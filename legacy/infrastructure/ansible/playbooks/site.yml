@@ -1,0 +1,15 @@
+---
+- name: Preflight
+  ansible.builtin.import_playbook: preflight.yml
+- name: Common
+  ansible.builtin.import_playbook: common.yml
+- name: Etcd
+  ansible.builtin.import_playbook: etcd.yml
+- name: Patroni
+  ansible.builtin.import_playbook: patroni.yml
+- name: Routing
+  ansible.builtin.import_playbook: routing.yml
+- name: Backup
+  ansible.builtin.import_playbook: backup.yml
+- name: Verify
+  ansible.builtin.import_playbook: verify.yml

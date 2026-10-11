@@ -196,3 +196,69 @@ def test_initialize_normalizes_new_fsgroup_pvc_before_writing_private_state():
             config = service.initialize(state / 'config.json', key, 'gateway.example:51820')
         assert config['private_key_file'] == str(state / 'private.key')
         assert (state / 'private.key').stat().st_mode & 0o777 == 0o600
+
+
+def test_private_tcp_connect_forwards_only_registered_generation_to_management_port():
+    token = 'gateway-token-' + 'a' * 32
+    public_key = 'A' * 43 + '='
+    peer = {'public_key': public_key, 'address': '10.253.240.2/32', 'removed': False}
+    config = {'interface': 'railshotwg'}
+    with service.TCPHTTPServer(('127.0.0.1', 0), service.Handler, config=config, token=token) as server:
+        worker = threading.Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        customer, upstream = socket.socketpair()
+        observed = []
+
+        def echo():
+            with customer:
+                incoming = customer.recv(64)
+                observed.append(incoming)
+                customer.sendall(b'answer:' + incoming)
+
+        echo_worker = threading.Thread(target=echo, daemon=True)
+        echo_worker.start()
+
+        def connect(destination, timeout):
+            assert destination == ('10.253.240.2', 2222)
+            assert timeout == 5
+            return upstream
+
+        def call(route, supplied_token=token):
+            client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            client.settimeout(5)
+            client.connect(server.server_address)
+            client.sendall((f'CONNECT {route} HTTP/1.1\r\nHost: gateway\r\n'
+                            f'Authorization: Bearer {supplied_token}\r\n\r\n').encode())
+            data = bytearray()
+            while b'\r\n\r\n' not in data:
+                data.extend(client.recv(4096))
+            return client, bytes(data)
+
+        try:
+            with patch.object(service.gateway, 'locked_ledger', return_value=nullcontext({'target_1:3': peer})), \
+                    patch.object(service.gateway, 'run', return_value=f'{public_key} 10.253.240.2/32'), \
+                    patch.object(service.socket, 'create_connection', side_effect=connect):
+                for route, supplied, expected in (
+                    ('/streams/target_1/4', token, b'404'),
+                    ('/streams/target_1/3', 'wrong', b'401'),
+                    ('/streams/target_1/3/22', token, b'400'),
+                ):
+                    client, reply = call(route, supplied)
+                    assert expected in reply.split(b'\r\n', 1)[0]
+                    client.close()
+                peer['removed'] = True
+                client, reply = call('/streams/target_1/3')
+                assert b'404' in reply.split(b'\r\n', 1)[0]
+                client.close()
+                peer['removed'] = False
+                client, reply = call('/streams/target_1/3')
+                assert b'200 Connection Established' in reply.split(b'\r\n', 1)[0]
+                client.sendall(b'hello')
+                assert client.recv(64) == b'answer:hello'
+                client.close()
+            echo_worker.join(timeout=5)
+            assert observed == [b'hello']
+        finally:
+            server.shutdown()
+            worker.join(timeout=5)
+            upstream.close()

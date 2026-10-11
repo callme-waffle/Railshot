@@ -1,0 +1,83 @@
+scope: {{ cluster_name | to_json }}
+namespace: /service/
+name: {{ inventory_hostname | to_json }}
+restapi:
+  listen: {{ (private_ip ~ ':' ~ patroni_api_port) | to_json }}
+  connect_address: {{ (private_ip ~ ':' ~ patroni_api_port) | to_json }}
+  certfile: /etc/patroni/tls/api.crt
+  keyfile: /etc/patroni/tls/api.key
+  cafile: /etc/patroni/tls/api-ca.crt
+  authentication:
+    username: patroni
+    password: {{ vault_patroni_api_password | to_json }}
+ctl:
+  cacert: /etc/patroni/tls/api-ca.crt
+etcd3:
+  protocol: https
+  hosts:
+{% for host in groups['etcd_nodes'] %}
+    - {{ (hostvars[host].private_ip ~ ':2379') | to_json }}
+{% endfor %}
+  cacert: /etc/patroni/tls/etcd-ca.crt
+  cert: /etc/patroni/tls/etcd-client.crt
+  key: /etc/patroni/tls/etcd-client.key
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    synchronous_mode: {{ (replication_mode == 'synchronous') | to_json }}
+    synchronous_mode_strict: {{ synchronous_mode_strict | bool | to_json }}
+    synchronous_node_count: {{ synchronous_node_count | int }}
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        wal_level: replica
+        hot_standby: 'on'
+        max_wal_senders: 10
+        max_replication_slots: 10
+        password_encryption: scram-sha-256
+        synchronous_commit: 'on'
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+postgresql:
+  listen: {{ (private_ip ~ ':' ~ postgres_port) | to_json }}
+  connect_address: {{ (private_ip ~ ':' ~ postgres_port) | to_json }}
+  data_dir: {{ postgres_data_dir | to_json }}
+  bin_dir: /usr/lib/postgresql/{{ postgres_version }}/bin
+  pgpass: /var/lib/postgresql/.pgpass
+  authentication:
+    superuser:
+      username: postgres
+      password: {{ vault_postgres_password | to_json }}
+      sslmode: verify-full
+      sslrootcert: /etc/patroni/tls/postgres-ca.crt
+    replication:
+      username: replicator
+      password: {{ vault_replication_password | to_json }}
+      sslmode: verify-full
+      sslrootcert: /etc/patroni/tls/postgres-ca.crt
+  parameters:
+    ssl: 'on'
+    ssl_ca_file: /etc/patroni/tls/postgres-ca.crt
+    ssl_cert_file: /etc/patroni/tls/postgres.crt
+    ssl_key_file: /etc/patroni/tls/postgres.key
+    unix_socket_directories: /var/run/postgresql
+{% if backup_enabled | bool %}
+    archive_mode: 'on'
+    archive_command: {{ ('pgbackrest --stanza=' ~ cluster_name ~ ' archive-push %p') | to_json }}
+{% endif %}
+  pg_hba:
+    - local all postgres peer
+{% for host in groups['db_nodes'] %}
+    - hostssl replication replicator {{ hostvars[host].private_ip }}/32 scram-sha-256
+    - hostssl postgres postgres {{ hostvars[host].private_ip }}/32 scram-sha-256
+{% endfor %}
+{% for cidr in client_cidrs %}
+    - hostssl all all {{ cidr }} scram-sha-256
+{% endfor %}
+tags:
+  site: {{ site | to_json }}

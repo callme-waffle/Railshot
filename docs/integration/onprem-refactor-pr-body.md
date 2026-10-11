@@ -1,0 +1,110 @@
+## 요약
+
+> 온프레미스 계정·등록·암호화 vault·격리 게이트웨이 연결과 실제 OpenStack 조회 검증을 개발 기준 `dev/v1.0.0`에 제안합니다.
+> 기존 경로를 유지한 레거시 보존 및 브랜치 지침을 함께 정리하며, 공개 native UDP와 배포 인수는 후속 검증으로 남깁니다.
+
+### #주요기능
+
+- 계정·소유권: 이메일 확인, 로그인·로그아웃, 비밀번호 재설정, 계정별 타깃 격리, CSRF·Host/Origin·요청 제한을 추가합니다. 기존 익명 소유 환경은 자동 이전하지 않습니다.
+- 등록·설치: 30분 일회용 등록 토큰과 교체·재사용 차단, 자격 없는 짧은 설치 스크립트, 고정 배포본 SHA-256 확인, API와 원격 클라이언트의 동일 HTTPS endpoint 확인을 연결합니다.
+- 서버 지원 vault: 전용 OpenStack 제어 계정과 제한된 Application Credential을 만들고 RSA-OAEP/AES-GCM vault로 저장합니다. 감싼 데이터 키 등록, 서버 지원 잠금 해제, 재시도·replay 차단과 임시 평문 정리를 구현하며 legacy 요청 호환을 유지합니다.
+- 격리 게이트웨이: API와 WireGuard 게이트웨이를 별도 네트워크 namespace로 배치하고 인증된 내부 RPC 및 제한된 SSH CONNECT를 사용합니다. Compose·Kubernetes·플랫폼 렌더 및 preflight에 같은 경계를 반영합니다.
+- 안전한 메일 설정: UID 소유 `0600` 정규 파일에서 메일 토큰을 읽고 symlink·hardlink·과대 입력을 거부합니다. 토큰과 비공개 경로 환경 변수를 자식 프로세스에서 제거하고 대시보드 vault 경로의 Bearer 전달을 보존합니다.
+- 실검증 도구: 비공개 상태·메일 수신기·테스트 HTTPS proxy·계정 E2E runner 및 게이트웨이 재시작 검사를 추가합니다. 출력은 검사 개수와 제한된 상태로 한정합니다.
+- 지정 VM 설치·운영: 기존 지정 VM에서 nested KVM과 고정 DevStack 설치를 검증했습니다. 비밀번호 노출 경로를 다루는 설치 도구, RabbitMQ stdin 정의 입력, absent-only Nova rootwrap 경로 보완과 승인된 loopback 진단 UDP relay의 독립 서비스 운영을 기록합니다.
+- 레거시·브랜치 관리: baseline `645e28a`와 기존 경로를 보존하는 담당 변경 및 브랜치/PR 지침을 통합합니다. 원본 blob·mode 보존 검증을 완료했습니다.
+- CI 변경 범위: API 관련 Docker stage의 실제 root COPY 의존성을 변경 경로 판정에 반영해 `connection-api` 메일 검사 파일의 API 빌드·HTTP 검사 누락을 수정합니다. 기존 동적 COPY 커버리지 검사를 유지하고 relay·probe·레거시 경계를 확인합니다.
+- 사용자 작성자 규칙: 모든 작업 commit의 author/committer를 검증한 사용자 `Kim Hwagyun <58645920+callme-waffle@users.noreply.github.com>`로 기록하고 author/committer 및 `Co-work-author`/`Co-authored-by`에 AI 프로필을 기재하지 않습니다. 사용자가 요청한 기존 PR의 48개 commit과 이 정책 commit을 합친 49개에 소급 적용하며, 기능 tree·날짜·부모 순서를 보존합니다.
+- PR 범위: base `dev/v1.0.0` (`645e28aefa7f3d3996c57ea6853c6e2f67c5bcc4`), head `refactor/onprem-integration`. 재작성 전 최종 HEAD는 `d83849164a773cd8382c49872877e3537cb47908`(48개 commit)이었고 기능 작업 39개의 마지막은 `96e6f3c4258d1c6527a4090d7a205882b67922f5`였습니다. 이 SHA와 아래 게시·CI SHA는 과거 checkpoint이며 작성자 소급 적용으로 새 SHA가 생성됩니다. baseline과 원격 `main`/`dev/v1.0.0`은 그대로 유지합니다. 최종 head SHA는 실제 게시 후 확인합니다.
+
+### #Endpoints
+
+|Method|Path|기능설명|
+|---|---|---|
+|POST|`/api/v1/accounts`|이메일 확인을 요구하는 계정 가입 요청|
+|POST|`/api/v1/accounts/verifications`|30분 일회용 이메일 확인 토큰 소비|
+|POST|`/api/v1/logins`|확인된 계정 로그인 및 쿠키·CSRF 발급|
+|GET|`/api/v1/logins`|현재 계정 로그인·CSRF 조회|
+|DELETE|`/api/v1/logins`|계정 로그인 폐기|
+|POST|`/api/v1/accounts/resets`|계정 존재를 노출하지 않는 재설정 요청|
+|POST|`/api/v1/accounts/password`|일회용 토큰으로 비밀번호 변경 및 기존 세션 폐기|
+|POST|`/api/v1/targets`|로그인 계정이 소유하는 OpenStack 환경 생성|
+|GET|`/api/v1/targets?scope=owned&provider=openstack`|본인 소유 환경 목록 조회|
+|GET|`/api/v1/targets/{id}`|소유 환경 조회 및 다른 계정 접근 차단|
+|POST|`/api/v1/targets/{id}/enrollments`|30분 일회용 등록 토큰·스크립트 URL·해시 발급|
+|GET|`/api/v1/installers/personal`|자격 정보 없는 짧은 Bash 설치 스크립트|
+|POST|`/api/v1/enrollments/{id}/claims`|일회용 Bearer 등록과 별도 지속 클라이언트 자격 발급|
+|POST|`/api/v1/targets/{id}/vaults`|클라이언트 Bearer로 감싼 데이터 키·프로젝트 결속 등록|
+|GET|`/api/v1/keys/current`|서버 vault 공개키와 키 ID 조회|
+|GET|`/api/v1/readiness?scope=personal&phase=connection`|연결 선행 조건 확인|
+|GET|`/api/v1/readiness?scope=personal`|실행환경·CI를 포함한 전체 운영 설정 확인|
+|POST|`/api/v1/targets/{id}/heartbeats`|기존 클라이언트 상태 경로와 연결 상태 반영|
+|GET|`/api/v1/targets/{id}/instances`|터널 SSH·서버 지원 자격으로 실제 OpenStack 서버 목록 조회|
+
+### #테스트_결과
+
+#### case#1) 계정·등록 실제 HTTP 검증
+
+- 목적: 이메일 확인, 로그인, 소유권 및 등록 계약을 실제 API에서 확인합니다.
+- 진행과정: 2026-10-10 KST work-vm Compose API -> 별도 Node runner `setup` -> 두 계정 격리·CSRF·토큰 교체·30분 만료·스크립트 해시 확인
+- 결과: 기존 실행 기록의 `setup` 18개 통과. 이번 문서 작업에서 재실행한 결과는 아닙니다.
+
+#### case#2) 설치 직전 등록 갱신
+
+- 목적: OpenStack 설치 뒤 만료되지 않은 새 일회용 등록 토큰을 확보합니다.
+- 진행과정: 2026-10-10 02:17 KST 기존 계정·타깃 -> `refresh` -> 이전 토큰 거부·새 만료·해시 확인 -> 비공개 상태 원자적 교체
+- 결과: 기존 실행 기록의 `refresh` 5개 통과. 상태 파일 UID/GID `1000:1000`, `0600` 유지.
+
+#### case#3) 실제 원격 클라이언트·백엔드 OpenStack 조회
+
+- 목적: 등록, WireGuard·forced SSH, 서버 지원 vault와 계정 격리를 실제 서비스로 확인합니다.
+- 진행과정: 지정 VM 설치 종료 -> 원격 클라이언트 설치 -> 02:23:02 KST `check` -> owner 서버 목록·다른 계정 접근·소비된 등록 토큰 재사용 검사
+- 결과: 기존 실행 기록의 `check` 6개 통과. 서버 목록 `200`, `server_count=0`, `connection_ready=true`, `deployable=false`, 다른 계정 조회 `404`, 등록 재사용 `401`.
+
+#### case#4) 진단 relay 서비스 전환 후 재연결
+
+- 목적: 진단 연결이 Codex 터미널 종료와 분리되어 복구되는지 확인합니다.
+- 진행과정: 비특권 loopback relay 서비스 전환 -> 원격 자동 재연결·새 WireGuard handshake -> 02:31:24 KST 실제 `check` 반복
+- 결과: 기존 실행 기록의 6개 재통과. 실제 WireGuard 암호화·SSH·OpenStack 조회 증거이며 공개 native UDP 도달성은 미검증입니다.
+
+#### case#5) vault·메일·게이트웨이 회귀 검사
+
+- 목적: 암호화 호환, 재시도·replay, 비공개 메일 파일과 격리 RPC 경계를 확인합니다.
+- 진행과정: 기존 통합 기록 -> 클라이언트 지원 vault 4개 및 관련 134개 -> 계정 메일·API 8개 -> gateway 상태·격리 24개 및 서비스·메일 8개
+- 결과: 기록된 범위 통과. Provider 대역을 사용하는 단위 검사이며 외부 클라우드 연결 증거와 구분합니다. 해당 rerun에서 제외한 장시간 filesystem-cycle 2개는 통과로 집계하지 않습니다.
+
+#### case#6) 지정 VM OpenStack 설치 및 건강 확인
+
+- 목적: 기존 VM의 nested KVM과 실제 OpenStack 제어 서비스를 확인합니다.
+- 진행과정: KVM CirrOS 부팅 -> 고정 DevStack 안전 설치 -> 정상 종료 -> Keystone·Nova·Glance·Neutron HTTP 확인 -> 제한된 비밀번호 노출 모니터 결과 확인
+- 결과: 기존 실행 기록상 설치 exit 0, nova-compute up/enabled, 빈 서버 목록, Neutron agent 2개 alive. 새 outer VM/FIP나 Nova 서버 생성 결과는 없습니다. 모니터는 기록된 argv/log 표본에서 비밀번호 일치 0건입니다.
+
+#### case#7) 레거시 원본 blob 보존 검증
+
+- 목적: 사용자 확정 baseline `645e28a`의 레거시 원본과 기존 경로가 보존되는지 확인합니다.
+- 진행과정: 담당 변경 완료 -> baseline 원본 832개와 실행 파일 30개 검증 -> 원본 832개 hash/mode 비교 및 신규 메타데이터 3개 확인(전체 835개) -> Docker·검색·pytest 격리 및 현재 npm workspace 확인
+- 결과: 통합 HEAD `bb838ad`에서 관리 세션의 독립 검증 PASS: 원본 832개 blob·mode 및 실행 파일 30개 보존. legacy는 동일한 원본 832개와 신규 메타데이터 3개를 합친 전체 835개입니다. `.dockerignore`·`.ignore` 및 pytest 제외 설정과 현행 npm workspace 3개를 확인했습니다. pytest가 설치되지 않아 collection은 실행하지 않았습니다. 현행 기능 소스 변경 없음 확인.
+
+#### case#8) 브랜치·문서 형식 및 게시 게이트
+
+- 목적: 사용자 PR 형식과 개발 기준·게시 상태를 확인합니다.
+- 진행과정: 명세·계획·검증 게이트 문서 작성 -> 로컬 ref 확인 -> PR 템플릿 섹션 대조 -> diff 공백 검사 -> 인증 경로 존재 여부 확인
+- 결과: 개발 기준 SHA와 통합 브랜치 이름 확인. 관리 세션의 AGENTS 및 PR template 사용자 규칙 검증 PASS, `git diff --check` PASS. App 권한 설정 뒤 개발 기준 branch 게시는 성공했습니다. 원형 이력 보존 helper 실행으로 46개 commit을 `0e5aa74f954c3659001b4375e5c9b68be633f19d`에 게시했고 임시 helper branch 삭제 성공. [Draft PR #1](https://github.com/callme-waffle/Railshot/pull/1) 생성 및 본문 첨부 완료. 최초 원격 CI 실패와 후속 로컬 수정 검증은 case#10에 기록합니다.
+
+#### case#9) 남은 인수 범위
+
+- 목적: 연결 성공과 제품 배포 인수의 범위를 명확히 기록합니다.
+- 진행과정: 실행된 진단 경로 확인 -> 미실행 인수 항목 분리 -> 후속 공개 endpoint와 배포 검증 입력 확인
+- 결과: 공개 native UDP, 고객 Kubernetes 설치, Nova 생성·삭제, 운영 메일 전달 및 production ingress 인수는 미완료입니다. 이번 연결 검증을 해당 항목의 통과로 집계하지 않습니다.
+
+#### case#10) API Docker COPY 의존성 CI 회귀 수정
+
+- 목적: 신규 API 이미지 COPY 파일 변경이 API 빌드·HTTP 검사에서 누락되지 않도록 합니다.
+- 진행과정: 원격 run `38054555832`의 scope 검사 13개 중 1개 실패 확인 -> 같은 로컬 13개 검사로 e2e mail 누락 재현 -> 실제 API stage COPY source 경로 판정 보완 -> 기존 Dockerfile 동적 커버리지 및 비복사 relay·probe·레거시 경계 검증
+- 결과: 수정 후 로컬 13개 검사 PASS, `git diff --check` PASS. 기존 테스트를 삭제하거나 완화하지 않았습니다. 관리 세션이 같은 tree `df8b9a`의 수정 결과를 원격 commit `bfdeb4b0ec6ea8304a66375f5b818c280687d343`으로 게시했습니다. 이 당시에는 기존 46개 원형 SHA를 보존해 공개 checkpoint가 총 47개 commit이었습니다. 이번 작성자 재작성 이전의 과거 기록입니다. 소스 HEAD `bfdeb4b0ec6ea8304a66375f5b818c280687d343`의 [CI run 38055197104](https://github.com/callme-waffle/Railshot/actions/runs/38055197104)는 completed/success입니다. scope, 5종 이미지(API·dashboard·MCP·personal gateway·CI runner) build/smoke와 Railshot CI gate 모두 PASS. full-checks/manual 및 Deploy platform은 조건에 따라 skip되어 전체 수동 검사 또는 배포 성공으로 집계하지 않습니다. 후속 문서 게시 commit의 CI 결과는 별도입니다.
+
+#### case#11) 사용자 작성자 규칙 및 기존 PR 소급 적용
+
+- 목적: 사용자 요청대로 기존 PR과 이후 작업의 commit author/committer를 사용자 계정으로 기록하고 AI 공동저자 표기를 제거합니다. 이번 변경 자체의 신규 endpoint는 해당없음입니다.
+- 진행과정: 인증된 GitHub 사용자 identity 확인 -> 독립 `docs/commit-attribution` worktree에서 문서 3개 수정 및 사용자 commit -> 기존 48개와 정책 commit 1개를 재작성 -> old-to-new mapping 및 49개 tree·부모 순서·날짜·메시지·identity·AI trailer 검사 -> 공백 검사 및 원본 레거시 비교 -> 관리 세션의 PR head·본문 게시 및 원격 재조회
+- 결과: 로컬 완료 기준은 49개 author/committer가 모두 `Kim Hwagyun <58645920+callme-waffle@users.noreply.github.com>`, AI 공동저자 trailer 0건, commit별 tree·부모 순서·날짜와 허용 범위 메시지 동일, 문서 3개 이외 내용 변경 없음 및 `git diff --check` 통과입니다. 실제 재작성·게시 결과는 관리 세션이 확인해 최종 PR에 기록합니다. 앱·클라우드 테스트는 이번 문서·Git metadata 작업에서 재실행하지 않았고 새 HEAD의 CI 결과는 과거 run 성공과 별도입니다. 원본 레거시 832개 blob·mode와 실행 파일 30개는 보존합니다.

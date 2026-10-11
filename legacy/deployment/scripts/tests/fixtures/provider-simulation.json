@@ -1,0 +1,5 @@
+{
+  "aws": {"fixture": "aws.json", "hostname": "ip-10-250-10-11", "nic": "awsnic0", "node_ip": "10.250.10.11", "host_port": 30084},
+  "gcp": {"fixture": "gcp.json", "hostname": "gce-railshot-01", "nic": "gcpnic0", "node_ip": "10.250.20.12", "host_port": 30085},
+  "openstack": {"fixture": "openstack.json", "hostname": "openstack-railshot-01", "nic": "osnic0", "node_ip": "10.250.30.13", "host_port": 30086}
+}

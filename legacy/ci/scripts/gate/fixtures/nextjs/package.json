@@ -1,0 +1,30 @@
+{
+  "name": "railshot-fixture-nextjs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@12.2.0",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "build": "next build",
+    "start": "next start -p 8080"
+  },
+  "dependencies": {
+    "next": "15.5.26",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "eslint": "10.11.0",
+    "vitest": "5.0.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.1",
+    "@types/node": "24.13.6",
+    "@types/react": "19.3.0"
+  }
+}

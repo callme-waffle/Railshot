@@ -1,0 +1,69 @@
+name: Control Cilium
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/control-cilium.yml'
+      - 'infrastructure/ansible/**'
+      - 'deployment/cilium/**'
+      - 'deployment/bootstrap/preflight.sh'
+      - 'deployment/scripts/common.sh'
+      - 'deployment/airgap/versions.json'
+      - 'ci/scripts/prepare-cni-smoke.sh'
+      - 'ci/scripts/test_prepare_cni_smoke.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-cilium-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  control-smoke:
+    name: Linux control Cilium install, repeat and network policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Require a fresh disposable hosted runner
+        run: |
+          test "$GITHUB_ACTIONS" = true
+          test "$RUNNER_ENVIRONMENT" = github-hosted
+          test ! -e /etc/rancher/k3s
+          test ! -e /var/lib/rancher/k3s
+          test ! -e /usr/local/bin/k3s
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            RUNNER_TEMP="$RUNNER_TEMP" bash ci/scripts/prepare-cni-smoke.sh prepare
+          sudo touch /run/railshot-control-ci
+          sudo swapoff -a
+      - name: Install control Cilium and Argo, then repeat
+        run: |
+          sudo bash infrastructure/ansible/control.sh
+          sudo bash infrastructure/ansible/control.sh
+      - name: Verify real traffic and policy enforcement
+        run: sudo bash infrastructure/ansible/test-control-cilium.sh --run
+      - name: Remove only this disposable runner installation
+        if: always()
+        run: |
+          test -f /run/railshot-control-ci || exit 0
+          if test -x /usr/local/bin/k3s-uninstall.sh; then
+            test "$(sudo cat /etc/railshot/node-role)" = control
+            # K3s requires Cilium interfaces/rules removed before killall/uninstall.
+            for link in cilium_host cilium_net cilium_vxlan; do
+              if sudo ip link show "$link" >/dev/null 2>&1; then sudo ip link delete "$link"; fi
+            done
+            sudo iptables-save | grep -iv cilium | sudo iptables-restore
+            sudo ip6tables-save | grep -iv cilium | sudo ip6tables-restore
+            sudo /usr/local/bin/k3s-uninstall.sh
+          fi
+          test ! -e /usr/local/bin/k3s
+          test ! -e /var/lib/rancher/k3s
+      - name: Restore preserved hosted-runner Podman config after teardown
+        if: always()
+        run: |
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            RUNNER_TEMP="$RUNNER_TEMP" bash ci/scripts/prepare-cni-smoke.sh restore

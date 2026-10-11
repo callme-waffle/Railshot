@@ -2,7 +2,7 @@
 
 ## 운영과 같은 분리 컨테이너 로컬 검증
 
-`production.compose.yaml`은 일반 API, 공개 대시보드, root WireGuard 게이트웨이를 서로 다른 컨테이너로 실행합니다. API는 UID/GID 1000과 권한 없음으로 실행되고, 게이트웨이만 `NET_ADMIN`(네트워크 관리 권한)을 가집니다. 두 컨테이너는 API 네트워크 공간과 Unix 도메인 소켓만 공유합니다. 기본 호스트 포트는 API TCP 4193, 대시보드 TCP 4194, WireGuard UDP 51920이므로 기존 4173 서버를 바꾸지 않습니다.
+`production.compose.yaml`은 일반 API, 공개 대시보드, root WireGuard 게이트웨이를 서로 다른 컨테이너와 네트워크 공간에서 실행합니다. API는 UID/GID 1000과 권한 없음으로 실행되고, 게이트웨이만 `NET_ADMIN`(네트워크 관리 권한)을 가집니다. API는 사설 Docker 네트워크의 인증된 TCP 4184 RPC와 제한된 CONNECT 스트림을 이용합니다. WireGuard 인터페이스와 UDP 수신 포트는 게이트웨이에만 있습니다. 기본 호스트 포트는 API TCP 4193, 대시보드 TCP 4194, WireGuard UDP 51920이므로 기존 4173 서버를 바꾸지 않습니다. 사설 네트워크는 172.29.253.0/24이므로 사용 전 기존 경로와 충돌 여부를 확인합니다.
 
 아래 생성기는 외부 시스템에서 쓰지 않는 로컬 시험 전용 키와 토큰만 새 비공개 디렉터리에 만듭니다. 운영 Secret을 만들거나 추정하는 도구가 아니며, URL도 격리 Compose의 `dashboard` 이름만 허용합니다.
 
@@ -17,26 +17,49 @@ docker compose -f deployment/manifests/personal/production.compose.yaml up -d
 docker compose -f deployment/manifests/personal/production.compose.yaml ps
 ```
 
-one-shot `prepare` 컨테이너는 소켓 볼륨을 `root:1000`과 0770으로 만든 뒤 종료합니다. 게이트웨이는 시작할 때 이를 0750으로 제한하고 `root:1000`과 0660인 소켓을 만듭니다. API는 디렉터리를 통과해 소켓에 연결할 수 있지만 잠금 파일이나 소켓을 바꿀 수 없습니다. 실행 중인 실제 볼륨과 컨테이너 권한은 비밀값을 출력하지 않는 다음 검사로 확인합니다.
+one-shot `prepare` 컨테이너는 API 설정·RPC 토큰·RSA vault 개인키를 API 소유 0600 파일로 설치합니다. 게이트웨이에는 WireGuard 개인키와 RPC 토큰만 별도 볼륨으로 전달합니다. vault 개인키를 게이트웨이에 마운트하지 않습니다. 실행 중인 사전검사는 비밀값을 출력하지 않습니다.
 
 ```sh
-docker compose -f deployment/manifests/personal/production.compose.yaml run --rm --no-deps \
-  --entrypoint sh gateway -ec \
-  'test "$(stat -c %u:%g:%a /run/railshot-personal-gateway)" = 0:1000:750'
 docker compose -f deployment/manifests/personal/production.compose.yaml exec api \
   python3 /app/deployment/scripts/personal-production-preflight.py \
   --config /var/lib/railshot/config/personal.json --test-allow-http
 ```
 
-운영자 토큰과 다른 개인 클라이언트 bearer가 Nginx에서 그대로 전달되는지는 실제 대시보드 이미지의 `/api/v1/enrollments/<id>/claims`와 `/api/v1/targets/<id>/{heartbeats,receipts,runtimes}` 경로로 검사합니다. 그 밖의 `/api/` 경로는 대시보드의 중앙 토큰을 계속 사용합니다. 종료에는 `docker compose ... down`을 사용하며, 재시작 영속성 검증 전에는 `down -v`로 볼륨을 지우지 않습니다.
+운영자 토큰과 다른 개인 클라이언트 bearer가 Nginx에서 그대로 전달되는지는 실제 대시보드 이미지의 `/api/v1/enrollments/<id>/claims`와 `/api/v1/targets/<id>/{heartbeats,receipts,runtimes,vaults}` 경로로 검사합니다. 그 밖의 `/api/` 경로는 대시보드의 중앙 토큰을 계속 사용합니다. 종료에는 `docker compose ... down`을 사용하며, 재시작 영속성 검증 전에는 `down -v`로 볼륨을 지우지 않습니다.
+
+### HTTPS를 유지하는 연결 E2E
+
+연결만 검증하는 `connection-api` 이미지 target은 같은 REST API·SQLite·SSH 구현을 실행하며 CI와 클라우드 배포 도구는 포함하지 않습니다. 이 이미지에서 연결은 검증할 수 있지만 런타임·배포 준비를 확인했다고 주장하면 안 됩니다. `e2e.compose.yaml`은 인증된 시험 메일 수신기와 localhost TLS proxy를 추가합니다. 메일은 외부로 발송되지 않으며 token은 메일 전용 영속 볼륨 안의 0600 JSON으로만 저장됩니다.
+
+```sh
+fixture=/tmp/railshot-onprem-e2e-fixture
+python3 deployment/scripts/prepare-personal-local-fixture.py \
+  --output "$fixture" --public-url https://e2e.railshot.test:18443
+export RAILSHOT_PERSONAL_PRODUCTION_CONFIG_DIR="$fixture"
+export RAILSHOT_PERSONAL_API_TARGET=connection-api
+export RAILSHOT_PERSONAL_API_TAG=onprem-e2e
+docker compose -p railshot-onprem-e2e \
+  -f deployment/manifests/personal/production.compose.yaml \
+  -f deployment/manifests/personal/e2e.compose.yaml config --quiet
+docker compose -p railshot-onprem-e2e \
+  -f deployment/manifests/personal/production.compose.yaml \
+  -f deployment/manifests/personal/e2e.compose.yaml build
+```
+
+fixture에는 7일 유효한 시험 CA와 e2e.railshot.test/localhost/127.0.0.1 인증서가 들어 있습니다. 이 시험 이름은 Compose 안에서 TLS 서비스의 DNS alias를 가리키고 API에는 공개 CA 인증서만 추가 신뢰합니다. 원격 관리 호스트에는 `tls-ca.pem` 공개 인증서만 전달해 명시적으로 신뢰하게 하며, 개인키는 복사하지 않습니다. 원격 hosts에 e2e.railshot.test를 127.0.0.1로 지정하고 승인된 SSH reverse forward로 원격 localhost:18443을 검증 호스트 localhost:8443에 연결하면 API와 설치기가 같은 URL에서 HTTPS·artifact 검증을 수행합니다. E2E overlay는 단일 노드 DevStack의 현장 Keystone HTTP를 허용하려고 `RAILSHOT_PERSONAL_TEST_ALLOW_HTTP=1`을 명시합니다. 설치 API와 공개 artifact의 실제 URL은 HTTPS를 유지하며, 이 시험 opt-in을 운영 기본값으로 쓰지 않습니다. 이는 공개 HTTPS 및 공개 UDP 경로의 인수검증과 다르므로 결과에 사용한 전송 경로를 적습니다. UDP 접근이 가능한 경우 `RAILSHOT_PERSONAL_UDP_BIND`와 `PERSONAL_GATEWAY_ENDPOINT`는 승인된 주소로 설정합니다. 호스트 방화벽이나 기존 자원은 이 Compose에서 변경하지 않습니다.
+
+직접 UDP가 막힌 시험 환경에서는 `personal-e2e-udp-relay.py`를 기존 SSH TCP 역포워드 양끝에 실행할 수 있습니다. work-vm 쪽은 `tcp --port 8444 --destination-port 51920`, 현장 쪽은 `udp --port 51821 --destination-port 18444`를 사용하며, listener와 destination은 모두 127.0.0.1로 제한됩니다. 이 단일 peer 진단 경로는 데이터그램 경계를 보존하고 키·패킷을 출력하지 않습니다. 공개 UDP 인수조건의 통과로 집계하지 않습니다.
 
 ## Kubernetes 운영 연결
 
-운영 개인 기능은 기본적으로 렌더링되지 않습니다. 기존 AWS와 일반 API 배포는 저장소 변수 `RAILSHOT_PERSONAL_ENABLED`가 정확히 `true`가 되기 전까지 개인 Secret, 영속 볼륨, UDP 포트, 게이트웨이 sidecar를 참조하지 않습니다. 활성화 배포는 API와 `personal-gateway` 이미지를 함께 빌드해야 합니다.
+운영 개인 기능은 기본적으로 렌더링되지 않습니다. 기존 AWS와 일반 API 배포는 저장소 변수 `RAILSHOT_PERSONAL_ENABLED`가 정확히 `true`가 되기 전까지 개인 Secret, 영속 볼륨, UDP 포트, 별도 게이트웨이 Pod를 참조하지 않습니다. 활성화 배포는 API와 `personal-gateway` 이미지를 함께 빌드해야 합니다.
 
 `personal.production.example.json`은 필드 설명용이며 그대로 적용할 수 없습니다. 먼저 대시보드 이미지가 생성한 `/personal/manifest.json`에서 배포 해시와 설치기 해시를 확인하고, 같은 해시 디렉터리의 두 URL을 실제 `personal.json`에 기록합니다. `runtime` 설정이 아직 없으면 해당 항목을 생략할 수 있지만 서버 readiness는 `RUNTIME_OPERATOR_NOT_CONFIGURED`로 차단됩니다.
 
 운영 값은 출력하지 말고 운영자 소유의 절대경로 파일로 준비한 뒤 다음처럼 이름만 연결합니다.
+`personal-vault-private.pem`은 RSA 3072비트 이상의 새 개인키여야 하며, 예를 들어
+`openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out /absolute/private/personal-vault-private.pem`으로 생성합니다.
+이미 등록한 클라이언트의 키를 임의로 교체하면 저장된 자격을 풀 수 없으므로 키를 별도 안전한 저장소에 백업합니다.
 
 ```sh
 kubectl -n railshot-system create secret generic railshot-personal-config \
@@ -45,11 +68,17 @@ kubectl -n railshot-system create secret generic railshot-personal-gateway-key \
   --from-file=private-key=/absolute/private/wireguard-private-key --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n railshot-system create secret generic railshot-personal-gateway-ipc \
   --from-file=ipc-token=/absolute/private/gateway-ipc-token --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n railshot-system create secret generic railshot-personal-vault \
+  --from-file=private.pem=/absolute/private/personal-vault-private.pem --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n railshot-system create configmap railshot-personal-settings \
   --from-literal=gateway_endpoint='<reviewed-public-host>:51820' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n railshot-system create configmap railshot-account-mail \
+  --from-literal=url='https://<reviewed-mail-gateway>/send' --dry-run=client -o yaml | kubectl apply -f -
+kubectl -n railshot-system create secret generic railshot-account-mail \
+  --from-file=token=/absolute/private/mail-gateway-token --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-게이트웨이 개인키 Secret은 게이트웨이에만 마운트됩니다. IPC(프로세스 사이 통신) 토큰은 `private-config` 초기 컨테이너가 API 소유 0600 파일로 복사하고, API는 원본 Secret이나 개인키를 직접 마운트하지 않습니다. 게이트웨이와 WireGuard 상태는 각각 1GiB `ReadWriteOnce` 영속 볼륨에 남습니다. UDP 51820은 선택된 platform 노드의 hostPort로 열리므로 `gateway_endpoint`의 호스트가 그 노드를 가리키고 방화벽도 UDP 51820을 허용해야 합니다.
+게이트웨이 개인키 Secret은 게이트웨이에만 마운트됩니다. IPC(프로세스 사이 통신) 토큰과 vault 개인키는 `private-config` 초기 컨테이너가 API 소유 0600 파일로 복사합니다. vault 개인키는 게이트웨이에 전달되지 않습니다. 게이트웨이와 WireGuard 상태는 각각 1GiB `ReadWriteOnce` 영속 볼륨에 남습니다. UDP 51820은 `railshot-personal-wireguard` LoadBalancer Service로 열리므로 `gateway_endpoint`의 호스트가 그 서비스의 고정 공개 주소를 가리켜야 합니다.
 
 Secret·ConfigMap·PVC(영속 볼륨 요청)가 준비되고 로컬 분리 검증이 통과한 뒤에만 `RAILSHOT_PERSONAL_ENABLED=true`를 설정합니다. 배포 후 다음 무변경 사전검사를 통과해야 등록을 열 수 있습니다. 이 검사는 개인 설정 권한, 인증된 게이트웨이 health, 설치 manifest, 설치기 SHA256, 압축파일 SHA256과 크기를 확인하며 키·토큰을 출력하지 않습니다.
 

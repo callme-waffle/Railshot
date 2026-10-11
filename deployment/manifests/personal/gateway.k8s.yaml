@@ -1,0 +1,131 @@
+# Apply alongside deployment/manifests/platform.yaml. Reserve the external UDP
+# load-balancer address and publish its HOST:51820 as gateway_endpoint in the
+# railshot-personal-settings ConfigMap before enrolling clients.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: railshot-personal-gateway, namespace: railshot-system}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: railshot-personal-gateway}}
+  template:
+    metadata: {labels: {app: railshot-personal-gateway}}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {kubernetes.io/arch: amd64, railshot.io/node-role: platform}
+      imagePullSecrets: [{name: ghcr-pull}]
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: gateway
+          image: BUILD_REQUIRED/personal-gateway
+          ports:
+            - {name: rpc, containerPort: 4184, protocol: TCP}
+            - {name: wireguard, containerPort: 51820, protocol: UDP}
+          env:
+            - name: PERSONAL_GATEWAY_ENDPOINT
+              valueFrom:
+                configMapKeyRef: {name: railshot-personal-settings, key: gateway_endpoint}
+            - name: PERSONAL_GATEWAY_RPC_BIND
+              valueFrom:
+                fieldRef: {fieldPath: status.podIP}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: '1', memory: 256Mi}
+          volumeMounts:
+            - {name: gateway-key, mountPath: /run/secrets/personal-gateway-key, readOnly: true}
+            - {name: gateway-ipc, mountPath: /run/secrets/personal-gateway-ipc, readOnly: true}
+            - {name: gateway-state, mountPath: /var/lib/railshot-personal-gateway}
+            - {name: wireguard-state, mountPath: /etc/wireguard}
+            - {name: tmp, mountPath: /tmp}
+          startupProbe:
+            exec:
+              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
+            periodSeconds: 30
+            timeoutSeconds: 5
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 16Mi}}
+        - name: gateway-key
+          secret:
+            secretName: railshot-personal-gateway-key
+            items: [{key: private-key, path: private-key, mode: 256}]
+        - name: gateway-ipc
+          secret:
+            secretName: railshot-personal-gateway-ipc
+            items: [{key: ipc-token, path: ipc-token, mode: 256}]
+        - name: gateway-state
+          persistentVolumeClaim: {claimName: railshot-personal-gateway}
+        - name: wireguard-state
+          persistentVolumeClaim: {claimName: railshot-personal-wireguard}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: railshot-personal-gateway, namespace: railshot-system}
+spec:
+  type: ClusterIP
+  selector: {app: railshot-personal-gateway}
+  ports: [{name: rpc, port: 4184, targetPort: rpc, protocol: TCP}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: railshot-personal-gateway, namespace: railshot-system}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: railshot-personal-wireguard, namespace: railshot-system}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: railshot-personal-wireguard, namespace: railshot-system}
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector: {app: railshot-personal-gateway}
+  ports: [{name: wireguard, port: 51820, targetPort: wireguard, protocol: UDP}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: railshot-personal-gateway, namespace: railshot-system}
+spec:
+  podSelector: {matchLabels: {app: railshot-personal-gateway}}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: railshot-api}}
+      ports: [{port: 4184, protocol: TCP}]
+    - from:
+        - ipBlock: {cidr: 0.0.0.0/0}
+      ports: [{port: 51820, protocol: UDP}]
+  egress:
+    # WireGuard replies use the peer's observed UDP endpoint and source port.
+    - to:
+        - ipBlock: {cidr: 0.0.0.0/0}
+      ports: [{protocol: UDP}]
+    # The application additionally verifies ledger membership and hard-codes
+    # the only internal destination port; this rule limits Pod egress too.
+    - to:
+        - ipBlock: {cidr: 10.253.240.0/24}
+      ports: [{port: 2222, protocol: TCP}]

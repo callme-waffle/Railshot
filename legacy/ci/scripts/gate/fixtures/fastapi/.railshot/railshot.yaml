@@ -1,0 +1,10 @@
+apiVersion: railshot/v0
+app: fixture-fastapi
+services:
+  - name: web
+    build:
+      context: .
+      dockerfile: Dockerfile
+    port: 8080
+    health: /health
+    route: /health

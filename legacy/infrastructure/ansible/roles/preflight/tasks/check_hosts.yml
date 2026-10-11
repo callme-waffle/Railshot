@@ -1,0 +1,78 @@
+---
+- name: Require supported Ubuntu release
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version == '24.04'
+      - ansible_facts.service_mgr == 'systemd'
+- name: Require the product PostgreSQL data mount before installing or initializing the database
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.mounts | selectattr('mount', 'equalto', '/var/lib/postgresql') | list | length == 1
+      - ansible_facts.mounts | selectattr('mount', 'equalto', '/') | list | length == 1
+      - >-
+        (ansible_facts.mounts | selectattr('mount', 'equalto', '/var/lib/postgresql') | first).device !=
+        (ansible_facts.mounts | selectattr('mount', 'equalto', '/') | first).device
+    fail_msg: The retained PostgreSQL disk is not mounted; refusing a root-disk fallback.
+  when:
+    - railshot_require_postgres_mount | default(false) | bool
+    - inventory_hostname in groups['db_nodes']
+- name: Check existing PostgreSQL data directory
+  ansible.builtin.stat:
+    path: '{{ postgres_data_dir }}'
+  register: postgres_existing_directory
+  when: inventory_hostname in groups['db_nodes']
+- name: Read database directory entries without changing data
+  ansible.builtin.find:
+    paths: '{{ postgres_data_dir }}'
+    hidden: true
+    recurse: false
+    file_type: any
+  register: postgres_existing_entries
+  when:
+    - inventory_hostname in groups['db_nodes']
+    - postgres_existing_directory.stat.exists
+- name: Inspect cluster ownership marker
+  ansible.builtin.stat:
+    path: /etc/patroni/cluster-identity
+  register: patroni_marker
+  when: inventory_hostname in groups['db_nodes']
+- name: Require ownership marker for populated directory
+  ansible.builtin.assert:
+    that:
+      - patroni_marker.stat.exists
+    fail_msg: Existing PostgreSQL data is unmanaged; automatic adoption or deletion is forbidden.
+  when:
+    - inventory_hostname in groups['db_nodes']
+    - postgres_existing_entries.matched | default(0) | int > 0
+- name: Read existing ownership marker
+  ansible.builtin.slurp:
+    src: /etc/patroni/cluster-identity
+  register: patroni_marker_content
+  when:
+    - inventory_hostname in groups['db_nodes']
+    - patroni_marker.stat.exists
+- name: Reject a different cluster ownership marker
+  ansible.builtin.assert:
+    that:
+      - patroni_marker_content.content | b64decode | trim == cluster_name
+  when:
+    - inventory_hostname in groups['db_nodes']
+    - patroni_marker.stat.exists
+- name: Check distribution PostgreSQL cluster tool
+  ansible.builtin.stat:
+    path: /usr/bin/pg_lsclusters
+  register: distribution_pg_tool
+  when: inventory_hostname in groups['db_nodes']
+- name: List distribution-managed clusters
+  ansible.builtin.command: /usr/bin/pg_lsclusters --no-header
+  changed_when: false
+  register: distribution_pg_clusters
+  when:
+    - inventory_hostname in groups['db_nodes']
+    - distribution_pg_tool.stat.exists
+- name: Refuse existing distribution-managed PostgreSQL clusters
+  ansible.builtin.assert:
+    that:
+      - distribution_pg_clusters.stdout | default('') | trim | length == 0
+  when: inventory_hostname in groups['db_nodes']

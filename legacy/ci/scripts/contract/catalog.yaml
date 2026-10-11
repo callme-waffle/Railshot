@@ -1,0 +1,51 @@
+# CI input catalog and base-image allowlist. This does not provision target resources.
+version: 0
+
+sizes: [S, M, L]          # static admission values in stack-contract.md §4
+replicas: {min: 1, max: 3}
+
+resources:
+  postgres:
+    sizes: [small]
+    injects_secret: DATABASE_URL
+    # PostgreSQL here is an ephemeral CI dependency; target DB ownership is separate.
+
+env:
+  max_keys: 50
+  max_value_bytes: 1024
+secrets:
+  max_keys: 20            # names only; runtime values and injection belong to the target owner
+
+persistent_storage:
+  max_volumes: 1
+  replicas: 1
+  size_gib: {min: 1, max: 10}
+  storage_class: railshot-persistent
+  # Target operator installs the provisioner. CI uses temporary isolated storage.
+
+unsupported_mvp:
+  - bucket
+  - automatic_backup_restore
+  - custom_domain
+  - gpu
+  - region_change
+  - privileged_or_root
+
+# Allowed base images (stack-contract §5). A FROM matches when the repository is equal
+# and its tag starts with the listed tag (python:3.12-slim-bookworm matches python:3.12-slim).
+base_images:
+  - python:3.12-slim
+  - python:3.13-slim
+  - node:22-slim
+  - node:24-slim
+  - golang:1
+  - rust:1
+  - gcr.io/distroless/static-debian12
+  - gcr.io/distroless/base-debian12
+  - nginxinc/nginx-unprivileged:stable-alpine
+  - eclipse-temurin:21-jre
+  - maven:3.9.9-eclipse-temurin-21
+  - gradle:8.14.3-jdk21
+  - node:22.23.3-bookworm-slim
+  - python:3.12.9-slim-bookworm
+  - python:3.12.14-slim-bookworm

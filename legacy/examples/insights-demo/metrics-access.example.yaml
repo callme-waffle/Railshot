@@ -1,0 +1,39 @@
+# Operator-applied demo observation resources, separate from Argo's app workload.
+# Apply only after the existing app ingress policy is present and the app is healthy.
+# This policy supplements the app port allowance; it must not be the only ingress policy.
+# Replace every ${...}; choose an unused NodePort. Restrict cloud/host firewalls too.
+apiVersion: v1
+kind: Service
+metadata:
+  name: insights-demo-metrics
+  namespace: ${APP_NAMESPACE}
+spec:
+  type: NodePort
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: insights-demo
+    railshot.io/target: ${TARGET_ID}
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+      nodePort: 30940
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: insights-demo-observer
+  namespace: ${APP_NAMESPACE}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: insights-demo
+      railshot.io/target: ${TARGET_ID}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: ${OBSERVER_SOURCE_CIDR}
+      ports:
+        - port: 9400
+          protocol: TCP

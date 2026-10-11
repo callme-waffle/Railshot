@@ -1,0 +1,9 @@
+{
+  "apiVersion":"networking.k8s.io/v1","kind":"NetworkPolicy",
+  "metadata":{"name":"railshot-workload-ingress","namespace":"$namespace"},
+  "spec":{
+    "podSelector":{"matchLabels":{"railshot.io/app":"railshot-workload"}},
+    "policyTypes":["Ingress"],
+    "ingress":[{"from":[{"podSelector":{"matchLabels":{"railshot.io/client":"allowed"}}}],"ports":[{"protocol":"TCP","port":"$container_port"}]}]
+  }
+}

@@ -1,0 +1,21 @@
+---
+# Extracted unchanged from JB site.yml, 90b5196f. Shared guest scope assertions.
+- name: Validate supported scope before changing anything
+  ansible.builtin.assert:
+    that:
+      - groups['k3s_server'] | length == 1
+      - ansible_facts.distribution == 'Ubuntu'
+      - ansible_facts.distribution_version in ['22.04', '24.04']
+      - ansible_facts.architecture in ['x86_64', 'aarch64']
+      - ansible_facts.service_mgr == 'systemd'
+      - ansible_facts.memtotal_mb >= 1800
+      - ansible_facts.processor_vcpus >= 2
+      - ansible_facts.swaptotal_mb == 0
+      - not ansible_check_mode
+      - k3s_version is match('^v[0-9]+\.[0-9]+\.[0-9]+\+k3s[0-9]+$')
+      - k3s_node_name is match('^[a-z0-9]([a-z0-9-]*[a-z0-9])?$')
+      - "':' not in k3s_api_host"
+    fail_msg: >-
+      Requires exactly one Ubuntu 22.04/24.04 systemd host, amd64/arm64,
+      2 vCPU, 2 GB RAM and swap disabled. Use an IPv4 address or DNS name
+      for k3s_api_host. Check mode is unsupported; use --syntax-check.

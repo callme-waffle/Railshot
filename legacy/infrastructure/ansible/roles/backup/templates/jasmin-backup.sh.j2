@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+# A replica has no backup work; errors connecting to PostgreSQL remain failures.
+role=$(/usr/bin/psql -XAt -h /var/run/postgresql -p {{ postgres_port }} -d postgres -c 'SELECT NOT pg_is_in_recovery()')
+[ "$role" = t ] || exit 0
+/usr/bin/pgbackrest --stanza={{ cluster_name }} stanza-create
+/usr/bin/pgbackrest --stanza={{ cluster_name }} check
+exec /usr/bin/pgbackrest --stanza={{ cluster_name }} --type=full backup

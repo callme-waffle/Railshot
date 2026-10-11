@@ -1,0 +1,54 @@
+---
+- name: Check guest readiness using the JB guest contract
+  hosts: k3s_server
+  gather_facts: true
+  become: true
+  tasks:
+    - name: Run the shared JB guest checks without installing K3s
+      ansible.builtin.import_tasks: tasks/guest-checks.yml
+
+    - name: Verify requested guest identity and resources
+      ansible.builtin.assert:
+        that:
+          - "ansible_facts.architecture == {'amd64': 'x86_64', 'arm64': 'aarch64'}[railshot_expected_arch]"
+          - railshot_node_ip in ansible_facts.all_ipv4_addresses
+          - "(ansible_facts.mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first | int) >= 10737418240"
+          - railshot_initialization in ['cloud-init', 'preconfigured']
+        fail_msg: Guest architecture, private address or free root disk does not match the target contract.
+
+    - name: Detect cloud-init
+      ansible.builtin.stat:
+        path: /usr/bin/cloud-init
+      register: railshot_cloud_init
+
+    - name: Require the declared cloud-init mechanism
+      ansible.builtin.assert:
+        that:
+          - railshot_initialization != 'cloud-init' or railshot_cloud_init.stat.exists
+        fail_msg: The target declares cloud-init but cloud-init is unavailable.
+
+    - name: Read cloud-init status without starting or rerunning it
+      ansible.builtin.command:
+        argv: [/usr/bin/cloud-init, status, --format, json]
+      register: railshot_cloud_status
+      changed_when: false
+      when: railshot_cloud_init.stat.exists
+
+    - name: Require initialization to be done before runtime installation
+      ansible.builtin.assert:
+        that:
+          - (railshot_cloud_status.stdout | from_json).status == 'done'
+        fail_msg: Guest initialization is incomplete or failed; VM ACTIVE is insufficient.
+      when: railshot_cloud_init.stat.exists
+
+    - name: Write a private receipt only after every guest check passed
+      ansible.builtin.copy:
+        dest: "{{ railshot_receipt_path }}"
+        mode: '0600'
+        content: >-
+          {{ {'request_id': railshot_request_id, 'target_id': railshot_target_id,
+              'node_id': inventory_hostname, 'nonce': railshot_nonce,
+              'stage': 'guest', 'guest_ready': true} | to_json }}
+      delegate_to: localhost
+      become: false
+      no_log: true

@@ -1,0 +1,19 @@
+---
+cluster_name: example-db
+client_cidrs:
+  - 192.0.2.0/24
+# 아래 경로는 Ansible 실행 호스트의 파일입니다. 서버별 인증서는 SAN에 private_ip를 포함해야 합니다.
+etcd_ca_src: /REPLACE_WITH_CERT_DIRECTORY/etcd-ca.crt
+etcd_cert_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-etcd.crt'
+etcd_key_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-etcd.key'
+patroni_etcd_cert_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-etcd-client.crt'
+patroni_etcd_key_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-etcd-client.key'
+patroni_api_ca_src: /REPLACE_WITH_CERT_DIRECTORY/patroni-ca.crt
+patroni_api_cert_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-api.crt'
+patroni_api_key_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-api.key'
+postgres_tls_ca_src: /REPLACE_WITH_CERT_DIRECTORY/postgres-ca.crt
+postgres_tls_cert_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-postgres.crt'
+postgres_tls_key_src: '/REPLACE_WITH_CERT_DIRECTORY/{{ inventory_hostname }}-postgres.key'
+# 선택 입력: replication_mode: asynchronous
+# backup_enabled: true
+# pgbackrest_repo_path: /mnt/backup/pgbackrest

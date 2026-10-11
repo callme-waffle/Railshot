@@ -32,3 +32,6 @@
 !deployment/bootstrap/client_setup/credentials.py
 **/secrets
 **/.token-usage
+
+# Immutable reference archive is never part of runtime images.
+/legacy/

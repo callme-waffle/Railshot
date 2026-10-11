@@ -1,0 +1,16 @@
+{
+  "schema_version": "v1",
+  "execution_driver": "terraform",
+  "provider_kind": "gcp",
+  "target_id": "demo-gcp",
+  "resource_id": "projects/railshot-demo/zones/asia-northeast3-a/instances/railshot-gcp",
+  "architecture": "x86_64",
+  "location": {
+    "region": "asia-northeast3",
+    "zone": "asia-northeast3-a"
+  },
+  "addresses": {
+    "private": "10.78.0.10"
+  },
+  "transport_ref": "iap:railshot-demo/asia-northeast3-a/railshot-gcp"
+}

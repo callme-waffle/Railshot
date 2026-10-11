@@ -1,0 +1,297 @@
+# Template for the private apps monorepo (.github/workflows/railshot-deploy.yml there).
+# CI only: baseline → SDK repair → full gates → exact tested bundle → GHCR publish.
+# CD consumes images.json and the unchanged spec, verdict and bundle manifest.
+# No cluster resources, application URL or deployment success are produced here.
+# AGENT_AUTH_MODE is explicit: subscription (dedicated admin Codex home) or api-key.
+# PLATFORM_REF pins trusted platform code. Uploads cannot choose the registry or visibility.
+# Private GHCR requires a dedicated pull credential and operator-selected target Secret reference.
+# Public mode verifies every digest anonymously; it does not change package visibility.
+# RAILSHOT_RUN_ROOT is persistent and outside checkout/temp on the leased private CI worker.
+# Retrying the same workflow run resumes that run ID; uncertain calls are not replayed.
+# Actions are pinned by SHA; SDK and publisher credentials remain separate.
+# Artifact IDs plus attempt-specific names identify the handoff for a separate CD owner.
+name: railshot-deploy
+run-name: 'railshot:${{ inputs.tenant }}/${{ inputs.app }}:${{ inputs.target_id }}:${{ inputs.source_commit }}'
+on:
+  workflow_dispatch:
+    inputs:
+      tenant: {description: "tenant id", required: true}
+      app: {description: "app directory name under apps/<tenant>/", required: true}
+      source_commit: {description: "exact submitted apps repository commit", required: true}
+      target_id: {description: "operator-configured target ID for the CD handoff", required: true}
+permissions: {}
+concurrency:
+  group: railshot-${{ inputs.tenant }}-${{ inputs.app }}
+  cancel-in-progress: false
+
+env:
+  TENANT: ${{ inputs.tenant }}
+  APP: ${{ inputs.app }}
+  SOURCE_COMMIT: ${{ inputs.source_commit }}
+  TARGET_ID: ${{ inputs.target_id }}
+  RUN_DIR: ${{ vars.RAILSHOT_RUN_ROOT }}/${{ github.run_id }}
+
+jobs:
+  loop:
+    runs-on: ${{ fromJSON(vars.RAILSHOT_CI_RUNNER_LABELS) }}
+    timeout-minutes: 40
+    permissions: {contents: read, checks: write}
+    outputs:
+      passed: ${{ steps.loop.outputs.passed }}
+      bundle_id: ${{ steps.bundle.outputs.artifact-id }}
+      source_id: ${{ steps.source.outputs.artifact-id }}
+      source_attempt: ${{ github.run_attempt }}
+    steps:
+      - name: Validate trusted platform bindings
+        env:
+          PLATFORM_REF: ${{ vars.PLATFORM_REF }}
+          RUN_ROOT: ${{ vars.RAILSHOT_RUN_ROOT }}
+        run: |
+          [[ "$PLATFORM_REF" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          [[ "$RUN_ROOT" = /* && "$RUN_ROOT" != / ]] || exit 1
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+          root = Path(os.environ['RUN_ROOT']).resolve()
+          for key in ('GITHUB_WORKSPACE', 'RUNNER_TEMP'):
+              temporary = Path(os.environ[key]).resolve()
+              assert root != temporary and temporary not in root.parents and root not in temporary.parents, 'run root must be outside checkout/temp and their parents'
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {repository: Jasmin-Softbank/Railshot, ref: "${{ vars.PLATFORM_REF }}", path: .railshot, persist-credentials: false}
+      - name: Validate inputs
+        env:
+          CONFIGURED_TARGET: ${{ vars.RAILSHOT_TARGET_ID }}
+          CONFIGURED_TARGETS: ${{ vars.RAILSHOT_TARGET_IDS }}
+          CONFIGURED_BINDINGS: ${{ vars.RAILSHOT_TARGET_BINDINGS }}
+        run: |
+          set -euo pipefail
+          [[ "$TENANT" =~ ^[a-z0-9]{1,20}$ && "$APP" =~ ^[a-z][a-z0-9-]{1,28}[a-z0-9]$ ]] || exit 1
+          [[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ && "$SOURCE_COMMIT" = "$GITHUB_SHA" && "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]] || { echo "submitted source commit differs from dispatched checkout"; exit 1; }
+          python3 -I -c 'import os,sys; sys.path.insert(0,".railshot/ci/scripts"); from publication import validate_target; validate_target(os.environ)'
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: {python-version: "3.13"}
+      - name: Baseline gates, then SDK repair only when eligible
+        id: loop
+        env:
+          PROVIDER: ${{ vars.AGENT_PROVIDER || 'codex' }}
+          RAILSHOT_MAX_REPAIR_ATTEMPTS: ${{ vars.RAILSHOT_MAX_REPAIR_ATTEMPTS }}
+          RAILSHOT_MAX_PACKAGING_ATTEMPTS: ${{ vars.RAILSHOT_MAX_PACKAGING_ATTEMPTS }}
+          QUALITY_NETWORK: ${{ vars.QUALITY_NETWORK }}
+          REPAIR_SCOPE: ${{ vars.REPAIR_SCOPE || 'source' }}
+          RAILSHOT_AUTH_MODE: ${{ vars.AGENT_AUTH_MODE }}
+          RAILSHOT_CODEX_HOME: ${{ vars.RAILSHOT_CODEX_HOME }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          RAILSHOT_PROGRESS_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          progress_token="$RAILSHOT_PROGRESS_TOKEN"
+          unset RAILSHOT_PROGRESS_TOKEN
+          MAX_REPAIR_ATTEMPTS=${RAILSHOT_MAX_REPAIR_ATTEMPTS:-8}
+          [[ "$MAX_REPAIR_ATTEMPTS" =~ ^[0-8]$ ]] || { echo "RAILSHOT_MAX_REPAIR_ATTEMPTS must be an integer from 0 to 8 (fixer limit; 0 disables all SDK calls)"; exit 1; }
+          # Separate adapter/fixer budgets: default 2 + 8, with no borrowing.
+          MAX_PACKAGING_ATTEMPTS=${RAILSHOT_MAX_PACKAGING_ATTEMPTS:-2}
+          [[ "$MAX_PACKAGING_ATTEMPTS" =~ ^[0-8]$ ]] || { echo "RAILSHOT_MAX_PACKAGING_ATTEMPTS must be an integer from 0 to 8"; exit 1; }
+          [[ "$PROVIDER" = codex || "$PROVIDER" = claude ]] || { echo "AGENT_PROVIDER must be claude or codex"; exit 1; }
+          test -f .railshot/ci/scripts/loop/checks_progress.py || { echo 'PLATFORM_REF must support isolated progress publishing'; exit 1; }
+          python -c 'import os; from pathlib import Path; p=Path.cwd().resolve()/"apps"/os.environ["TENANT"]/os.environ["APP"]; assert p.is_dir() and p.resolve()==p, "app directory must stay within checkout; symlinks forbidden"'
+          if (( MAX_REPAIR_ATTEMPTS > 0 )); then
+            case "$RAILSHOT_AUTH_MODE:$PROVIDER" in
+              subscription:codex)
+                test -n "$RAILSHOT_CODEX_HOME" && test -f "$RAILSHOT_CODEX_HOME/auth.json"
+                unset CODEX_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY ;;
+              api-key:codex) test -n "$CODEX_API_KEY" ;;
+              api-key:claude) test -n "$ANTHROPIC_API_KEY" ;;
+              *) echo "Set explicit supported AGENT_AUTH_MODE/AGENT_PROVIDER"; exit 1 ;;
+            esac
+            case "$PROVIDER" in
+              claude) pip install -q "claude-agent-sdk==0.2.158"; unset CODEX_API_KEY ;;
+              codex)  pip install -q "openai-codex==0.159.3"; unset ANTHROPIC_API_KEY ;;
+            esac
+          else
+            # A baseline-only run neither needs nor inherits model credentials.
+            unset CODEX_API_KEY OPENAI_API_KEY ANTHROPIC_API_KEY CODEX_HOME RAILSHOT_CODEX_HOME RAILSHOT_AUTH_MODE ANTHROPIC_BASE_URL
+          fi
+          pip install -q pyyaml jsonschema
+          [[ "$REPAIR_SCOPE" = packaging || "$REPAIR_SCOPE" = source ]] || exit 1
+          args=(--max-attempts "$MAX_REPAIR_ATTEMPTS" --max-packaging-attempts "$MAX_PACKAGING_ATTEMPTS" --repair-scope "$REPAIR_SCOPE" --app-id "$APP")
+          if [ -f "$RUN_DIR/state.sqlite3" ]; then args+=(--resume); fi
+          if [ -n "$QUALITY_NETWORK" ]; then args+=(--quality-network "$QUALITY_NETWORK"); fi
+          if RAILSHOT_PROGRESS_TOKEN="$progress_token" python .railshot/ci/scripts/loop/loop.py "apps/$TENANT/$APP" "$RUN_DIR" --provider "$PROVIDER" "${args[@]}"; then
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+      - name: Export the exact gate-tested images
+        if: steps.loop.outputs.passed == 'true'
+        run: |
+          set -euo pipefail
+          verdict=$(python -c 'import json,os; from pathlib import Path; r=Path(os.environ["RUN_DIR"]); e=json.loads((r/"evidence.json").read_text()); assert e["passed"]; print(r/("gate-"+str(e["attempts"][-1]["attempt"])+"/verdict.json"))')
+          python .railshot/ci/scripts/gate/bundle.py export "$RUN_DIR/work" "$verdict" release-bundle
+          python .railshot/ci/scripts/source_snapshot.py export "$RUN_DIR/work" release-bundle source-snapshot/snapshot.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: source
+        if: steps.loop.outputs.passed == 'true'
+        with: {name: "source-${{ github.run_attempt }}", path: source-snapshot/snapshot.json, if-no-files-found: error}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: bundle
+        if: steps.loop.outputs.passed == 'true'
+        with: {name: "release-bundle-${{ github.run_attempt }}", path: release-bundle, if-no-files-found: error, retention-days: 1}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: loop-${{ github.run_attempt }}
+          path: |
+            ${{ env.RUN_DIR }}/evidence.json
+            ${{ env.RUN_DIR }}/gate-*/verdict.json
+            ${{ env.RUN_DIR }}/gate-*/build.json
+            ${{ env.RUN_DIR }}/gate-*/L*.json
+            ${{ env.RUN_DIR }}/gate-*/Q.json
+            ${{ env.RUN_DIR }}/gate-*/quality.json
+            ${{ env.RUN_DIR }}/gate-*/progress.jsonl
+          if-no-files-found: warn
+      - name: Preserve bounded diagnostic evidence
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: diagnostics-${{ github.run_attempt }}
+          path: ${{ env.RUN_DIR }}/diagnostics
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Preserve exact diagnostic source privately
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: diagnostic-source-${{ github.run_attempt }}
+          path: ${{ env.RUN_DIR }}/diagnostic-source/snapshot.json
+          if-no-files-found: warn
+          retention-days: 7
+
+  release:
+    environment: railshot-release
+    needs: loop
+    if: needs.loop.outputs.passed == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions: {contents: read, actions: read, packages: write}
+    env:
+      REGISTRY_PREFIX: ${{ vars.REGISTRY_PREFIX }}
+      REGISTRY_VISIBILITY: ${{ vars.REGISTRY_VISIBILITY || 'private' }}
+      GHCR_PULL_USERNAME: ${{ vars.GHCR_PULL_USERNAME }}
+      PULL_SECRET_NAMESPACE: ${{ vars.RAILSHOT_PULL_NAMESPACE }}
+      PULL_SECRET_NAME: ${{ vars.RAILSHOT_PULL_SECRET }}
+      CONFIGURED_BINDINGS: ${{ vars.RAILSHOT_TARGET_BINDINGS }}
+      CONFIGURED_TARGETS: ${{ vars.RAILSHOT_TARGET_IDS }}
+      CONFIGURED_TARGET: ${{ vars.RAILSHOT_TARGET_ID }}
+    outputs:
+      published_id: ${{ steps.published.outputs.artifact-id }}
+      bundle_id: ${{ needs.loop.outputs.bundle_id }}
+    steps:
+      - name: Validate trusted platform bindings
+        env:
+          PLATFORM_REF: ${{ vars.PLATFORM_REF }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: |
+          [[ "$PLATFORM_REF" =~ ^[a-f0-9]{40}$ ]] || exit 1
+          # Only the administrator's GHCR namespace is supported.
+          [[ "$REGISTRY_PREFIX" =~ ^ghcr[.]io/[a-z0-9]+([._-][a-z0-9]+)*(/[a-z0-9]+([._-][a-z0-9]+)*)*$ ]] || exit 1
+          [[ ${#REGISTRY_PREFIX} -le 220 ]] || exit 1
+          case "${REGISTRY_VISIBILITY:-private}" in
+            public) ;;
+            private)
+              [[ -n "$GHCR_PULL_USERNAME" && -n "$GHCR_PULL_TOKEN" && ( -n "${CONFIGURED_BINDINGS:-}" || ( -n "$PULL_SECRET_NAMESPACE" && -n "$PULL_SECRET_NAME" ) ) ]] || {
+                echo "BLOCKED: private release requires dedicated pull credentials and a target Secret reference" >&2; exit 1;
+              } ;;
+            *) echo "BLOCKED: REGISTRY_VISIBILITY must be private or explicitly public" >&2; exit 1 ;;
+          esac
+      - name: Set registry credential path
+        run: |
+          umask 077
+          credential_dir="$RUNNER_TEMP/railshot-registry-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -m 700 "$credential_dir"
+          echo "DOCKER_CONFIG=$credential_dir" >> "$GITHUB_ENV"
+      - name: Match the CI containerd image store
+        uses: docker/setup-docker-action@e43656e248c0bd0647d3f5c195d116aacf6fcaf4 # v4
+        with:
+          set-host: true
+          daemon-config: |
+            {"features": {"containerd-snapshotter": true}}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {persist-credentials: false}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {repository: Jasmin-Softbank/Railshot, ref: "${{ vars.PLATFORM_REF }}", path: .railshot, persist-credentials: false}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {artifact-ids: "${{ needs.loop.outputs.bundle_id }}", path: release-bundle, merge-multiple: true}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {artifact-ids: "${{ needs.loop.outputs.source_id }}", path: source-snapshot, merge-multiple: true}
+      - name: Validate inputs
+        env:
+          CONFIGURED_TARGET: ${{ vars.RAILSHOT_TARGET_ID }}
+          CONFIGURED_TARGETS: ${{ vars.RAILSHOT_TARGET_IDS }}
+          CONFIGURED_BINDINGS: ${{ vars.RAILSHOT_TARGET_BINDINGS }}
+        run: |
+          set -euo pipefail
+          [[ "$TENANT" =~ ^[a-z0-9]{1,20}$ && "$APP" =~ ^[a-z][a-z0-9-]{1,28}[a-z0-9]$ ]] || exit 1
+          [[ "$SOURCE_COMMIT" =~ ^[a-f0-9]{40}$ && "$SOURCE_COMMIT" = "$GITHUB_SHA" && "$(git rev-parse HEAD)" = "$SOURCE_COMMIT" ]] || { echo "submitted source commit differs from dispatched checkout"; exit 1; }
+          python3 -I -c 'import os,sys; sys.path.insert(0,".railshot/ci/scripts"); from publication import validate_target; validate_target(os.environ)'
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          logout: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with: {python-version: "3.13"}
+      - name: Recover the same workflow run's publication history
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir recovered-journals
+          printf '[]\n' > release-history.json
+          if (( GITHUB_RUN_ATTEMPT > 1 )); then
+            gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all&per_page=100" > release-history.json
+            # A lost/expired journal cannot authorize a second push: native job history
+            # makes the publisher read back every possibly attempted image instead.
+            gh run download "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --pattern 'publish-journal-*' --dir recovered-journals || echo 'Journal unavailable; require registry readback if publishing was attempted.'
+          fi
+      - name: Verify bundle and publish tested images
+        env:
+          BUNDLE_ARTIFACT_ID: ${{ needs.loop.outputs.bundle_id }}
+          PLATFORM_REF: ${{ vars.PLATFORM_REF }}
+        run: |
+          set -euo pipefail
+          pip install -q pyyaml jsonschema
+          python .railshot/ci/scripts/source_snapshot.py bind source-snapshot/snapshot.json release-bundle source-current/snapshot.json
+          python -c 'import os,yaml; from pathlib import Path; names=[p for p in Path("release-bundle").iterdir() if p.name in ("railshot.yaml","jasmin.yaml")]; assert len(names)==1, "exactly one spec required"; s=yaml.safe_load(names[0].read_bytes()); assert s["app"]==os.environ["APP"], "APP/spec.app mismatch"'
+          python .railshot/ci/scripts/gate/bundle.py publish release-bundle \
+            "$REGISTRY_PREFIX/${TENANT}-${APP}" "${SOURCE_COMMIT::12}" --output images.json \
+            --journal-dir release-bundle-publish --github-history release-history.json --github-journals recovered-journals
+      - name: Preserve publication journal without credentials
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: publish-journal-${{ github.run_attempt }}
+          path: release-bundle-publish/publish.json
+          if-no-files-found: warn
+          retention-days: 1
+      - name: Bind publication to the source and target
+        env:
+          BUNDLE_ARTIFACT_ID: ${{ needs.loop.outputs.bundle_id }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: python .railshot/ci/scripts/publication.py release-bundle images.json published
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: needs.loop.outputs.source_attempt != github.run_attempt
+        with: {name: "source-${{ github.run_attempt }}", path: source-current/snapshot.json, if-no-files-found: error}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        id: published
+        with:
+          name: published-${{ github.run_attempt }}
+          path: published
+          if-no-files-found: error

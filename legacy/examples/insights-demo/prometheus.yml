@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 5s
+  scrape_timeout: 3s
+scrape_configs:
+  - job_name: app_traffic
+    static_configs:
+      - targets: ['demo:9400']
+        labels:
+          app: insights-demo
+          target_id: demo-local

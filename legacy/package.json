@@ -1,0 +1,10 @@
+{
+  "name": "railshot",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "npm run dev --workspace @railshot/dashboard",
+    "build": "npm run build --workspace @railshot/dashboard",
+    "preview": "npm run preview --workspace @railshot/dashboard"
+  }
+}

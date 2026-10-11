@@ -313,7 +313,7 @@ def test_install_success_waits_for_server_control_verification():
         client.wait_control_ready(config, transport=lambda *a, **kw: {'status': 'attention'}, checker=lambda _: {}, sleeper=lambda _: None)
 
 
-def test_enroll_uses_identity_bootstrap_without_application_credential_prompt(local, monkeypatch):
+def test_enroll_claims_before_identity_bootstrap(local, monkeypatch):
     from types import SimpleNamespace
     from client_setup import personal_identity
     auth = {'auth_url': 'https://keystone.example/v3', 'application_credential_id': 'generated',
@@ -339,10 +339,13 @@ def test_enroll_uses_identity_bootstrap_without_application_credential_prompt(lo
         raise AssertionError(argv)
     monkeypatch.setattr(client, 'run', command)
     response = {**configuration(), 'target_id': 'target1', 'generation': 1,
-                'client_token': 'client-secret'}
+                'client_token': 'client-secret', 'vault_public_key': 'pinned-key', 'vault_key_id': 'pinned-id'}
     requests = []
-    monkeypatch.setattr(client, 'api', lambda *args, **kwargs: requests.append((args, kwargs)) or response)
-    monkeypatch.setattr(client, 'install_tunnel', lambda *args: None)
+    events = []
+    monkeypatch.setattr(client, 'api', lambda *args, **kwargs: events.append('claim') or requests.append((args, kwargs)) or response)
+    monkeypatch.setattr(client, 'validate_server_key', lambda *args: None)
+    monkeypatch.setattr(client, 'install_tunnel', lambda *args: events.append('tunnel'))
+    monkeypatch.setattr(client, 'finish_identity', lambda *args: events.append('identity'))
     monkeypatch.setattr(client, 'install_runtime_access', lambda *args: None)
     monkeypatch.setattr(client, 'install_service', lambda: None)
     monkeypatch.setattr(client, 'wait_control_ready', lambda *args: None)
@@ -352,9 +355,8 @@ def test_enroll_uses_identity_bootstrap_without_application_credential_prompt(lo
     args = SimpleNamespace(api_url='https://example.test', enrollment_id='enrollment1', profile_id=None,
                            project_id=None, test_allow_http=False, runtime_config=None)
     client.enroll(args)
-    assert identity_calls[0][0] == (client.CONFIG, client.STATE)
-    assert identity_calls[0][1] == {'project_id': None, 'test_allow_http': False}
-    assert requests[0][0][3]['project_id'] == 'project1'
+    assert events[:3] == ['claim', 'tunnel', 'identity']
+    assert 'project_id' not in requests[0][0][3]
 
 
 def prepare_cli_owned(monkeypatch):
@@ -602,7 +604,8 @@ def test_cli_account_commands_allow_slow_account_database_writes(local, monkeypa
     monkeypatch.setattr(client.os, 'chown', lambda *args: None)
     calls = []
     monkeypatch.setattr(client, 'run', lambda argv, **kwargs: calls.append((argv, kwargs)) or '')
-    client.CredentialStore(client.CONFIG).save({'auth_url': 'https://example.test', 'application_credential_id': 'test'})
+    (client.CONFIG / 'credentials.vault').write_text('encrypted-test-vault')
+    (client.CONFIG / 'credentials.vault').chmod(0o600)
     config = {**configuration(), 'project_id': 'project1'}
     client.install_cli_account(config)
     assert [argv[0] for argv, kwargs in calls] == ['useradd', 'usermod']

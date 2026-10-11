@@ -1,0 +1,18 @@
+---
+- name: Configure the approved HA cluster with the team playbook
+  ansible.builtin.import_playbook: playbooks/site.yml
+
+- name: Record completion only after every HA verification play succeeds
+  hosts: db_nodes
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Write the executor-bound database readiness receipt
+      ansible.builtin.copy:
+        dest: '{{ railshot_database_receipt_path }}'
+        content: '{{ railshot_database_receipt | to_json }}'
+        mode: '0600'
+      delegate_to: localhost
+      become: false
+      run_once: true
+      no_log: true

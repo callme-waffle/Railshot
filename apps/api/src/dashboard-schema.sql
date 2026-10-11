@@ -78,3 +78,26 @@ CREATE TABLE IF NOT EXISTS registration_tokens (
   consumed_at INTEGER,
   created_at INTEGER NOT NULL
 ) STRICT;
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  verified_at INTEGER,
+  created_at INTEGER NOT NULL
+) STRICT;
+CREATE TABLE IF NOT EXISTS account_tokens (
+  token_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  purpose TEXT NOT NULL CHECK(purpose IN ('verify', 'reset')),
+  expires_at INTEGER NOT NULL,
+  used_at INTEGER
+) STRICT;
+CREATE INDEX IF NOT EXISTS account_tokens_owner ON account_tokens(account_id, purpose);
+CREATE TABLE IF NOT EXISTS account_sessions (
+  token_hash TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  csrf_token TEXT NOT NULL,
+  expires_at INTEGER NOT NULL,
+  created_at INTEGER NOT NULL
+) STRICT;
+CREATE INDEX IF NOT EXISTS account_sessions_owner ON account_sessions(account_id);

@@ -1,0 +1,20 @@
+[Unit]
+Description={{ 'Jasmin' if etcd_legacy_service_description | default(false) else 'Railshot' }} managed etcd
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=etcd
+Group=etcd
+ExecStart=/usr/bin/etcd --config-file=/etc/etcd/jasmin.yml
+Restart=on-failure
+RestartSec=5s
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths={{ etcd_data_dir }}
+
+[Install]
+WantedBy=multi-user.target

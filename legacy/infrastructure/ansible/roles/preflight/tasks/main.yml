@@ -1,0 +1,7 @@
+---
+- name: Validate deployment inputs
+  ansible.builtin.import_tasks: validate_inputs.yml
+- name: Check hosts before changing them
+  ansible.builtin.import_tasks: check_hosts.yml
+- name: Check local certificate inputs
+  ansible.builtin.import_tasks: check_certificates.yml

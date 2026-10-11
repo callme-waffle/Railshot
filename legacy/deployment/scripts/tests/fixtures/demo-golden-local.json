@@ -1,0 +1,24 @@
+{
+  "schema_version": "0.1",
+  "provider": "openstack",
+  "environment_id": "railshot-runtime-demo",
+  "node": {
+    "host": "localhost",
+    "ssh_user": "ubuntu"
+  },
+  "workload": {
+    "image": "docker.io/library/nginx@sha256:30f1c0d78e0ad60901648be663a710bdadf19e4c10ac6782c235200619158284",
+    "namespace": "railshot-demo",
+    "replicas": 1,
+    "container_port": 80,
+    "health_path": "/",
+    "sample_content": true
+  },
+  "exposure": {
+    "type": "nodeport",
+    "node_port": 30080
+  },
+  "runtime": {
+    "timeout_seconds": 180
+  }
+}

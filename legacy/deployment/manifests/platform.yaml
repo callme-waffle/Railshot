@@ -1,0 +1,396 @@
+# Render with deployment/scripts/render-platform.py before applying.
+# Namespace and Secrets are operator-owned. Only the dashboard gateway is public.
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: railshot-dashboard, namespace: railshot-system}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: railshot-dashboard}}
+  template:
+    metadata: {labels: {app: railshot-dashboard, railshot.io/api-client: 'true'}}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {kubernetes.io/arch: amd64, railshot.io/node-role: platform}
+      imagePullSecrets: [{name: ghcr-pull}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: dashboard
+          image: BUILD_REQUIRED/dashboard
+          ports: [{name: http, containerPort: 8080}]
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {cpu: 500m, memory: 128Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: api-token, mountPath: /run/secrets/api, readOnly: true}
+          readinessProbe: {httpGet: {path: /healthz, port: http}}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 10}
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 32Mi}}
+        - name: api-token
+          secret: {secretName: railshot-api, defaultMode: 288}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: railshot-dashboard, namespace: railshot-system}
+spec:
+  type: ClusterIP
+  selector: {app: railshot-dashboard}
+  ports: [{name: http, port: 8080, targetPort: http}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: railshot-mcp, namespace: railshot-system}
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: railshot-mcp}}
+  template:
+    metadata: {labels: {app: railshot-mcp, railshot.io/api-client: 'true'}}
+    spec:
+      automountServiceAccountToken: false
+      nodeSelector: {kubernetes.io/arch: amd64, railshot.io/node-role: platform}
+      imagePullSecrets: [{name: ghcr-pull}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: mcp
+          image: BUILD_REQUIRED/mcp
+          command: [node, src/remote-mcp.js]
+          ports: [{name: http, containerPort: 4185}]
+          env:
+            - {name: RAILSHOT_API_URL, value: 'http://railshot-api:4173'}
+            - {name: RAILSHOT_PUBLIC_ORIGIN, value: 'https://railshot.io'}
+            - {name: RAILSHOT_API_TOKEN_FILE, value: /run/secrets/api/token}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: api-token, mountPath: /run/secrets/api, readOnly: true}
+          readinessProbe: {httpGet: {path: /healthz, port: http}}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, initialDelaySeconds: 10}
+      volumes:
+        - name: api-token
+          secret: {secretName: railshot-api, defaultMode: 288}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: railshot-mcp, namespace: railshot-system}
+spec:
+  type: ClusterIP
+  selector: {app: railshot-mcp}
+  ports: [{name: http, port: 4185, targetPort: http}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: railshot-mcp-private, namespace: railshot-system}
+spec:
+  podSelector: {matchLabels: {app: railshot-mcp}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {app: railshot-dashboard}}
+      ports: [{port: 4185, protocol: TCP}]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: railshot-api, namespace: railshot-system}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: railshot-api}}
+  template:
+    metadata: {labels: {app: railshot-api}}
+    spec:
+      serviceAccountName: railshot-product
+      automountServiceAccountToken: false
+      nodeSelector: {kubernetes.io/arch: amd64, railshot.io/node-role: platform}
+      imagePullSecrets: [{name: ghcr-pull}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+      initContainers:
+        - name: personal-gateway
+          image: BUILD_REQUIRED/personal-gateway
+          restartPolicy: Always
+          env:
+            - name: PERSONAL_GATEWAY_ENDPOINT
+              valueFrom:
+                configMapKeyRef: {name: railshot-personal-settings, key: gateway_endpoint}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            # The socket is born root:1000, avoiding CAP_CHOWN in this sidecar.
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL], add: [NET_ADMIN]}
+          ports:
+            - {name: wireguard, containerPort: 51820, hostPort: 51820, protocol: UDP}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 250m, memory: 128Mi}
+          volumeMounts:
+            - {name: personal-gateway-socket, mountPath: /run/railshot-personal-gateway}
+            - {name: personal-gateway-key, mountPath: /run/secrets/personal-gateway-key, readOnly: true}
+            - {name: personal-gateway-ipc, mountPath: /run/secrets/personal-gateway-ipc, readOnly: true}
+            - {name: personal-gateway-state, mountPath: /var/lib/railshot-personal-gateway}
+            - {name: personal-wireguard-state, mountPath: /etc/wireguard}
+            - {name: tmp, mountPath: /tmp}
+          startupProbe:
+            exec:
+              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: [python3, /opt/railshot/deployment/scripts/personal_gateway_service.py, --probe]
+            periodSeconds: 30
+            timeoutSeconds: 5
+        - name: private-config
+          image: BUILD_REQUIRED/api
+          command: [node, /app/apps/api/prepare-state.js]
+          env:
+            - {name: GITHUB_TOKEN, valueFrom: {secretKeyRef: {name: railshot-github, key: token}}}
+            - {name: HOME, value: /var/lib/railshot}
+            - name: RAILSHOT_OBSERVER_PRODUCT_FILE
+              valueFrom:
+                configMapKeyRef: {name: railshot-environments, key: observer_file, optional: true}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 128Mi}
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/railshot}
+            - {name: config, mountPath: /run/config, readOnly: true}
+            - {name: dns-config, mountPath: /run/dns, readOnly: true}
+            - {name: personal-config, mountPath: /run/personal-config, readOnly: true}
+            - {name: personal-gateway-ipc, mountPath: /run/personal-gateway-ipc, readOnly: true}
+      containers:
+        - name: api
+          image: BUILD_REQUIRED/api
+          ports: [{name: http, containerPort: 4173}]
+          env:
+            - {name: RAILSHOT_BIND_HOST, value: 0.0.0.0}
+            - {name: RAILSHOT_ALLOWED_HOSTS, value: "localhost,127.0.0.1,railshot.io,railshot-api,railshot-api.railshot-system.svc.cluster.local"}
+            - {name: RAILSHOT_ALLOWED_ORIGINS, value: "https://railshot.io"}
+            - {name: RAILSHOT_API_TOKEN_FILE, value: /run/secrets/api/token}
+            - {name: RAILSHOT_STATE_DIR, value: /var/lib/railshot/state}
+            - {name: RAILSHOT_MAX_CONCURRENT_DEPLOYMENTS, value: "3"}
+            - {name: RAILSHOT_CD_CONFIG, value: /var/lib/railshot/config/cd.json}
+            - {name: RAILSHOT_PERSONAL_CONFIG, value: /var/lib/railshot/config/personal.json}
+            - name: RAILSHOT_APPLICATIONS_FILE
+              valueFrom:
+                configMapKeyRef: {name: railshot-environments, key: applications_file, optional: true}
+            - {name: RAILSHOT_OBSERVER_CONFIG, value: /var/lib/railshot/config/observer.json}
+            - name: RAILSHOT_OBSERVER_PRODUCT_FILE
+              valueFrom:
+                configMapKeyRef: {name: railshot-environments, key: observer_file, optional: true}
+            - name: RAILSHOT_PROFILES_FILE
+              valueFrom:
+                configMapKeyRef: {name: railshot-environments, key: profiles_file, optional: true}
+            - {name: KUBECONFIG, value: /var/lib/railshot/config/kubeconfig}
+            - {name: HOME, value: /var/lib/railshot}
+            - {name: TMPDIR, value: /var/lib/railshot/tmp}
+            - {name: TF_PLUGIN_CACHE_DIR, value: /var/lib/railshot/provider-cache}
+            - {name: AWS_REGION, value: ap-northeast-2}
+            - {name: AWS_DEFAULT_REGION, value: ap-northeast-2}
+            - {name: AWS_EC2_METADATA_V1_DISABLED, value: 'true'}
+            - name: GOOGLE_APPLICATION_CREDENTIALS
+              valueFrom:
+                configMapKeyRef: {name: railshot-environments, key: google_credentials_file, optional: true}
+            - name: CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE
+              valueFrom:
+                configMapKeyRef: {name: railshot-environments, key: google_credentials_file, optional: true}
+            - {name: GITHUB_TOKEN, valueFrom: {secretKeyRef: {name: railshot-github, key: token}}}
+            - {name: GITHUB_OWNER, value: Jasmin-Softbank}
+            - {name: GITHUB_REPO, value: railshot-apps}
+            - {name: GITHUB_REF, value: main}
+            - {name: GITHUB_WORKFLOW, value: railshot-deploy.yml}
+            - {name: RAILSHOT_TENANT, value: demo}
+            - {name: RAILSHOT_TARGET_ID, value: TARGET_REQUIRED}
+            - {name: RAILSHOT_TARGET_PROVIDER, value: aws}
+          resources:
+            requests: {cpu: "1", memory: 256Mi}
+            limits: {cpu: '2', memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: api-token, mountPath: /run/secrets/api, readOnly: true}
+            - {name: state, mountPath: /var/lib/railshot}
+            - {name: kubernetes-api, mountPath: /run/railshot-kubernetes, readOnly: true}
+            - {name: personal-gateway-socket, mountPath: /run/railshot-personal-gateway}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http, httpHeaders: [{name: Host, value: localhost}]}
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+          startupProbe:
+            httpGet: {path: /readyz, port: http, httpHeaders: [{name: Host, value: localhost}]}
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: {path: /readyz, port: http, httpHeaders: [{name: Host, value: localhost}]}
+            periodSeconds: 5
+            timeoutSeconds: 5
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 128Mi}}
+        - name: api-token
+          secret: {secretName: railshot-api, defaultMode: 288}
+        - name: config
+          secret: {secretName: railshot-executors, defaultMode: 288}
+        - name: dns-config
+          secret: {secretName: railshot-cloudflare, defaultMode: 288, optional: true}
+        - name: personal-config
+          secret: {secretName: railshot-personal-config, defaultMode: 256}
+        - name: personal-gateway-key
+          secret:
+            secretName: railshot-personal-gateway-key
+            items:
+              - {key: private-key, path: private-key, mode: 256}
+        - name: personal-gateway-ipc
+          secret:
+            secretName: railshot-personal-gateway-ipc
+            items:
+              - {key: ipc-token, path: ipc-token, mode: 288}
+        - name: personal-gateway-socket
+          emptyDir: {sizeLimit: 1Mi}
+        - name: personal-gateway-state
+          persistentVolumeClaim: {claimName: railshot-personal-gateway}
+        - name: personal-wireguard-state
+          persistentVolumeClaim: {claimName: railshot-personal-wireguard}
+        - name: state
+          persistentVolumeClaim: {claimName: railshot-api}
+        - name: kubernetes-api
+          projected:
+            defaultMode: 288
+            sources:
+              - serviceAccountToken: {path: token, expirationSeconds: 3600}
+              - configMap:
+                  name: kube-root-ca.crt
+                  items: [{key: ca.crt, path: ca.crt}]
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: railshot-api, namespace: railshot-system}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 4Gi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: railshot-personal-gateway, namespace: railshot-system}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: railshot-personal-wireguard, namespace: railshot-system}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Gi}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: railshot-api-private, namespace: railshot-system}
+spec:
+  podSelector: {matchLabels: {app: railshot-api}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {matchLabels: {railshot.io/api-client: 'true'}}
+      ports: [{port: 4173, protocol: TCP}]
+    - from:
+        - ipBlock: {cidr: 0.0.0.0/0}
+      ports: [{port: 51820, protocol: UDP}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: railshot-api, namespace: railshot-system}
+spec:
+  type: ClusterIP
+  selector: {app: railshot-api}
+  ports: [{name: http, port: 4173, targetPort: http}]
+---
+# Included only when an existing API Pod template actually changes.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: railshot-api-prepare
+  namespace: railshot-system
+  annotations:
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels: {railshot.io/api-client: 'true'}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      nodeSelector: {kubernetes.io/arch: amd64, railshot.io/node-role: platform}
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {app: railshot-api}}
+              topologyKey: kubernetes.io/hostname
+      imagePullSecrets: [{name: ghcr-pull}]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: prepare
+          image: BUILD_REQUIRED/api
+          command: [node, /app/apps/api/src/prepare-release.js]
+          env:
+            - {name: RAILSHOT_API_TOKEN_FILE, value: /run/secrets/api/token}
+          resources:
+            requests: {cpu: 25m, memory: 32Mi}
+            limits: {cpu: 100m, memory: 96Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: api-token, mountPath: /run/secrets/api, readOnly: true}
+      volumes:
+        - name: api-token
+          secret: {secretName: railshot-api, defaultMode: 288}

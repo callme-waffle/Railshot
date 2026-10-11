@@ -1,0 +1,97 @@
+---
+- name: Require explicit isolated restore target
+  ansible.builtin.assert:
+    that:
+      - restore_confirm | bool
+      - inventory_hostname in groups.get('restore_targets', [])
+      - inventory_hostname not in groups.get('db_nodes', [])
+      - inventory_hostname not in groups.get('etcd_nodes', [])
+      - inventory_hostname not in groups.get('proxy_nodes', [])
+      - restore_backup_set is defined
+      - restore_backup_set is match('^[A-Za-z0-9_-]+$')
+      - restore_data_dir is defined
+      - restore_data_dir is match('^/[A-Za-z0-9_/-]+$')
+      - restore_data_dir != '/'
+      - pgbackrest_repo_path is defined
+      - cluster_name is match('^[A-Za-z0-9_-]+$')
+    fail_msg: Restore requires an isolated target, explicit opt-in, backup set and empty destination.
+- name: Reject an alias of a live cluster host
+  ansible.builtin.assert:
+    that:
+      - (ansible_host | default(inventory_hostname)) != (hostvars[item].ansible_host | default(item))
+      - private_ip | default(ansible_host | default(inventory_hostname)) != hostvars[item].private_ip | default(hostvars[item].ansible_host | default(item))
+  loop: "{{ groups.get('db_nodes', []) + groups.get('etcd_nodes', []) + groups.get('proxy_nodes', []) }}"
+- name: Require existing restore tools
+  ansible.builtin.command:
+    argv: [pgbackrest, version]
+  changed_when: false
+- name: Verify no running PostgreSQL or Patroni processes
+  ansible.builtin.command:
+    argv: [pgrep, -f, '(^|/)(postgres|postmaster|patroni)( |$)']
+  register: restore_processes
+  changed_when: false
+  failed_when: restore_processes.rc != 1
+- name: Require mounted repository
+  ansible.builtin.command:
+    argv: [mountpoint, --quiet, "{{ pgbackrest_repo_path }}"]
+  changed_when: false
+- name: Resolve restoration and repository paths
+  ansible.builtin.command:
+    argv: [realpath, -m, "{{ item }}"]
+  loop: ["{{ restore_data_dir }}", "{{ pgbackrest_repo_path }}"]
+  register: restore_resolved_paths
+  changed_when: false
+- name: Reject overlapping paths or path traversal
+  ansible.builtin.assert:
+    that:
+      - restore_resolved_paths.results[0].stdout == restore_data_dir
+      - restore_resolved_paths.results[1].stdout == pgbackrest_repo_path
+      - not restore_data_dir.startswith(pgbackrest_repo_path + '/')
+      - not pgbackrest_repo_path.startswith(restore_data_dir + '/')
+      - restore_data_dir != pgbackrest_repo_path
+- name: Inspect restore destination
+  ansible.builtin.stat:
+    path: "{{ restore_data_dir }}"
+    follow: false
+  register: restore_destination
+- name: Reject symlink or non-directory destination
+  ansible.builtin.assert:
+    that:
+      - not restore_destination.stat.exists or (restore_destination.stat.isdir and not restore_destination.stat.islnk)
+- name: Find existing destination contents
+  ansible.builtin.find:
+    paths: "{{ restore_data_dir }}"
+    file_type: any
+    hidden: true
+  register: restore_contents
+- name: Require empty destination
+  ansible.builtin.assert:
+    that: restore_contents.matched == 0
+- name: Create empty restore destination
+  ansible.builtin.file:
+    path: "{{ restore_data_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+- name: Restore selected backup without starting database or joining cluster
+  ansible.builtin.command:
+    argv:
+      - pgbackrest
+      - --config=/dev/null
+      - "--stanza={{ cluster_name }}"
+      - "--repo1-path={{ pgbackrest_repo_path }}"
+      - "--pg1-path={{ restore_data_dir }}"
+      - "--set={{ restore_backup_set }}"
+      - "--tablespace-map-all={{ restore_data_dir }}/tablespaces"
+      - --type=immediate
+      - --target-action=shutdown
+      - restore
+  become: true
+  become_user: postgres
+  changed_when: true
+- name: Explain remaining verification
+  ansible.builtin.debug:
+    msg: >-
+      Backup files restored only. PostgreSQL has NOT been started, WAL recovery and SQL data comparison remain
+      unverified. Keep this host isolated from the production DCS and applications.

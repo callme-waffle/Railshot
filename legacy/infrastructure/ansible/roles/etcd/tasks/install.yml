@@ -1,0 +1,20 @@
+---
+- name: Install distribution packages without automatic startup
+  ansible.builtin.apt:
+    name: [etcd-server, etcd-client]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+    policy_rc_d: 101
+
+- name: Create dedicated configuration and data directories
+  ansible.builtin.file:
+    path: '{{ item }}'
+    state: directory
+    owner: etcd
+    group: etcd
+    mode: '0700'
+  loop:
+    - /etc/etcd
+    - /etc/etcd/tls
+    - '{{ etcd_data_dir }}'

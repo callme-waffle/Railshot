@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+export DEBIAN_FRONTEND=noninteractive
+
+device=/dev/disk/by-id/google-railshot-data
+mount_path=${data_mount_path}
+for attempt in $(seq 1 120); do
+  [ ! -b "$device" ] || break
+  sleep 1
+done
+[ -b "$device" ] || { echo 'RAILSHOT: required data device missing' >&2; exit 1; }
+# Only this module-created whole disk is supported, never a partitioned/imported layout.
+[ "$(lsblk -nr -o TYPE "$device")" = disk ] || { echo 'RAILSHOT: partitioned disk rejected' >&2; exit 1; }
+fs_type=$(lsblk -dnro FSTYPE "$device")
+if [ -z "$fs_type" ]; then
+  [ '${initialize_empty_data_disk}' = true ] || { echo 'RAILSHOT: empty disk initialization not authorized' >&2; exit 1; }
+  signatures=$(wipefs --no-act --noheadings --output TYPE "$device")
+  [ -z "$signatures" ] || { echo 'RAILSHOT: unknown disk signature; refusing format' >&2; exit 1; }
+  # No force flag: only an explicitly authorized newly-created blank disk reaches this.
+  mkfs.ext4 -m 0 -L railshot-data "$device"
+elif [ "$fs_type" != ext4 ]; then
+  echo 'RAILSHOT: existing non-ext4 filesystem; refusing format' >&2
+  exit 1
+fi
+
+mkdir -p "$mount_path"
+disk_uuid=$(blkid -s UUID -o value "$device")
+[ -n "$disk_uuid" ]
+if ! mountpoint -q "$mount_path"; then
+  existing_data=$(find "$mount_path" -mindepth 1 -maxdepth 1 -print -quit)
+  [ -z "$existing_data" ] || { echo 'RAILSHOT: refusing to cover existing local node data' >&2; exit 1; }
+  fstab_entry="UUID=$disk_uuid $mount_path ext4 defaults,noatime,discard 0 2"
+  if ! grep -Fqx "$fstab_entry" /etc/fstab; then
+    ! awk -v path="$mount_path" '$2 == path {found=1} END {exit !found}' /etc/fstab || { echo 'RAILSHOT: conflicting fstab entry' >&2; exit 1; }
+    printf '%s\n' "$fstab_entry" >> /etc/fstab
+  fi
+  systemctl daemon-reload
+  mount "$mount_path"
+fi
+mounted_uuid=$(findmnt -n -o UUID --target "$mount_path")
+[ "$mounted_uuid" = "$disk_uuid" ] || { echo 'RAILSHOT: wrong data disk mounted' >&2; exit 1; }
+
+
+# Host preparation only. The team runtime owner installs and verifies the cluster.
+mkdir -p /var/lib/railshot
+printf '%s\n' '{"bootstrap":"host_prepared","runtime_ready":"not_configured"}' > /var/lib/railshot/bootstrap-status.json
+
+# Public host key only: the authenticated Compute API binds this to the VM identity.
+printf 'RAILSHOT_SSH_HOST_KEY %s\n' "$(base64 < /etc/ssh/ssh_host_ed25519_key.pub | tr -d '\n')" > /dev/ttyS0

@@ -1,0 +1,30 @@
+---
+- name: Read current dynamic configuration
+  ansible.builtin.uri:
+    url: "https://{{ private_ip }}:{{ patroni_api_port }}/config"
+    ca_path: /etc/patroni/tls/api-ca.crt
+    user: patroni
+    password: "{{ vault_patroni_api_password }}"
+    force_basic_auth: true
+    return_content: true
+  register: patroni_live_config
+  no_log: true
+- name: Patch only owned replication policy keys when changed
+  ansible.builtin.uri:
+    url: "https://{{ private_ip }}:{{ patroni_api_port }}/config"
+    method: PATCH
+    ca_path: /etc/patroni/tls/api-ca.crt
+    user: patroni
+    password: "{{ vault_patroni_api_password }}"
+    force_basic_auth: true
+    body_format: json
+    body:
+      synchronous_mode: "{{ replication_mode == 'synchronous' }}"
+      synchronous_mode_strict: "{{ synchronous_mode_strict | bool }}"
+      synchronous_node_count: "{{ synchronous_node_count | int }}"
+  when: >-
+    patroni_live_config.json.synchronous_mode | default(false) != (replication_mode == 'synchronous') or
+    patroni_live_config.json.synchronous_mode_strict | default(false) != (synchronous_mode_strict | bool) or
+    patroni_live_config.json.synchronous_node_count | default(1) != (synchronous_node_count | int)
+  changed_when: true
+  no_log: true

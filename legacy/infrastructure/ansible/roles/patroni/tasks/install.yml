@@ -1,0 +1,32 @@
+---
+- name: Install PostgreSQL common tooling without autostart
+  ansible.builtin.apt:
+    name: [postgresql-common, python3-venv, python3-pip, python3-psycopg2, libpq-dev]
+    state: present
+    update_cache: true
+    policy_rc_d: 101
+- name: Disable distribution automatic main cluster creation
+  ansible.builtin.lineinfile:
+    path: /etc/postgresql-common/createcluster.conf
+    regexp: '^#?create_main_cluster\s*='
+    line: 'create_main_cluster = false'
+- name: Detect pre-existing distribution clusters
+  ansible.builtin.command: pg_lsclusters --no-header
+  register: distribution_clusters
+  changed_when: false
+- name: Refuse to take over distribution clusters
+  ansible.builtin.assert:
+    that: distribution_clusters.stdout | trim | length == 0
+    fail_msg: Existing distribution-managed PostgreSQL cluster found; migrate it explicitly first.
+- name: Install PostgreSQL without service autostart
+  ansible.builtin.apt:
+    name: "postgresql-{{ postgres_version }}"
+    state: present
+    policy_rc_d: 101
+- name: Install pinned Patroni in isolated Python environment
+  ansible.builtin.pip:
+    name:
+      - "patroni[etcd3]=={{ patroni_version }}"
+      - psycopg2-binary==2.9.10
+    virtualenv: /opt/patroni
+    virtualenv_command: python3 -m venv

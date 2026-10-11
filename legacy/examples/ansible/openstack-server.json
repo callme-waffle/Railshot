@@ -1,0 +1,13 @@
+{
+  "id": "example-runtime-vm",
+  "name": "railshot-runtime",
+  "project_id": "example-project",
+  "status": "ACTIVE",
+  "addresses": [
+    {
+      "network": "management",
+      "address": "192.168.50.10",
+      "version": 4
+    }
+  ]
+}

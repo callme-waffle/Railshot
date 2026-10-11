@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Select repository checks from a complete Git diff; unknown paths run every check."""
 import argparse
+from fnmatch import fnmatchcase
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
+import shlex
 import subprocess
 
 JOBS = ('contracts', 'openstack', 'database-ansible', 'api-browser', 'terraform',
@@ -81,8 +83,45 @@ PERSONAL_GATEWAY_FILES = {'deployment/scripts/personal_wireguard.py',
                           'deployment/manifests/personal/gateway-service-entrypoint.sh'}
 
 
+def api_copy_sources():
+    """Keep API image variants aligned with repository-root Docker COPY sources."""
+    root = Path(__file__).resolve().parents[2]
+    stage = None
+    sources = set()
+    dockerfile = (root / 'apps/api/Dockerfile').read_text().replace('\\\n', ' ')
+    for line in dockerfile.splitlines():
+        line = line.strip()
+        if not line.upper().startswith(('FROM ', 'COPY ')):
+            continue
+        words = shlex.split(line, comments=True)
+        if not words:
+            continue
+        if words[0].upper() == 'FROM':
+            stage = words[-1] if len(words) >= 4 and words[-2].upper() == 'AS' else None
+        elif words[0].upper() == 'COPY' and stage in {'base', 'api', 'connection-api', 'local-renewal'}:
+            if any(word.startswith('--from=') for word in words[1:]):
+                continue  # Image-to-image copies are not repository source paths.
+            for source in (word for word in words[1:-1] if not word.startswith('--')):
+                if source.startswith('apps/dashboard/') and source != 'apps/dashboard/package.json':
+                    continue  # Bundled fallback assets keep their existing FE-only scope.
+                if (root / source).is_dir():
+                    source = source.rstrip('/') + '/'
+                sources.add(source)
+    return tuple(sorted(sources))
+
+
+API_COPY_SOURCES = api_copy_sources()
+
+
 def api_native_dependency(path):
-    return path in API_NATIVE_FILES or path.startswith(API_NATIVE_PREFIXES)
+    if path.startswith('legacy/'):
+        return False  # Archived copies are outside the active root build context.
+    return (path in API_NATIVE_FILES or path.startswith(API_NATIVE_PREFIXES)
+            or any(path.startswith(source) if source.endswith('/') else
+                   len(PurePosixPath(path).parts) == len(PurePosixPath(source).parts)
+                   and all(fnmatchcase(part, pattern) for part, pattern in
+                           zip(PurePosixPath(path).parts, PurePosixPath(source).parts))
+                   for source in API_COPY_SOURCES))
 
 
 def personal_release_dependency(path):
