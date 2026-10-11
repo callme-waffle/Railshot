@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "profile": "kubeadm-1c2w",
+  "cluster_id": "cluster-a",
+  "namespace": "cluster-public",
+  "name": "cluster-a-tunnel",
+  "tunnel_id": "99999999-9999-9999-9999-999999999999",
+  "credentials_secret": "cluster-a-tunnel-credentials",
+  "credentials_file": "/etc/railshot/private/cluster-a-tunnel-credentials.json",
+  "origin_vip": "10.10.0.10",
+  "ca_configmap": "cluster-a-origin-ca",
+  "ca_file": "/etc/railshot/private/cluster-a-origin-ca.pem"
+}

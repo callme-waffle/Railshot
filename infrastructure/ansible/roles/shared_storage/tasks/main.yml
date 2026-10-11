@@ -1,0 +1,70 @@
+---
+- name: Refuse check mode as storage readiness evidence
+  ansible.builtin.assert:
+    that:
+      - not ansible_check_mode
+      - railshot_storage is mapping
+      - railshot_nonce is match('^[a-f0-9]{32}$')
+    quiet: true
+
+- name: Allocate private shared storage execution directory
+  ansible.builtin.tempfile:
+    state: directory
+    prefix: railshot-shared-storage-
+  register: railshot_storage_directory
+
+- name: Install and prove shared filesystem connectivity
+  block:
+    - name: Copy trusted shared storage installer
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../deployment/shared-storage/install.py"
+        dest: "{{ railshot_storage_directory.path }}/install.py"
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Write private non-secret storage execution references
+      ansible.builtin.copy:
+        content: >-
+          {{ {'railshot_storage': railshot_storage,
+              'request_id': railshot_request_id,
+              'target_id': railshot_target_id,
+              'nonce': railshot_nonce,
+              'wait_seconds': railshot_wait_timeout_seconds | default(300)} | to_json }}
+        dest: "{{ railshot_storage_directory.path }}/config.json"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Run owned CSI install and cross-worker PVC proof
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/python3
+          - "{{ railshot_storage_directory.path }}/install.py"
+          - --config
+          - "{{ railshot_storage_directory.path }}/config.json"
+          - --receipt
+          - "{{ railshot_storage_directory.path }}/receipt.json"
+      changed_when: true
+      no_log: true
+
+    - name: Read actual storage observations
+      ansible.builtin.slurp:
+        src: "{{ railshot_storage_directory.path }}/receipt.json"
+      register: railshot_storage_observations
+      no_log: true
+
+    - name: Save storage readiness receipt on executor
+      ansible.builtin.copy:
+        content: "{{ railshot_storage_observations.content | b64decode }}"
+        dest: "{{ railshot_receipt_path }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+  always:
+    - name: Remove private transient storage execution directory
+      ansible.builtin.file:
+        path: "{{ railshot_storage_directory.path }}"
+        state: absent

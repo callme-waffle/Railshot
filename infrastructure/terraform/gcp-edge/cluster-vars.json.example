@@ -1,0 +1,6 @@
+{
+  "name": "railshot-cluster-a",
+  "hostname": "web.example.com",
+  "node_port": 30080,
+  "health_path": "/health"
+}

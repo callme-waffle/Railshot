@@ -13,6 +13,7 @@ data "openstack_networking_subnet_v2" "vip" {
 resource "openstack_lb_loadbalancer_v2" "app" {
   name                  = var.name
   vip_subnet_id         = data.openstack_networking_subnet_v2.vip.id
+  vip_address           = var.vip_address
   loadbalancer_provider = "amphora"
   admin_state_up        = true
 }
@@ -44,6 +45,21 @@ resource "openstack_lb_member_v2" "app" {
   pool_id       = openstack_lb_pool_v2.app[each.key].id
   subnet_id     = each.value.member_subnet_id
   address       = each.value.target_private_ip
+  protocol_port = each.value.node_port
+  lifecycle {
+    precondition {
+      condition     = length(var.compute_nodes) == 0 || anytrue([for node in values(var.compute_nodes) : node.private_ip == each.value.target_private_ip && node.subnet_id == each.value.member_subnet_id])
+      error_message = "Cluster route primary member must match one of the two bound compute nodes and its subnet."
+    }
+  }
+}
+
+resource "openstack_lb_member_v2" "compute" {
+  for_each      = local.extra_compute_members
+  name          = each.key
+  pool_id       = openstack_lb_pool_v2.app[each.value.route_key].id
+  subnet_id     = each.value.node.subnet_id
+  address       = each.value.node.private_ip
   protocol_port = each.value.node_port
 }
 

@@ -1,5 +1,6 @@
 from typing import Any
 
+from openstack.connection import Connection
 from openstack.exceptions import NotFoundException
 
 from control_plane.domain.errors import InvalidInput, NotFound, UpstreamFailure
@@ -19,6 +20,11 @@ from control_plane.infrastructure.openstack.errors import upstream
 
 
 class OpenStackComputeAdapter(ScopedAdapter):
+    def __init__(self, connection: Connection, project_id: str, provider_id: str,
+                 region_name: str | None = None) -> None:
+        super().__init__(connection, project_id, provider_id)
+        self.region_name = region_name
+
     def _get_owned(self, server_id: str) -> Any:
         with upstream():
             result = self.connection.compute.get_server(server_id)
@@ -32,7 +38,7 @@ class OpenStackComputeAdapter(ScopedAdapter):
         self.check_scope(ctx)
 
         def convert(resource: Any) -> Server:
-            result = mapping.server(resource)
+            result = mapping.server(resource, region=self.region_name)
             if result.project_id != self.project_id:
                 raise UpstreamFailure()
             return result
@@ -48,7 +54,7 @@ class OpenStackComputeAdapter(ScopedAdapter):
 
     def get_server(self, ctx: RequestContext, server_id: str) -> Server:
         self.check_scope(ctx)
-        return mapping.server(self._get_owned(server_id))
+        return mapping.server(self._get_owned(server_id), region=self.region_name)
 
     def create_server(self, ctx: RequestContext, spec: CreateServerSpec) -> Accepted:
         self.check_scope(ctx)

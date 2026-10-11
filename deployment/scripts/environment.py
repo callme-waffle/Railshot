@@ -55,6 +55,20 @@ def label(value):
 def registered_node(selected, target_id, request_id, *, timeout_seconds=None):
     """Resolve the existing Ansible registry without claiming live cloud readiness."""
     timeout = selected.get('timeout_seconds', 1200) if timeout_seconds is None else timeout_seconds
+    if selected.get('profile') == 'kubeadm-1c2w':
+        import kubeadm
+        argo.require(set(selected) == {'profile', 'cluster_file', 'purpose'} and selected['purpose'] == 'runtime',
+                     'prepared cluster registry fields differ')
+        request = kubeadm.from_registry(read_private(selected['cluster_file']), request_id=request_id)
+        argo.require(request['target']['id'] == target_id, 'cluster registry identity differs')
+        node = request['inventory']['control_plane'][0]
+        for member in request['inventory']['control_plane'] + request['inventory']['workers']:
+            for key in ('identity_file', 'known_hosts_file'):
+                ansible.private_file(member['ssh'][key], identity=key == 'identity_file')
+        resource = {'target_id': target_id, 'provider_kind': request['target']['provider'],
+                    'resource_id': node['resource_id'], 'addresses': {'private': node['private_ipv4']},
+                    'registered_request': request, 'profile': 'kubeadm-1c2w'}
+        return request, resource
     if 'server_file' in selected:
         fields = {'resource_id', 'project_id', 'management_network', 'placement',
                   'architecture', 'initialization', 'ssh'}
@@ -122,6 +136,8 @@ def load_configuration(registry, target_id, config, binding_file=None):
                  and not set(settings) - {'state_dir', 'source_repository', 'pull_secret_file', 'edge_config_file', 'target_security_group_id', 'expires_at', 'observability_config_file'},
                  'registration settings differ')
     argo.require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', settings['source_repository']), 'source repository required')
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        argo.require(not settings.get('edge_config_file'), 'KUBEADM_LEGACY_EDGE_WRITER_UNSUPPORTED')
     if settings.get('edge_config_file'):
         argo.require(descriptor['provider_kind'] == 'aws',
                      'AWS edge is AWS-only; GCP requires a provider-local public URL and verified management route')
@@ -183,20 +199,40 @@ def load_configuration(registry, target_id, config, binding_file=None):
     argo.require(isinstance(public['expected_json'], dict), 'HTTP JSON expectation required')
     cd = {**cd, 'targets': {target_id: registered}}
     identity = {'descriptor': descriptor, 'cd': cd, 'settings': settings,
-                'ssh_sha256': {key: hashlib.sha256(Path(selected['ssh'][key]).read_bytes()).hexdigest() for key in ('identity_file', 'known_hosts_file')},
+                'ssh_sha256': {key: hashlib.sha256(Path(request['inventory']['control_plane'][0]['ssh'][key]).read_bytes()).hexdigest() for key in ('identity_file', 'known_hosts_file')},
                 'pull_sha256': argo.document_hash(pull), 'database_sha256': argo.document_hash(binding)}
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        identity['cluster_edge_sha256'] = fixed_cluster_route(request, registered)
     return request, cd, settings, pull, binding, identity
+
+
+def fixed_cluster_route(request, registered):
+    """Use an installed initial route without invoking the legacy edge allocator."""
+    import cluster_edge
+    prepared = cluster_edge.validate(request)
+    public = urlsplit(registered['public_http']['url'])
+    routes = [route for route in prepared['fixed_routes'] if
+              route['hostname'] == public.hostname
+              and route['node_port'] == registered['target']['node_port']
+              and route['health_path'] == public.path
+              and public.path.startswith(route['path_prefix'])]
+    argo.require(public.scheme == 'https' and not public.query and not public.fragment
+                 and len(routes) == 1, 'KUBEADM_FIXED_EDGE_ROUTE_MISMATCH')
+    return prepared['binding_sha256']
 
 
 @contextmanager
 def runtime_kubectl(request):
     node = request['inventory']['control_plane'][0]
     with ansible.forwarded_port(node['ssh'].get('transport_ref'), time.monotonic() + 540) as port:
-        host = next(iter(ansible.build_inventory(request, port)['all']['children']['k3s_server']['hosts'].values()))
+        group = 'kubeadm_control' if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w' else 'k3s_server'
+        host = next(iter(ansible.build_inventory(request, port)['all']['children'][group]['hosts'].values()))
         prefix = ['ssh', *shlex.split(host['ansible_ssh_common_args']), '-i', host['ansible_ssh_private_key_file'],
                   '-p', str(host['ansible_port']), '-o', 'ConnectTimeout=15', host['ansible_user'] + '@' + host['ansible_host']]
         def kubectl(namespace, *args, document=None):
-            remote = shlex.join(['sudo', '-n', 'k3s', 'kubectl', '--request-timeout=20s', '-n', namespace, *args])
+            command = (['sudo', '-n', '/usr/bin/kubectl', '--kubeconfig=/etc/kubernetes/admin.conf']
+                       if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w' else ['sudo', '-n', 'k3s', 'kubectl'])
+            remote = shlex.join([*command, '--request-timeout=20s', '-n', namespace, *args])
             # Personal relay rechecks the complete app ownership/storage inventory
             # before lifecycle mutations. Keep ordinary commands on their short deadline.
             lifecycle = (node['ssh'].get('port') == 2223 and re.fullmatch(r'app-[a-f0-9]{24}', namespace)

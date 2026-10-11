@@ -1919,6 +1919,30 @@
             },
             "type": "array",
             "title": "Addresses"
+          },
+          "availability_zone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Availability Zone",
+            "default": null
+          },
+          "region": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Region",
+            "default": null
           }
         },
         "type": "object",

@@ -1,0 +1,10 @@
+---
+- name: Restart managed containerd
+  ansible.builtin.systemd_service:
+    name: containerd
+    daemon_reload: true
+    state: restarted
+- name: Apply managed sysctls
+  ansible.builtin.command:
+    argv: [/usr/sbin/sysctl, --load, /etc/sysctl.d/90-railshot-kubeadm.conf]
+  changed_when: true

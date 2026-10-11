@@ -21,6 +21,9 @@ def host_summary(request):
 
 
 def runtime_plan(request):
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        import kubeadm
+        return kubeadm.plan(request)
     node_id, host = host_summary(request)
     unsupported = ansible.support_error(request)
     return {'valid': True, 'operation': request['operation'], 'target_id': request['target']['id'],

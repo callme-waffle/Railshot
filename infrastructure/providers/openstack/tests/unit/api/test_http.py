@@ -235,3 +235,18 @@ def test_health_and_internal_failure(http):
     assert response.status_code == 500
     assert response.json()["error"]["code"] == "INTERNAL_ERROR"
     assert "secret-provider-password" not in response.text
+
+
+def test_server_response_preserves_optional_zone_and_region(http):
+    client, compute, *_ = http
+    legacy = client.get("/api/v1/servers/s1")
+    assert legacy.status_code == 200
+    assert legacy.json()["availability_zone"] is None
+    assert legacy.json()["region"] is None
+    observed = Server("s1", "web", "project", "ACTIVE", (), "nova-a", "RegionOne")
+    compute.get_server.return_value = observed
+    compute.list_servers.return_value = Page((observed,), None)
+    detail = client.get("/api/v1/servers/s1").json()
+    listed = client.get("/api/v1/servers").json()["items"][0]
+    assert detail["availability_zone"] == listed["availability_zone"] == "nova-a"
+    assert detail["region"] == listed["region"] == "RegionOne"

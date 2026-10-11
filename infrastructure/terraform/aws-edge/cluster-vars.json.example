@@ -1,0 +1,11 @@
+{
+  "name": "railshot-cluster-a",
+  "vpc_id": "vpc-0123456789abcdef0",
+  "public_subnet_ids": ["subnet-0123456789abcdef0", "subnet-0123456789abcdef1"],
+  "zone_id": "ZEXAMPLE",
+  "base_domain": "example.com",
+  "certificate_arn": "arn:aws:acm:ap-northeast-2:123456789012:certificate/11111111-1111-1111-1111-111111111111",
+  "routes": {
+    "app-web": {"host": "web.example.com", "node_port": 30080, "health_path": "/health", "priority": 100}
+  }
+}

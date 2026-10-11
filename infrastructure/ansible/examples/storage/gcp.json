@@ -1,0 +1,23 @@
+{
+  "runtime": {
+    "storage": {
+      "backend": "filestore",
+      "mode": "create",
+      "binding": {
+        "cluster_id": "demo",
+        "provider": "gcp",
+        "region": "asia-northeast3",
+        "account_id": "railshot-project"
+      },
+      "state_dir": "/var/lib/railshot-executor/storage/demo",
+      "credentials_file": "/etc/railshot-executor/storage-gcp.json",
+      "gcp": {
+        "network": "projects/railshot-project/global/networks/private",
+        "instance_name": "demo-files",
+        "share_name": "apps",
+        "capacity_gib": 1024,
+        "reserved_ip_range": "10.0.8.0/26"
+      }
+    }
+  }
+}

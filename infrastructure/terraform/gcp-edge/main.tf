@@ -16,10 +16,14 @@ data "google_compute_instance" "backend" {
 }
 
 locals {
-  nic                    = data.google_compute_instance.backend.network_interface[0]
-  gfe_sources            = ["35.191.0.0/16", "130.211.0.0/22"]
-  route_names            = { for id in keys(var.routes) : id => "${var.name}-${substr(sha256(id), 0, 16)}" }
-  active_routes          = { for id, route in var.routes : id => route if route.enabled }
+  nic           = data.google_compute_instance.backend.network_interface[0]
+  gfe_sources   = ["35.191.0.0/16", "130.211.0.0/22"]
+  route_names   = { for id in keys(var.routes) : id => "${var.name}-${substr(sha256(id), 0, 16)}" }
+  active_routes = { for id, route in var.routes : id => route if route.enabled }
+  extra_compute = { for id, node in var.compute_nodes : id => node if node.instance_name != var.instance_name || node.availability_zone != var.zone }
+  extra_route_compute = { for item in flatten([for route_id, route in local.active_routes : [
+    for node_id, node in local.extra_compute : { key = "${route_id}:${node_id}", route_id = route_id, node_id = node_id, node = node }
+  ]]) : item.key => item }
   dedicated_certificates = { for id, route in var.routes : id => route if route.certificate_id == null }
 }
 
@@ -29,11 +33,12 @@ resource "google_project_service" "certificates" {
 }
 
 resource "google_compute_firewall" "gfe" {
-  name                    = "${var.name}-gfe"
-  network                 = local.nic.network
-  direction               = "INGRESS"
-  source_ranges           = local.gfe_sources
-  target_service_accounts = [one(data.google_compute_instance.backend.service_account).email]
+  name          = "${var.name}-gfe"
+  network       = local.nic.network
+  direction     = "INGRESS"
+  source_ranges = local.gfe_sources
+  target_service_accounts = distinct(concat([one(data.google_compute_instance.backend.service_account).email],
+  [for instance in data.google_compute_instance.compute : one(instance.service_account).email]))
   allow {
     protocol = "tcp"
     ports    = concat([tostring(var.node_port)], [for id in sort(keys(local.active_routes)) : tostring(local.active_routes[id].node_port)])
@@ -48,6 +53,10 @@ resource "google_compute_network_endpoint_group" "app" {
   network_endpoint_type = "GCE_VM_IP_PORT"
   default_port          = var.node_port
   lifecycle {
+    precondition {
+      condition     = length(var.compute_nodes) == 0 || anytrue([for node in values(var.compute_nodes) : node.instance_name == var.instance_name && node.availability_zone == var.zone && node.private_ip == var.expected_private_ip])
+      error_message = "The primary endpoint must be one of the two bound compute nodes."
+    }
     precondition {
       condition     = length(data.google_compute_instance.backend.network_interface) == 1 && local.nic.network_ip == var.expected_private_ip
       error_message = "The existing VM must have one NIC with the reviewed private IP."
@@ -72,7 +81,7 @@ resource "google_compute_health_check" "app" {
   }
 }
 
-# ponytail: one existing VM remains a failure domain; add healthy endpoints for HA.
+# Legacy single endpoint remains valid; the kubeadm profile adds the other compute endpoint.
 resource "google_compute_backend_service" "app" {
   name                  = var.name
   load_balancing_scheme = "EXTERNAL_MANAGED"
@@ -82,6 +91,14 @@ resource "google_compute_backend_service" "app" {
     group                 = google_compute_network_endpoint_group.app.id
     balancing_mode        = "RATE"
     max_rate_per_endpoint = 100
+  }
+  dynamic "backend" {
+    for_each = local.extra_compute
+    content {
+      group                 = google_compute_network_endpoint_group.compute[backend.key].id
+      balancing_mode        = "RATE"
+      max_rate_per_endpoint = 100
+    }
   }
 }
 
@@ -124,6 +141,14 @@ resource "google_compute_backend_service" "routes" {
     group                 = google_compute_network_endpoint_group.routes[each.key].id
     balancing_mode        = "RATE"
     max_rate_per_endpoint = 100
+  }
+  dynamic "backend" {
+    for_each = local.extra_compute
+    content {
+      group                 = google_compute_network_endpoint_group.route_compute["${each.key}:${backend.key}"].id
+      balancing_mode        = "RATE"
+      max_rate_per_endpoint = 100
+    }
   }
 }
 
@@ -170,6 +195,20 @@ resource "google_certificate_manager_dns_authorization" "app" {
   domain     = var.hostname
   type       = "PER_PROJECT_RECORD"
   depends_on = [google_project_service.certificates]
+  provisioner "local-exec" {
+    interpreter = ["python3", "-c"]
+    command     = var.certificate_dns_owner_id == null ? "pass" : "from gcp_routes import certificate_dns; certificate_dns()"
+    environment = {
+      RAILSHOT_GCP_CERTIFICATE_DNS_REQUEST = jsonencode({
+        application_id       = var.certificate_dns_owner_id
+        purpose              = "certificate"
+        application_hostname = var.hostname
+        hostname             = trimsuffix(self.dns_resource_record[0].name, ".")
+        type                 = "CNAME"
+        content              = trimsuffix(self.dns_resource_record[0].data, ".")
+      })
+    }
+  }
 }
 
 resource "google_certificate_manager_certificate" "app" {
@@ -309,4 +348,51 @@ output "application_routes" {
     backend_service          = local.route_names[id]
     dns_authorization_record = try(google_certificate_manager_dns_authorization.routes[id].dns_resource_record[0], null)
   } }
+}
+
+# One NEG per additional compute and zone. Never add the control-plane VM.
+data "google_compute_instance" "compute" {
+  for_each = local.extra_compute
+  name     = each.value.instance_name
+  zone     = each.value.availability_zone
+  lifecycle {
+    postcondition {
+      condition     = length(self.network_interface) == 1 && self.network_interface[0].network_ip == each.value.private_ip && self.network_interface[0].network == local.nic.network
+      error_message = "Compute endpoints must match the reviewed private IP in the same VPC."
+    }
+  }
+}
+resource "google_compute_network_endpoint_group" "compute" {
+  for_each              = local.extra_compute
+  name                  = "${var.name}-${substr(sha256(each.key), 0, 8)}"
+  zone                  = each.value.availability_zone
+  network               = data.google_compute_instance.compute[each.key].network_interface[0].network
+  subnetwork            = data.google_compute_instance.compute[each.key].network_interface[0].subnetwork
+  network_endpoint_type = "GCE_VM_IP_PORT"
+  default_port          = var.node_port
+}
+resource "google_compute_network_endpoint" "compute" {
+  for_each               = local.extra_compute
+  network_endpoint_group = google_compute_network_endpoint_group.compute[each.key].name
+  zone                   = each.value.availability_zone
+  instance               = data.google_compute_instance.compute[each.key].name
+  ip_address             = each.value.private_ip
+  port                   = var.node_port
+}
+resource "google_compute_network_endpoint_group" "route_compute" {
+  for_each              = local.extra_route_compute
+  name                  = "${local.route_names[each.value.route_id]}-${substr(sha256(each.value.node_id), 0, 8)}"
+  zone                  = each.value.node.availability_zone
+  network               = data.google_compute_instance.compute[each.value.node_id].network_interface[0].network
+  subnetwork            = data.google_compute_instance.compute[each.value.node_id].network_interface[0].subnetwork
+  network_endpoint_type = "GCE_VM_IP_PORT"
+  default_port          = local.active_routes[each.value.route_id].node_port
+}
+resource "google_compute_network_endpoint" "route_compute" {
+  for_each               = local.extra_route_compute
+  network_endpoint_group = google_compute_network_endpoint_group.route_compute[each.key].name
+  zone                   = each.value.node.availability_zone
+  instance               = data.google_compute_instance.compute[each.value.node_id].name
+  ip_address             = each.value.node.private_ip
+  port                   = local.active_routes[each.value.route_id].node_port
 }

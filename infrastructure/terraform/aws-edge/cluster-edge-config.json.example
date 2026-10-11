@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "cluster_id": "cluster-a",
+  "provider": "aws",
+  "account_id": "123456789012",
+  "region": "ap-northeast-2",
+  "variables_file": "/etc/railshot/private/aws-cluster-edge-vars.json",
+  "worker_bindings": {
+    "arn:aws:ec2:ap-northeast-2:123456789012:instance/i-22222222222222222": {
+      "security_group_id": "sg-22222222222222222"
+    },
+    "arn:aws:ec2:ap-northeast-2:123456789012:instance/i-33333333333333333": {
+      "security_group_id": "sg-33333333333333333"
+    }
+  },
+  "timeout_seconds": 1800,
+  "credentials_file": "/etc/railshot/private/aws-provider-credentials.json"
+}

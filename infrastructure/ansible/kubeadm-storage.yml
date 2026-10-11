@@ -1,0 +1,7 @@
+---
+- name: Configure provider shared filesystem for kubeadm cluster
+  hosts: kubeadm_control
+  become: true
+  gather_facts: false
+  roles:
+    - shared_storage

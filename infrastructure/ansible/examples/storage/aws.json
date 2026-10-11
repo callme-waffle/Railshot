@@ -1,0 +1,25 @@
+{
+  "runtime": {
+    "storage": {
+      "backend": "efs",
+      "mode": "create",
+      "binding": {
+        "cluster_id": "demo",
+        "provider": "aws",
+        "region": "ap-northeast-2",
+        "account_id": "123456789012"
+      },
+      "state_dir": "/var/lib/railshot-executor/storage/demo",
+      "credentials_file": "/etc/railshot-executor/storage-aws.json",
+      "aws": {
+        "vpc_id": "vpc-0123456789abcdef0",
+        "worker_subnet_ids": {
+          "compute-a": "subnet-0123456789abcdef0",
+          "compute-b": "subnet-0123456789abcdef1"
+        },
+        "controller_credentials_secret": "efs-controller",
+        "controller_credentials_file": "/etc/railshot-secrets/efs-controller.json"
+      }
+    }
+  }
+}

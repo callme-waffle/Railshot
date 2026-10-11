@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "cluster_id": "cluster-a",
+  "provider": "gcp",
+  "account_id": "railshot-project",
+  "region": "asia-northeast3",
+  "variables_file": "/etc/railshot/private/gcp-cluster-edge-vars.json",
+  "dns_config_file": "/etc/railshot/private/cluster-dns.json",
+  "worker_bindings": {
+    "projects/railshot-project/zones/asia-northeast3-a/instances/compute-a": {},
+    "projects/railshot-project/zones/asia-northeast3-b/instances/compute-b": {}
+  },
+  "timeout_seconds": 1800,
+  "credentials_file": "/etc/railshot/private/gcp-provider-credentials.json"
+}

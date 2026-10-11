@@ -1,0 +1,10 @@
+{
+  "name": "railshot-cluster-a",
+  "vip_subnet_id": "77777777-7777-7777-7777-777777777777",
+  "vip_address": "10.10.0.10",
+  "default_tls_container_ref": "https://barbican.example.com/v1/containers/88888888-8888-8888-8888-888888888888",
+  "allowed_cidrs": ["10.10.0.0/16"],
+  "routes": {
+    "app-web": {"host": "web.example.com", "node_port": 30080, "health_path": "/health"}
+  }
+}

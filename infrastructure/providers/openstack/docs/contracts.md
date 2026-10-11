@@ -70,6 +70,8 @@ class Server:
     project_id: str
     status: str
     addresses: tuple[Address, ...]
+    availability_zone: str | None = None
+    region: str | None = None
 
 
 @dataclass(frozen=True)
@@ -314,3 +316,6 @@ request_id는 HTTP 요청 추적용이며 작업 ID나 중복 방지 키가 아�
 ## 구현 위치
 
 실제 코드와 Git 저장소는 프로젝트의 dev 디렉토리에 있습니다. 초기 계획의 src/control_plane 경로는 dev/src/control_plane을 의미합니다. 구현 및 실행 방법은 [README](../README.md), 검증 내역은 [검증 기록](validation.md)을 참조합니다.
+
+서버 GET/list 응답은 Nova에서 관측한 `availability_zone`과 Controller 설정의 `region_name`을 선택 필드로 포함한다.
+미제공 값은 null이며, kubeadm 3노드 프로파일은 AZ와 region이 명시된 snapshot을 요구한다.

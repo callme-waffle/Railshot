@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "cluster_id": "prepared-openstack",
+  "provider": "openstack",
+  "account_id": "demo-project",
+  "region": "RegionOne",
+  "members": [
+    {
+      "id": "control",
+      "role": "control_plane",
+      "availability_zone": "nova-a",
+      "ssh": {
+        "user": "ubuntu",
+        "port": 22,
+        "identity_file": "/etc/railshot/operator/id_ed25519",
+        "known_hosts_file": "/etc/railshot/operator/known_hosts"
+      },
+      "server_file": "/etc/railshot/operator/control-server.json",
+      "resource_id": "00000000-0000-4000-8000-000000000001",
+      "management_network": "management"
+    },
+    {
+      "id": "compute-a",
+      "role": "workers",
+      "availability_zone": "nova-b",
+      "ssh": {
+        "user": "ubuntu",
+        "port": 22,
+        "identity_file": "/etc/railshot/operator/id_ed25519",
+        "known_hosts_file": "/etc/railshot/operator/known_hosts"
+      },
+      "server_file": "/etc/railshot/operator/compute-a-server.json",
+      "resource_id": "00000000-0000-4000-8000-000000000002",
+      "management_network": "management"
+    },
+    {
+      "id": "compute-b",
+      "role": "workers",
+      "availability_zone": "nova-c",
+      "ssh": {
+        "user": "ubuntu",
+        "port": 22,
+        "identity_file": "/etc/railshot/operator/id_ed25519",
+        "known_hosts_file": "/etc/railshot/operator/known_hosts"
+      },
+      "server_file": "/etc/railshot/operator/compute-b-server.json",
+      "resource_id": "00000000-0000-4000-8000-000000000003",
+      "management_network": "management"
+    }
+  ],
+  "runtime": {
+    "wait_timeout_seconds": 300,
+    "storage": {
+      "backend": "cephfs",
+      "mode": "reuse",
+      "binding": {
+        "cluster_id": "prepared-openstack",
+        "provider": "openstack",
+        "account_id": "demo-project",
+        "region": "RegionOne"
+      }
+    },
+    "edge": "/etc/railshot/operator/openstack-edge.json"
+  }
+}

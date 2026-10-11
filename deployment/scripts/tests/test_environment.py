@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import tempfile
 import time
+import types
 import unittest
 from unittest.mock import patch
 import yaml
@@ -486,6 +487,48 @@ class RegistrationTest(unittest.TestCase):
         result = self.run_registration()
         self.assertEqual(result['status'], 'unknown')
         self.assertEqual(self.runtime.applications, 0)
+
+    def kubeadm_registration_inputs(self):
+        selected = {'profile': 'kubeadm-1c2w', 'cluster_file': str(self.root / 'cluster.json'), 'purpose': 'runtime'}
+        self.registry['targets'][self.target] = selected
+        request = env.ansible.from_descriptor(self.descriptor, request_id='registration.' + self.target,
+            operation='guest.check', ssh={'user': 'ubuntu', 'identity_file': str(self.root / 'key'),
+                                         'known_hosts_file': str(self.root / 'hosts')})
+        request['operation'] = 'runtime.install'
+        request['runtime'] = {'profile': 'kubeadm-1c2w', 'edge': '/private/cluster-edge.json'}
+        descriptor = copy.deepcopy(self.descriptor); descriptor['profile'] = 'kubeadm-1c2w'
+        return request, descriptor
+
+    def test_kubeadm_rejects_legacy_edge_allocator_before_any_mutation(self):
+        request, descriptor = self.kubeadm_registration_inputs()
+        self.config['registration'].update(edge_config_file='/private/legacy-edge.json', expires_at='2099-01-01T00:00:00Z')
+        self.write('registry.json', self.registry); self.write('config.json', self.config)
+        with patch.object(env, 'registered_node', return_value=(request, descriptor)), \
+                patch.object(env.argo, 'native', side_effect=AssertionError('legacy allocator cannot execute')):
+            with self.assertRaisesRegex(Exception, 'KUBEADM_LEGACY_EDGE_WRITER_UNSUPPORTED'):
+                self.run_registration()
+        self.assertFalse(self.shared.exists()); self.assertFalse(self.home.exists())
+        self.assertEqual(self.runtime.applications, 0); self.assertEqual(self.control.applications, 0)
+        self.assertIsNone(self.variable)
+
+    def test_kubeadm_registration_uses_exact_fixed_initial_route(self):
+        request, descriptor = self.kubeadm_registration_inputs()
+        route = {'hostname': 'new.example.test', 'node_port': 30085, 'health_path': '/health',
+                 'path_prefix': '/', 'expected_status': 200}
+        prepared = {'fixed_routes': [route], 'binding_sha256': 'a' * 64}
+        module = types.SimpleNamespace(validate=lambda request: prepared)
+        with patch.object(env, 'registered_node', return_value=(request, descriptor)), \
+                patch.dict(sys.modules, {'cluster_edge': module}):
+            loaded = env.load_configuration(self.registry, self.target, self.config)
+            self.assertEqual(loaded[-1]['cluster_edge_sha256'], 'a' * 64)
+            for changes in ({'node_port': 30086}, {'hostname': 'other.example.test'},
+                            {'health_path': '/other'}, {'path_prefix': '/app/' }):
+                with self.subTest(changes=changes):
+                    prepared['fixed_routes'] = [{**route, **changes}]
+                    with self.assertRaisesRegex(Exception, 'KUBEADM_FIXED_EDGE_ROUTE_MISMATCH'):
+                        env.load_configuration(self.registry, self.target, self.config)
+        self.assertFalse(self.shared.exists()); self.assertFalse(self.home.exists())
+        self.assertEqual(self.runtime.applications, 0); self.assertEqual(self.control.applications, 0)
 
     def test_gcp_aws_edge_is_rejected_before_registration_side_effects(self):
         descriptor = json.loads((ROOT / 'examples/ansible/gcp-node-descriptor.json').read_text())

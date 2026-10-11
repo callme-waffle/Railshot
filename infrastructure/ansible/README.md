@@ -234,3 +234,13 @@ stdout 성공 결과는 `status`, `request_id`, `target_id`, `database_ready`, `
 권한 경계와 TLS SAN을 검사합니다. OpenSSL/Ansible Vault가 있으면 실제 인증서와 암호화 파일도
 검사하며 cloud·SSH·실제 DB를 호출하지 않습니다. 고정 guest installer의 SQL 검사는 모의 연결
 검사이므로 실제 PostgreSQL 인수와 구분합니다.
+
+## 준비된 3노드 kubeadm 프로파일
+
+명시적 `profile: kubeadm-1c2w`는 준비된 Ubuntu amd64 control 1대·compute 2대에
+containerd·kubeadm·Cilium과 공급자별 공유 storage·공개 접근을 구성한다.
+기존 단일 노드 K3s 실행을 자동 전환하거나 설치를 채택하지 않는다.
+운영자 private cluster 명세를 `run.py --cluster-file`로 실행하거나 기존 registry에 등록한다.
+입력 예제는 [examples/kubeadm](examples/kubeadm), 실행·재실행과 readiness 경계는
+[운영 절차](../../docs/operations/kubeadm-runtime.md)를 따른다.
+로컬 validate-only는 준비 상태를 true로 기록하지 않으며 실제 서버 인수는 별도로 진행한다.

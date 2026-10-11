@@ -22,13 +22,15 @@ variable "public_subnet_ids" {
   }
 }
 variable "routes" {
-  description = "Administrator-assigned AWS app routes; one IP target per app. Set manage_dns=false only after explicit DNS state ownership transfer."
+  description = "Administrator-assigned AWS app routes; legacy primary IP plus the optional second bound compute target. Set manage_dns=false only after explicit DNS state ownership transfer."
   type = map(object({
     host                     = string
     provider_kind            = string
     target_private_ip        = string
     node_port                = number
     health_path              = string
+    expected_status          = optional(number)
+    path_prefix              = optional(string, "/")
     priority                 = number
     target_security_group_id = optional(string)
     manage_dns               = optional(bool, true)
@@ -41,6 +43,8 @@ variable "routes" {
       can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", route.target_private_ip)) &&
       route.node_port >= 30000 && route.node_port <= 32767 && floor(route.node_port) == route.node_port &&
       route.priority >= 1 && route.priority <= 50000 && floor(route.priority) == route.priority &&
+      (route.expected_status == null ? true : (route.expected_status >= 200 && route.expected_status <= 299 && floor(route.expected_status) == route.expected_status)) &&
+      can(regex("^/([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$", route.path_prefix)) &&
       length(route.health_path) <= 1024 && can(regex("^/[^\\r\\n]*$", route.health_path)) &&
       length(route.host) <= 253 && can(regex("^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$", route.host)) &&
       can(regex("^sg-[0-9a-f]{8,17}$", route.target_security_group_id))
@@ -210,5 +214,28 @@ variable "wireguard_route_table_ids" {
   validation {
     condition     = length(var.wireguard_route_table_ids) == 0
     error_message = "WireGuard is retired; complete the documented migration and remove wireguard_route_table_ids."
+  }
+}
+
+variable "compute_nodes" {
+  description = "Optional kubeadm profile: exactly two reviewed existing compute instances. Empty preserves legacy route targets and addresses."
+  type = map(object({
+    resource_id       = string
+    private_ip        = string
+    availability_zone = string
+    security_group_id = string
+  }))
+  default = {}
+  validation {
+    condition = length(var.compute_nodes) == 0 || (length(var.compute_nodes) == 2 &&
+      length(distinct([for node in values(var.compute_nodes) : node.resource_id])) == 2 &&
+      length(distinct([for node in values(var.compute_nodes) : node.private_ip])) == 2 &&
+      alltrue([for node in values(var.compute_nodes) :
+        can(regex("^i-[0-9a-f]{8,17}$", node.resource_id)) &&
+        can(cidrnetmask("${node.private_ip}/32")) &&
+        can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", node.private_ip)) &&
+        can(regex("^sg-[0-9a-f]{8,17}$", node.security_group_id)) && length(node.availability_zone) > 0
+    ]))
+    error_message = "Provide no compute profile or exactly two distinct RFC1918 existing instance bindings."
   }
 }
