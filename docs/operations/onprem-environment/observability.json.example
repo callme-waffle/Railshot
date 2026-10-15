@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "owner": "REPLACE_OBSERVER_OWNER",
+  "lifecycle": "shared",
+  "expires_at": "REPLACE_FUTURE_UTC_EXPIRY",
+  "state_dir": "/etc/railshot/private/onprem/observer-state",
+  "prometheus_url": "REPLACE_OBSERVER_PROMETHEUS_URL",
+  "observer_ip": "REPLACE_OBSERVER_PRIVATE_IP",
+  "observer_source_cidr": "REPLACE_OBSERVER_EGRESS_CIDR",
+  "observer_registry_file": "/etc/railshot/private/onprem/observer-registry.json",
+  "observer_target_id": "REPLACE_OBSERVER_TARGET_ID",
+  "observer_directory": "/var/lib/railshot-observability",
+  "node_metrics_port": 30100,
+  "cluster_metrics_port": 30101
+}

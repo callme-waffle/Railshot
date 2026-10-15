@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "client_cidrs": ["10.80.0.0/24"],
+  "tls": {
+    "server_name": "REPLACE_POSTGRES_TLS_NAME",
+    "ca_file": "/etc/railshot/private/onprem/postgres-ca.pem",
+    "certificate_file": "/etc/railshot/private/onprem/postgres-server.pem",
+    "key_file": "/etc/railshot/private/onprem/postgres-server.key"
+  },
+  "probe_password_file": "/etc/railshot/private/onprem/postgres-probe-password.txt",
+  "backup": {
+    "type": "s3",
+    "bucket": "REPLACE_BACKUP_BUCKET",
+    "prefix": "/railshot/postgres",
+    "region": "REPLACE_OBJECT_STORAGE_REGION",
+    "endpoint": "REPLACE_OBJECT_STORAGE_DNS_ENDPOINT",
+    "identity": "secret",
+    "credentials_file": "/etc/railshot/private/onprem/postgres-backup-credentials.json",
+    "retention_full": 7
+  },
+  "restore_approval_file": "/etc/railshot/private/onprem/postgres-restore-approval.json",
+  "timeout_seconds": 1800
+}

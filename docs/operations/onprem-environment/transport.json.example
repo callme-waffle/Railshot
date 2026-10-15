@@ -1,0 +1,8 @@
+{
+  "owner_id": "REPLACE_RAILSHOT_USER_ID",
+  "account_id": "onprem-account",
+  "project_id": "REPLACE_PROJECT_ID",
+  "personal_config": "/etc/railshot/private/personal.json",
+  "personal_state_dir": "/var/lib/railshot/personal",
+  "target_file": "/etc/railshot/private/onprem/enrolled-target.json"
+}

@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
@@ -24,7 +25,7 @@ HOME = Path('/var/lib/railshot-personal-cli')
 RESOURCES = ('security group rule', 'security group', 'floating ip', 'availability zone',
              'server', 'volume', 'network', 'subnet', 'router', 'port', 'image', 'flavor', 'keypair', 'limits', 'quota')
 CREATES = {
-    'server': {'--image', '--flavor', '--network', '--nic', '--key-name', '--security-group', '--property'},
+    'server': {'--image', '--flavor', '--network', '--nic', '--key-name', '--security-group', '--property', '--availability-zone'},
     'volume': {'--size', '--type', '--description', '--availability-zone', '--image', '--property'},
     'network': {'--description', '--mtu'},
     'subnet': {'--network', '--subnet-range', '--gateway', '--dns-nameserver', '--allocation-pool', '--ip-version'},
@@ -36,7 +37,7 @@ CREATES = {
     'keypair': set(),
 }
 BOOLEAN_FLAGS = {'--ingress', '--egress'}
-FIELDS = {'id', 'name', 'status', 'project_id', 'tenant_id', 'user_id', 'addresses', 'networks', 'image', 'flavor',
+FIELDS = {'id', 'name', 'status', 'owner', 'project_id', 'tenant_id', 'os-vol-tenant-attr:tenant_id', 'user_id', 'addresses', 'networks', 'image', 'flavor',
           'size', 'volume_type', 'availability_zone', 'availability_zone_state', 'zone_name', 'zone_state',
           'network_id', 'subnet_id', 'subnets', 'cidr', 'gateway_ip', 'ip_version', 'allocation_pools',
           'dns_nameservers', 'fixed_ips', 'fixed_ip_addresses', 'mac_address', 'device_id', 'device_owner', 'admin_state_up',
@@ -44,7 +45,7 @@ FIELDS = {'id', 'name', 'status', 'project_id', 'tenant_id', 'user_id', 'address
           'security_groups', 'security_group_ids', 'security_group_id', 'security_group_rules', 'direction', 'ethertype',
           'protocol', 'port_range_min', 'port_range_max', 'remote_ip_prefix', 'remote_group_id',
           'public_key', 'fingerprint', 'type', 'ram', 'vcpus', 'disk', 'ephemeral', 'swap',
-          'min_disk', 'min_ram', 'visibility', 'protected', 'shared', 'is_public', 'mtu',
+          'min_disk', 'min_ram', 'visibility', 'protected', 'shared', 'is_public', 'mtu', 'router:external',
           'attachments', 'bootable', 'encrypted', 'multiattach', 'created_at', 'updated_at',
           'volumes_attached', 'os_extended_volumes:volumes_attached', 'value', 'cores', 'instances', 'gigabytes',
           'volumes', 'snapshots', 'floating_ips', 'fixed_ips', 'security_groups', 'security_group_rules',
@@ -78,8 +79,15 @@ def decode(raw):
         except (TypeError, ValueError, base64.binascii.Error):
             raise ProtocolError('command_rejected') from None
     params = request['params']
-    require(isinstance(params, dict) and 'argv' in params and set(params) <= {'argv', 'delete_data', 'public_key'})
+    require(isinstance(params, dict) and 'argv' in params and set(params) <= {'argv', 'delete_data', 'public_key', 'guest'})
     require('delete_data' not in params or type(params['delete_data']) is bool)
+    if 'guest' in params:
+        guest = params['guest']
+        require(isinstance(guest, dict) and set(guest) == {'user', 'public_key', 'marker'}
+                and IDENT.fullmatch(guest['user']) and guest['user'] != 'root'
+                and re.fullmatch(r'ssh-ed25519 [A-Za-z0-9+/=]+(?: [^\r\n]*)?', guest['public_key'])
+                and re.fullmatch(r'RAILSHOT_HOST_KEY:[a-f0-9]{64} ', guest['marker']))
+        require(params['argv'][:2] == ['server', 'create'])
     parse(params['argv'])
     return request
 
@@ -92,8 +100,23 @@ def parse(argv):
     offset = len(resource.split())
     require(len(argv) > offset)
     verb = argv[offset]
-    require(verb in ('list', 'show', 'create', 'delete'))
     rest = argv[offset + 1:]
+    if resource == 'router' and verb == 'set':
+        require(len(rest) == 3 and rest[0] == '--external-gateway' and all(IDENT.fullmatch(x) for x in rest[1:]))
+        return resource, verb
+    if resource == 'router' and verb in ('add', 'remove'):
+        require(len(rest) == 3 and rest[0] == 'subnet' and all(IDENT.fullmatch(x) for x in rest[1:]))
+        return resource, verb
+    if resource == 'server' and verb == 'add':
+        require(len(rest)==3 and rest[0]=='volume' and all(IDENT.fullmatch(x) for x in rest[1:]))
+        return resource,verb
+    if resource == 'server' and verb in ('start', 'stop'):
+        require(len(rest) == 1 and IDENT.fullmatch(rest[0]))
+        return resource, verb
+    if resource == 'server' and verb == 'hostkey':
+        require(len(rest) == 2 and IDENT.fullmatch(rest[0]) and re.fullmatch(r'RAILSHOT_HOST_KEY:[a-f0-9]{64}', rest[1]))
+        return resource, verb
+    require(verb in ('list', 'show', 'create', 'delete'))
     if verb == 'list':
         require(resource not in ('quota', 'limits') and (not rest or resource == 'security group rule' and len(rest) == 1 and IDENT.fullmatch(rest[0])))
     elif verb == 'show':
@@ -152,7 +175,7 @@ def save(path, value):
 def require_project(cli, resource, reference, project_id, shared=False):
     require(isinstance(reference, str) and IDENT.fullmatch(reference))
     observed = cli.run(resource.split() + ['show', reference])
-    project = observed.get('project_id', observed.get('tenant_id'))
+    project = observed.get('project_id', observed.get('tenant_id',observed.get('os-vol-tenant-attr:tenant_id')))
     require(project == project_id or shared and observed.get('shared') is True)
     return observed
 
@@ -166,6 +189,13 @@ def validate_references(cli, resource, argv, project_id):
         if flag in references:
             require_project(cli, references[flag], argv[index + 1], project_id,
                             shared=flag == '--network' and resource in ('server', 'port'))
+        if resource=='port' and flag=='--fixed-ip':
+            parts=dict(item.split('=',1) for item in argv[index+1].split(','))
+            require(set(parts)=={'subnet','ip-address'})
+            subnet=require_project(cli,'subnet',parts['subnet'],project_id)
+            import ipaddress
+            address=ipaddress.IPv4Address(parts['ip-address'])
+            require(address in ipaddress.IPv4Network(subnet['cidr']) and '--network' in argv and subnet['network_id']==argv[argv.index('--network')+1])
         if flag == '--nic':
             parts = dict(item.split('=', 1) for item in argv[index + 1].split(','))
             require(set(parts) <= {'net-id', 'port-id', 'v4-fixed-ip', 'v6-fixed-ip'}
@@ -179,7 +209,7 @@ def validate_references(cli, resource, argv, project_id):
     if resource == 'floating ip':
         # Floating-IP pools are normally shared external provider networks.
         observed = cli.run(['network', 'show', argv[-1]])
-        require(observed.get('project_id', observed.get('tenant_id')) == project_id
+        require(observed.get('project_id', observed.get('tenant_id',observed.get('os-vol-tenant-attr:tenant_id'))) == project_id
                 or observed.get('router:external') is True)
 
 
@@ -192,6 +222,24 @@ def execute(request, config, cli, home=HOME, secrets=()):
     token = cli.run(['token', 'issue'])
     require(token.get('project_id') == config['project_id'])
     secrets = (*secrets, token.get('id', ''))
+    if verb == 'hostkey':
+        observed = require_project(cli, 'server', argv[2], config['project_id'])
+        owned = load(home / 'resources.json', {})
+        require(owned.get('server:' + argv[2], {}).get('target_id') == config['target_id'])
+        captured = []
+        def capture(arguments, **kwargs):
+            result = cli.runner(arguments, **kwargs)
+            require(len(result.stdout or '') <= MAX_REQUEST_BYTES * 64)
+            captured.append(result.stdout or '')
+            return result
+        probe = OpenStackCLI(cli.auth, runner=capture, timeout=cli.timeout, temp_parent='/dev/shm')
+        probe.run(['console', 'log', 'show', argv[2], '--lines', '200'], json_output=False)
+        marker = argv[3] + ' '
+        keys = {line[len(marker):].strip() for line in ''.join(captured).splitlines() if line.startswith(marker)}
+        require(len(keys) <= 1)
+        public = keys.pop() if keys else ''
+        require(not public or re.fullmatch(r'ssh-ed25519 [A-Za-z0-9+/=]+(?: [^\r\n]*)?', public))
+        return {'id': argv[2], 'public_key': public}
     if verb in ('list', 'show'):
         scoped = list(argv)
         if verb == 'list' and resource in ('network', 'subnet', 'router', 'port', 'floating ip', 'security group', 'security group rule'):
@@ -200,9 +248,9 @@ def execute(request, config, cli, home=HOME, secrets=()):
             scoped += ['--absolute']
         result = cli.run(scoped)
         if isinstance(result, dict):
-            project = result.get('project_id', result.get('tenant_id'))
+            project = result.get('project_id', result.get('tenant_id',result.get('os-vol-tenant-attr:tenant_id')))
             require(project == config['project_id'] or resource in ('image', 'flavor', 'keypair', 'limits', 'quota')
-                    or resource == 'network' and result.get('shared') is True)
+                    or resource == 'network' and (result.get('shared') is True or result.get('router:external') is True))
         return sanitize(result, secrets)
     private_directory(home)
     lock_fd = os.open(home / 'jobs.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -218,6 +266,33 @@ def execute(request, config, cli, home=HOME, secrets=()):
             return prior['result']
         owned_path = home / 'resources.json'
         owned = load(owned_path, {})
+        if resource=='server' and verb=='add':
+            server_id,volume_id=argv[-2:]
+            for kind,ident in (('server',server_id),('volume',volume_id)):
+                record=owned.get(kind+':'+ident)
+                require(record and record['target_id']==config['target_id'] and not record.get('removed'))
+            server=require_project(cli,'server',server_id,config['project_id'])
+            volume=require_project(cli,'volume',volume_id,config['project_id'])
+            require(server.get('status')=='ACTIVE' and volume.get('status')=='available' and not volume.get('attachments'))
+            a,b=server.get('properties',{}),volume.get('properties',{})
+            require(a.get('railshot.environment') and a.get('railshot.owner') and all(a.get(k)==b.get(k) for k in ('railshot.environment','railshot.owner')) and b.get('railshot.role')=='database')
+        if resource=='router' and verb in ('set', 'add', 'remove'):
+            router_id = argv[-1] if verb == 'set' else argv[-2]
+            record = owned.get('router:' + router_id)
+            require(record and record['target_id'] == config['target_id'] and not record.get('removed'))
+            require_project(cli, 'router', router_id, config['project_id'])
+            if verb == 'set':
+                external = cli.run(['network', 'show', argv[-2]])
+                require(external.get('router:external') is True)
+            else:
+                subnet = owned.get('subnet:' + argv[-1])
+                require(subnet and subnet['target_id'] == config['target_id'] and not subnet.get('removed'))
+                require_project(cli, 'subnet', argv[-1], config['project_id'])
+        if verb in ('start', 'stop'):
+            record = owned.get('server:' + argv[-1])
+            require(record and record['target_id'] == config['target_id'] and not record.get('removed'))
+            observed = require_project(cli, 'server', argv[-1], config['project_id'])
+            require(observed.get('status') == ('SHUTOFF' if verb == 'start' else 'ACTIVE'))
         if verb == 'delete':
             ident = resource + ':' + argv[-1]
             record = owned.get(ident)
@@ -225,7 +300,7 @@ def execute(request, config, cli, home=HOME, secrets=()):
             if resource in ('server', 'volume'):
                 require(request['params'].get('delete_data') is True)
             observed = cli.run(resource.split() + ['show', argv[-1]])
-            project = observed.get('project_id', observed.get('tenant_id'))
+            project = observed.get('project_id', observed.get('tenant_id',observed.get('os-vol-tenant-attr:tenant_id')))
             require(resource == 'keypair' or project == config['project_id'])
             if resource == 'keypair':
                 require(record.get('identity') == keypair_identity(observed))
@@ -246,6 +321,16 @@ def execute(request, config, cli, home=HOME, secrets=()):
                     path = Path(folder) / 'public.key'
                     path.write_text(request['params']['public_key'])
                     result = cli.run([*argv[:-1], '--public-key', str(path), argv[-1]])
+            elif resource == 'server' and request['params'].get('guest'):
+                guest = request['params']['guest']
+                cloud = {'users': [{'name': guest['user'], 'lock_passwd': True, 'shell': '/bin/bash',
+                    'sudo': ['ALL=(ALL) NOPASSWD:ALL'], 'ssh_authorized_keys': [guest['public_key']]}],
+                    'disable_root': True, 'ssh_pwauth': False, 'runcmd': [['sh', '-c',
+                    'printf ' + repr(guest['marker']) + ' > /dev/console; cat /etc/ssh/ssh_host_ed25519_key.pub > /dev/console']]}
+                with tempfile.TemporaryDirectory(prefix='railshot-guest-', dir='/dev/shm') as directory:
+                    path = Path(directory) / 'cloud-init.json'
+                    path.write_text('#cloud-config\n' + json.dumps(cloud)); path.chmod(0o600)
+                    result = cli.run([*argv[:-1], '--user-data', str(path), argv[-1]])
             else:
                 result = cli.run(argv)
             resource_id = result.get('id', result.get('ID', result.get('name', result.get('Name')) if resource == 'keypair' else None))
@@ -254,14 +339,28 @@ def execute(request, config, cli, home=HOME, secrets=()):
                 **({'identity': keypair_identity(result)} if resource == 'keypair' else {})}
             save(owned_path, owned)
             result = sanitize(result, secrets)
+        elif verb in ('start', 'stop'):
+            cli.run(argv, json_output=False)
+            observed = require_project(cli, 'server', argv[-1], config['project_id'])
+            result = {'id': argv[-1], 'status': observed.get('status')}
+        elif resource=='server' and verb=='add':
+            cli.run(argv,json_output=False)
+            result={'id':volume_id,'status':'attaching'}
+        elif verb in ('set', 'add', 'remove'):
+            cli.run(argv, json_output=False)
+            result = {'id': router_id, 'status': 'configured'}
         else:
             cli.run(argv, json_output=False)
-            try:
-                cli.run(resource.split() + ['show', argv[-1]])
-            except ProviderError as exc:
-                require(exc.code == 'not_found')
-            else:
-                raise ProviderError('mutation_unknown')
+            deadline = time.monotonic() + 60
+            while True:
+                try:
+                    cli.run(resource.split() + ['show', argv[-1]])
+                except ProviderError as exc:
+                    require(exc.code == 'not_found')
+                    break
+                if time.monotonic() >= deadline:
+                    raise ProviderError('mutation_unknown')
+                time.sleep(1)
             owned[ident]['removed'] = True
             save(owned_path, owned)
             result = {'id': argv[-1], 'status': 'deleted'}

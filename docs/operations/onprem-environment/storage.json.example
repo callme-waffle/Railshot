@@ -1,0 +1,17 @@
+{
+  "backend": "cephfs",
+  "mode": "reuse",
+  "binding": {"cluster_id": "${environment_id}", "provider": "openstack", "account_id": "${project_id}", "region": "${region}"},
+  "cephfs": {
+    "cluster_id": "REPLACE_CEPH_FSID",
+    "monitors": ["10.90.0.20:3300"],
+    "fs_name": "apps",
+    "subvolume_group": "railshot",
+    "provisioner_secret": "ceph-provisioner",
+    "node_secret": "ceph-node",
+    "secret_files": {
+      "ceph-provisioner": "/etc/railshot/private/onprem/ceph-provisioner.json",
+      "ceph-node": "/etc/railshot/private/onprem/ceph-node.json"
+    }
+  }
+}

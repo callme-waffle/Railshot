@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "cluster_id": "${environment_id}",
+  "provider": "openstack",
+  "account_id": "${project_id}",
+  "region": "${region}",
+  "variables_file": "/etc/railshot/private/onprem/edge-variables.json",
+  "credentials_file": "/etc/railshot/private/onprem/edge-credentials.json",
+  "dns_config_file": "/etc/railshot/private/onprem/dns.json",
+  "worker_bindings": {},
+  "tunnel": {
+    "config_file": "/etc/railshot/private/onprem/tunnel.json",
+    "request": {"environment_id": "${environment_id}", "application_id": "generated", "app": "bootstrap", "tenant": "demo", "hostname": "bootstrap.example.com"}
+  }
+}

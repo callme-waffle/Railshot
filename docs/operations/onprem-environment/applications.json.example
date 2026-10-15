@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "state_dir": "/var/lib/railshot/applications",
+  "registry_file": "${registry_file}",
+  "cd": {
+    "version": 1,
+    "state_dir": "/var/lib/railshot/cd",
+    "repository": "/var/lib/railshot/gitops",
+    "branch": "dev/v1.0.0",
+    "context": "railshot-control"
+  },
+  "environments": {
+    "${environment_id}": {
+      "provider": "openstack",
+      "tenant": "demo",
+      "source_repository": "callme-waffle/REPLACE_APP_REPOSITORY",
+      "pull_secret_file": "/etc/railshot/private/ghcr-pull.json",
+      "target": {
+        "repo_url": "https://github.com/callme-waffle/REPLACE_GITOPS_REPOSITORY.git",
+        "architecture": "amd64",
+        "ingress_cidrs": [
+          "10.80.0.0/24"
+        ],
+        "resources": {
+          "requests": {
+            "cpu": "100m",
+            "memory": "128Mi"
+          },
+          "limits": {
+            "cpu": "500m",
+            "memory": "512Mi"
+          }
+        }
+      },
+      "ingress": {
+        "base_domain": "example.com",
+        "dns_config_file": "/etc/railshot/private/onprem/dns.json",
+        "cluster_edge_config_file": "generated",
+        "cluster_edge_state_dir": "generated",
+        "cluster_file": "generated",
+        "observability_config_file": "/etc/railshot/private/onprem/observability.json",
+        "ci_credentials_file": "/etc/railshot/private/onprem/ci-credentials.json"
+      }
+    }
+  }
+}

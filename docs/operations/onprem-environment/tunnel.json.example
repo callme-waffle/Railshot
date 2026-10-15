@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "profile": "kubeadm-1c2w",
+  "cluster_id": "${environment_id}",
+  "namespace": "railshot-tunnel",
+  "name": "cloudflared",
+  "tunnel_id": "REPLACE_NAMED_TUNNEL_UUID",
+  "credentials_secret": "cloudflared-credentials",
+  "credentials_file": "/etc/railshot/private/onprem/tunnel-credentials.json",
+  "origin_vip": "generated"
+}

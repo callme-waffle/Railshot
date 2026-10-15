@@ -1,0 +1,8 @@
+{
+  "name": "${environment_id}",
+  "vip_subnet_id": "${subnet_id}",
+  "vip_address": "generated",
+  "default_tls_container_ref": "https://barbican.example.com/v1/containers/REPLACE_CONTAINER_UUID",
+  "allowed_cidrs": ["10.80.0.0/24"],
+  "routes": {"bootstrap": {"host": "bootstrap.example.com", "node_port": 30080, "health_path": "/health"}}
+}
