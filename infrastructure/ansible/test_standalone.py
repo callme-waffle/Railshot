@@ -77,6 +77,32 @@ class RunnerTests(unittest.TestCase):
 
 
 class GuestTests(unittest.TestCase):
+    def test_readiness_requires_the_application_private_ip_tls_identity(self):
+        from types import SimpleNamespace
+        config = {'private_ipv4': '10.72.1.14', 'probe_password': 'private-fixture', 'tls': {'server_name': 'db.internal.example'}}
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory); (home / 'pg_hba.conf').write_text('approved')
+            for missing_ip_san in (True, False):
+                calls = []
+                def connect(**kwargs):
+                    calls.append(kwargs)
+                    if missing_ip_san and kwargs['host'] == config['private_ipv4']:
+                        raise ValueError('certificate IP SAN mismatch')
+                    cursor = SimpleNamespace(execute=lambda query: None, fetchone=lambda: (True,))
+                    return nullcontext(SimpleNamespace(cursor=lambda: nullcontext(cursor)))
+                with self.subTest(missing_ip_san=missing_ip_san), patch.dict(sys.modules, {'psycopg2': SimpleNamespace(connect=connect)}), \
+                     patch.object(guest, 'CONFIG', home), patch.object(guest, 'owned'), patch.object(guest, 'hba_config', return_value='approved'), \
+                     patch.object(guest, 'sql', side_effect=['10.72.1.14|/etc/railshot-postgres/tls/server.crt|/etc/railshot-postgres/tls/server.key', '1234567890123456789', '160001|f|on|scram-sha-256']), \
+                     patch.object(guest, 'backrest') as repository:
+                    if missing_ip_san:
+                        with self.assertRaisesRegex(ValueError, 'IP SAN mismatch'): guest.verify(config)
+                        repository.assert_not_called()
+                    else:
+                        self.assertEqual(guest.verify(config), '1234567890123456789')
+                        repository.assert_called_once_with('check')
+                self.assertEqual([call['host'] for call in calls], ['db.internal.example', '10.72.1.14'])
+                self.assertTrue(all(call['hostaddr'] == '10.72.1.14' and call['sslmode'] == 'verify-full' for call in calls))
+
     def test_foreign_mount_fails_before_package_install(self):
         with patch.object(guest, 'owned', side_effect=ValueError('foreign')), patch.object(guest, 'command') as command:
             with self.assertRaises(ValueError): guest.install({})

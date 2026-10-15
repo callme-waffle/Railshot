@@ -72,3 +72,5 @@ VM 생성자가 데이터 디스크를 붙이고 `/var/lib/postgresql`에 준비
 로컬 unit/계약·Ansible syntax/lint는 실환경 인수를 대신하지 않는다. 실환경에서 초기 설치·private TLS 로그인·실제 object backup 생성·복구 후 앱 SQL·오류/재시작·보존 데이터 비용을 확인해야 전체 지원을 완료했다고 판단할 수 있다.
 
 NCP 직접 SSH는 native descriptor의 public_ipv4와 connect_host가 정확히 같은 global IPv4일 때만 허용한다. private IPv4 HostKeyAlias와 사전 등록 known_hosts를 사용하며, provider의 management /32 ACG가 선행되어야 한다. OpenStack relay는 RFC1918만 허용한다.
+
+게스트 readiness는 운영자 TLS `server_name`뿐 아니라 앱 binding이 실제 사용하는 DB private IP를 `host`로 둔 별도 `psycopg2` 연결도 `sslmode=verify-full`로 검증한다. 인증서에 고정 DB private IP SAN이 없으면 DNS 이름 검증이 성공해도 ready로 처리하지 않는다. 각 연결의 `pg_stat_ssl` 결과와 기존 SQL/백업 저장소 검사를 모두 통과해야 한다.

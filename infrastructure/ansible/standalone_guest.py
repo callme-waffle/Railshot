@@ -123,10 +123,13 @@ def verify(config):
     version, recovery, ssl, encryption = sql("SELECT current_setting('server_version_num'), pg_is_in_recovery(), current_setting('ssl'), current_setting('password_encryption');").split('|')
     if not re.fullmatch(r'[0-9]{10,30}', identity) or int(version) // 10000 != 16 or (recovery, ssl, encryption) != ('f', 'on', 'scram-sha-256'): raise ValueError('database SQL readiness not proven')
     import psycopg2
-    with psycopg2.connect(dbname='postgres', user='railshot_probe', password=config['probe_password'], host=config['tls']['server_name'], hostaddr=config['private_ipv4'], port=5432, sslmode='verify-full', sslrootcert=str(TLS / 'ca.crt'), connect_timeout=10, options='-c statement_timeout=10000') as conn:
-        with conn.cursor() as cur:
-            cur.execute('SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()')
-            if cur.fetchone() != (True,): raise ValueError('TLS session unproven')
+    # Application bindings use the private IP as the verify-full host. Prove
+    # that identity as well as the operator DNS name before declaring ready.
+    for host in dict.fromkeys((config['tls']['server_name'], config['private_ipv4'])):
+        with psycopg2.connect(dbname='postgres', user='railshot_probe', password=config['probe_password'], host=host, hostaddr=config['private_ipv4'], port=5432, sslmode='verify-full', sslrootcert=str(TLS / 'ca.crt'), connect_timeout=10, options='-c statement_timeout=10000') as conn:
+            with conn.cursor() as cur:
+                cur.execute('SELECT ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()')
+                if cur.fetchone() != (True,): raise ValueError('TLS session unproven')
     backrest('check')
     return identity
 

@@ -696,6 +696,13 @@ def register(registry_file, target_id, config_file, state_dir, binding_file=None
                 return record
         registered = cd['targets'][target_id]; target = registered['target']
         preflight_renewal(cd, registered, target_id, allow_existing=record_path.exists())
+        # Persist exact intended object hashes before the first external write.
+        # Partial cleanup uses these proofs without retaining duplicate Secret bytes.
+        documents = runtime_documents(target, owner, pull, binding)
+        save(home / 'cleanup-proof.json', {'input_sha256': digest, 'owner': owner, 'registered': registered,
+            'objects': [{'kind': doc['kind'], 'metadata': doc['metadata'],
+                         'fields': {key: argo.document_hash(value) for key, value in doc.items()
+                                    if key not in ('apiVersion', 'kind', 'metadata')}} for doc in documents]})
         record.update(status='running', app=registered['app'], namespace=target['namespace'], cluster_server=target['cluster_server'])
         def checkpoint(stage):
             record['stage'] = stage; save(record_path, record)

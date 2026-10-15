@@ -86,6 +86,9 @@ class TeardownRecoveryTests(unittest.TestCase):
         bound = {'environment_id': self.id, 'owner_id': self.context['owner_id'], 'account_id': self.context['account_id'],
                  'application_config_hash': runtime.digest(self.config)}
         save(home / 'binding.json', bound)
+        save(home / 'registration.json', {'input_sha256': 'a' * 64})
+        save(home / 'cleanup-proof.json', {'input_sha256': 'a' * 64, 'owner': 'a' * 32,
+             'registered': {'app': 'environment-bootstrap'}, 'objects': []})
         save(home / 'cd.json', {'targets': {self.id: {'app': 'environment-bootstrap'}}})
         save(home / 'retained-volumes.json', {'volumes': []})
         expected = {'renewal': {'secret': 'owned-secret'}, 'shared': None, 'application_name': 'bootstrap'}
@@ -113,5 +116,88 @@ class TeardownRecoveryTests(unittest.TestCase):
             result = runtime.teardown('/private/apps.json', self.context)
         self.assertEqual(result['status'], 'succeeded')
         self.assertEqual(result['data_policy'], 'retain')
+
+
+class PartialBootstrapCleanupTests(unittest.TestCase):
+    setUp = BootstrapTests.setUp
+
+    def prepare(self):
+        self.config['state_dir'] = str(self.home / 'apps')
+        home = runtime.private_dir(self.home / 'state/bootstrap' / self.id)
+        intent = {**{key: self.context[key] for key in ('environment_id', 'owner_id', 'account_id')},
+                  'application_config_hash': runtime.digest(self.config)}
+        save(home / 'intent.json', intent)
+        return home
+
+    def test_pre_registration_absence_allows_only_native_edge_cleanup(self):
+        import cluster_applications
+        home = self.prepare()
+        with patch.object(cluster_applications, 'teardown', return_value={'retained_resources': []}) as edge, \
+             patch.object(environment, 'runtime_kubectl', side_effect=AssertionError('no registration to clean')):
+            result = runtime.teardown('/private/apps.json', self.context)
+        edge.assert_called_once(); self.assertEqual(result['status'], 'succeeded')
+        self.assertFalse((home / 'binding.json').exists())
+
+    def test_known_partial_namespace_uses_exact_hash_owner_and_uid(self):
+        from contextlib import contextmanager, ExitStack
+        import application_lifecycle as lifecycle
+        import lifecycle_runtime as workloads
+        import cluster_applications
+        home = self.prepare(); owner = 'a' * 32
+        registered = {'app': 'environment-bootstrap', 'tenant': 'test', 'target': {'namespace': self.id,
+            'id': self.id, 'project': self.id, 'cluster_server': 'https://10.1.0.1:6443',
+            'image_pull_secret': {'name': 'pull', 'namespace': self.id}, 'repo_url': 'https://example.com/repo'}}
+        documents = environment.runtime_documents(registered['target'], owner, {'auths': {}}, None)
+        proof = {'input_sha256': 'a' * 64, 'owner': owner, 'registered': registered,
+            'objects': [{'kind': doc['kind'], 'metadata': doc['metadata'], 'fields': {
+                key: environment.argo.document_hash(value) for key, value in doc.items() if key not in ('apiVersion','kind','metadata')}} for doc in documents]}
+        save(home / 'cleanup-proof.json', proof); save(home / 'registration.json', {'input_sha256': 'a' * 64, 'status': 'unknown', 'stage': 'namespace'})
+        for i, doc in enumerate(documents): doc['metadata'].update(uid='uid-' + str(i), resourceVersion='1')
+        namespace = [documents[0]]; deleted = []
+        def kubectl(ns, *args, **kwargs):
+            if args[:2] == ('get', 'namespace'): return namespace[0]
+            if args[:2] == ('get', 'pv'): return {'items': []}
+            if args[:2] == ('delete', '--raw'):
+                deleted.append(kwargs['document']['preconditions']); namespace[0] = None; return {}
+            raise AssertionError(args)
+        @contextmanager
+        def kube(_): yield kubectl
+        def control(*args):
+            if args[:2] == ('get', 'configmap'): return {'data': {'policy.json': '{"version":1,"targets":[]}'}}
+            return None
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(environment, 'runtime_kubectl', kube))
+            stack.enter_context(patch.object(lifecycle, 'control_for', return_value=control))
+            stack.enter_context(patch.object(workloads, 'discover', return_value=[(None, doc) for doc in documents[1:]]))
+            for name in ('ci_binding', 'remove_renewal', 'unbind_ci', 'grant_cleanup', 'revoke_control_grants'):
+                stack.enter_context(patch.object(lifecycle, name))
+            edge = stack.enter_context(patch.object(cluster_applications, 'teardown', return_value={'retained_resources': []}))
+            result = runtime.teardown('/private/apps.json', self.context)
+        self.assertEqual(result['status'], 'succeeded')
+        self.assertEqual(deleted, [{'uid': 'uid-0', 'resourceVersion': '1'}]); edge.assert_called_once()
+        foreign = copy.deepcopy(documents[0]); foreign['metadata']['labels']['railshot.io/registration'] = self.id
+        with self.assertRaisesRegex(Exception, 'exact registration intent'):
+            runtime.verify_bootstrap_objects(foreign, [], proof)
+        changed = copy.deepcopy(documents[2]); changed['rules'] = []
+        with self.assertRaisesRegex(Exception, 'exact registration intent'):
+            runtime.verify_bootstrap_objects(documents[0], [(None, changed)], proof)
+
+    def test_unproven_argo_secret_requires_manual_reconciliation(self):
+        from contextlib import contextmanager
+        import application_lifecycle as lifecycle
+        import cluster_applications
+        home = self.prepare()
+        save(home / 'registration.json', {'input_sha256': 'b' * 64, 'status': 'unknown', 'stage': 'argo'})
+        save(home / 'cleanup-proof.json', {'input_sha256': 'b' * 64, 'owner': 'b' * 32, 'objects': [],
+            'registered': {'app': 'environment-bootstrap', 'target': {'cluster_server': 'https://10.1.0.1:6443'}}})
+        @contextmanager
+        def kube(_): yield lambda *args, **kwargs: None
+        def control(*args):
+            return {'data': {'policy.json': '{"version":1,"targets":[]}'}} if args[1] == 'configmap' else {'metadata': {'uid': 'uncertain-secret'}}
+        with patch.object(environment, 'runtime_kubectl', kube), patch.object(lifecycle, 'control_for', return_value=control), \
+             patch.object(cluster_applications, 'teardown') as edge:
+            with self.assertRaisesRegex(ProviderError, 'MANUAL_RECONCILIATION'):
+                runtime.teardown('/private/apps.json', self.context)
+            edge.assert_not_called()
 
 if __name__ == '__main__': unittest.main()

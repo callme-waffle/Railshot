@@ -31,6 +31,12 @@ def bootstrap(application_config_path, context):
         raise ProviderError('APPLICATION_BINDING_MISMATCH', 409)
     edge = cluster_edge.validate(native)
     home = private_dir(Path(context['state_dir']) / 'bootstrap' / identifier)
+    intent = {'environment_id': identifier, 'owner_id': context['owner_id'], 'account_id': context['account_id'],
+              'application_config_hash': digest(config)}
+    intent_path = home / 'intent.json'
+    if intent_path.exists() and read_private(intent_path) != intent:
+        raise ProviderError('APPLICATION_BOOTSTRAP_POLICY_CHANGED', 409)
+    save(intent_path, intent)
     public = edge['fixed_routes'][0]
     app = 'environment-bootstrap'
     target = {**copy.deepcopy(profile['target']), 'id': identifier, 'namespace': identifier, 'project': identifier,
@@ -89,7 +95,10 @@ def teardown(application_config_path, context):
     home = private_dir(Path(context['state_dir']) / 'bootstrap' / identifier)
     receipt_path = home / 'teardown.json'
     journal = read_private(receipt_path) if receipt_path.exists() else None
-    bound = read_private(home / 'binding.json')
+    bound_path = home / 'binding.json'
+    registered_success = bound_path.exists()
+    bound = read_private(bound_path) if registered_success else read_private(home / 'intent.json') if (home / 'intent.json').exists() else {
+        **{key: context[key] for key in ('environment_id', 'owner_id', 'account_id')}, 'application_config_hash': digest(config)}
     if any(bound.get(key) != context[key] for key in ('environment_id', 'owner_id', 'account_id')) or bound.get('application_config_hash') != digest(config):
         raise ProviderError('APPLICATION_BINDING_CHANGED', 409)
     if journal and journal.get('status') == 'succeeded':
@@ -104,7 +113,23 @@ def teardown(application_config_path, context):
             if not life.exists() or read_private(life).get('status') != 'deleted':
                 raise ProviderError('ENVIRONMENT_APPLICATIONS_REMAIN', 409)
     profile = config['environments'][identifier]
-    registered = read_private(home / 'cd.json')['targets'][identifier]
+    record_path = home / 'registration.json'
+    if not record_path.exists():
+        if registered_success or (home / 'renewal.json').exists() or (home / 'cd.json').exists():
+            raise ProviderError('BOOTSTRAP_CLEANUP_EVIDENCE_MISSING', 409, True)
+        # The audited registration writer saves registration.json before every
+        # external mutation. No marker means only local inputs/preflight existed.
+        save(home / 'intent.json', bound)
+        return finish_teardown(config, identifier, home, [])
+    if not registered_success and not (home / 'intent.json').exists():
+        raise ProviderError('BOOTSTRAP_SCOPE_EVIDENCE_MISSING', 409, True)
+    record = read_private(record_path)
+    if not (home / 'cleanup-proof.json').exists():
+        raise ProviderError('BOOTSTRAP_CLEANUP_EVIDENCE_MISSING', 409, True)
+    proof = read_private(home / 'cleanup-proof.json')
+    if proof.get('input_sha256') != record.get('input_sha256') or proof.get('owner') != record['input_sha256'][:32]:
+        raise ProviderError('BOOTSTRAP_CLEANUP_EVIDENCE_CHANGED', 409, True)
+    registered = proof['registered']; owner = proof['owner']
     pseudo = {'version': 1, 'application_id': identifier, 'environment_id': identifier,
               'registered': registered, 'cd': config['cd']}
     control = lifecycle.control_for(pseudo)
@@ -112,25 +137,39 @@ def teardown(application_config_path, context):
     native, _ = environment.registered_node(registry['targets'][identifier], identifier, 'teardown.' + identifier)
     with environment.runtime_kubectl(native) as kube:
         if journal is None:
-            _, policy, renewal, secret, _, _ = environment.shared_cluster_snapshot(config['cd'], registered, identifier)
-            if renewal['namespaces'] != [identifier] or any(row['target_id'] != identifier and row['server'] == renewal['server'] for row in policy['targets']):
+            import json
+            policy = environment.credentials.validate_policy(json.loads(control('get', 'configmap', 'railshot-credentials', '-o', 'json')['data']['policy.json']))
+            rows = [row for row in policy['targets'] if row['target_id'] == identifier]
+            renewal_path = home / 'renewal.json'
+            renewal = read_private(renewal_path) if renewal_path.exists() else {'target_id': identifier, 'secret': 'railshot-' + identifier}
+            secret = control('get', 'secret', renewal['secret'], '--ignore-not-found', '-o', 'json')
+            if secret:
+                if not renewal_path.exists():
+                    raise ProviderError('BOOTSTRAP_CREDENTIAL_OUTCOME_REQUIRES_MANUAL_RECONCILIATION', 409, True)
+                if registered_success and rows:
+                    if any(rows[0].get(key) != renewal.get(key) for key in (
+                            'target_id', 'secret', 'server', 'service_account', 'ca_sha256', 'audiences', 'tls_server_name')):
+                        raise ProviderError('BOOTSTRAP_CREDENTIAL_SCOPE_CHANGED', 409, True)
+                    renewal = rows[0]  # App teardown may have narrowed the shared canonical scope.
+                if (renewal.get('target_id') != identifier or renewal.get('server') != registered['target']['cluster_server']
+                        or renewal.get('namespaces') != [identifier] or renewal.get('project') not in ('', identifier)):
+                    raise ProviderError('BOOTSTRAP_CREDENTIAL_SCOPE_CHANGED', 409, True)
+                environment.credentials.registration(secret, renewal, time.time())
+            if rows not in ([], [renewal]) or (rows and renewal['namespaces'] != [identifier]) or any(
+                    row['target_id'] != identifier and row['server'] == registered['target']['cluster_server'] for row in policy['targets']):
                 raise ProviderError('ENVIRONMENT_SHARED_REGISTRATIONS_REMAIN', 409)
-            project = control('get', 'appproject', identifier, '-o', 'json')
-            environment.argo.require(project['metadata'].get('labels', {}).get('railshot.io/registration') == identifier
-                and project['spec'] == environment.application_project(registered, identifier)['spec'], 'environment project ownership differs')
+            project = control('get', 'appproject', identifier, '--ignore-not-found', '-o', 'json')
+            environment.argo.require(not project or (project['metadata'].get('labels', {}).get('railshot.io/registration') == owner
+                and project['spec'] == environment.application_project(registered, owner)['spec']), 'environment project ownership differs')
             app_name = environment.application_name(identifier, identifier, registered['app'])
             environment.argo.require(not control('get', 'application', app_name, '--ignore-not-found', '-o', 'json'),
                                      'bootstrap environment application must be absent')
             expected = {'renewal': renewal, 'shared': None, 'application_name': app_name}
             lifecycle.ci_binding(profile, pseudo)
             lifecycle.remove_renewal(pseudo, expected, inspect=True)
-            namespace = kube(identifier, 'get', 'namespace', identifier, '-o', 'json')
-            environment.argo.require(namespace['metadata'].get('labels', {}).get('railshot.io/registration') == identifier
-                and not namespace['metadata'].get('ownerReferences'), 'bootstrap namespace ownership differs')
-            objects = workloads.discover(kube, identifier)
-            workloads.ownership(objects, pseudo)
-            environment.argo.require(all(item['kind'] in ('ServiceAccount', 'Role', 'RoleBinding', 'Secret', 'ConfigMap') for _, item in objects),
-                                     'bootstrap namespace has workloads or storage')
+            namespace = kube(identifier, 'get', 'namespace', identifier, '--ignore-not-found', '-o', 'json')
+            if namespace:
+                verify_bootstrap_objects(namespace, workloads.discover(kube, identifier), proof)
             volumes = kube('default', 'get', 'pv', '-o', 'json')['items']
             environment.argo.require(all(not item.get('spec', {}).get('local') and not item.get('spec', {}).get('hostPath')
                 and item.get('spec', {}).get('persistentVolumeReclaimPolicy') == 'Retain' for item in volumes),
@@ -138,7 +177,7 @@ def teardown(application_config_path, context):
             save(home / 'retained-volumes.json', {'version': 1, 'volumes': volumes})
             journal = {'status': 'unknown', 'environment_id': identifier, 'binding_hash': digest(bound),
                        'expected': expected, 'secret': lifecycle.identity(secret),
-                       'project': lifecycle.identity(project, spec=True), 'namespace_uid': namespace['metadata']['uid'], 'completed': []}
+                       'project': lifecycle.identity(project, spec=True), 'namespace_uid': namespace['metadata']['uid'] if namespace else None, 'completed': []}
             save(receipt_path, journal)
         expected = journal['expected']
         volumes = read_private(home / 'retained-volumes.json')['volumes']
@@ -156,14 +195,12 @@ def teardown(application_config_path, context):
         namespace = kube(identifier, 'get', 'namespace', identifier, '--ignore-not-found', '-o', 'json')
         if namespace:
             environment.argo.require(namespace['metadata']['uid'] == journal['namespace_uid']
-                and namespace['metadata'].get('labels', {}).get('railshot.io/registration') == identifier,
+                and namespace['metadata'].get('labels', {}).get('railshot.io/registration') == owner,
                 'bootstrap namespace identity changed during teardown')
             if not namespace['metadata'].get('deletionTimestamp'):
                 # Admission remains fenced; re-check no late workloads before deletion.
                 objects = workloads.discover(kube, identifier)
-                workloads.ownership(objects, pseudo)
-                environment.argo.require(all(item['kind'] in ('ServiceAccount', 'Role', 'RoleBinding', 'Secret', 'ConfigMap') for _, item in objects),
-                                         'bootstrap namespace has new workloads or storage')
+                verify_bootstrap_objects(namespace, objects, proof)
                 kube(identifier, 'delete', '--raw', '/api/v1/namespaces/' + identifier, '-f', '-', document={
                     'apiVersion': 'v1', 'kind': 'DeleteOptions', 'propagationPolicy': 'Foreground',
                     'preconditions': {key: namespace['metadata'][key] for key in ('uid', 'resourceVersion')}})
@@ -172,7 +209,13 @@ def teardown(application_config_path, context):
                 if time.monotonic() >= deadline:
                     raise ProviderError('ENVIRONMENT_NAMESPACE_DELETION_UNVERIFIED', 502, True)
                 time.sleep(1)
-    if profile['provider'] == 'ncp':
+    return finish_teardown(config, identifier, home, volumes)
+
+
+def finish_teardown(config, identifier, home, volumes):
+    """Provider-specific edge cleanup still verifies native ownership/absence."""
+    import cluster_applications
+    if config['environments'][identifier]['provider'] == 'ncp':
         import ncp_routes
         edge = ncp_routes.teardown(config, identifier)
     else:
@@ -180,5 +223,23 @@ def teardown(application_config_path, context):
     result = {'status': 'succeeded', 'environment_id': identifier, 'data_policy': 'retain',
               'retained_resources': edge['retained_resources'] + [
                   {'kind': 'persistent_volume', 'id': item['metadata']['name'], 'status': 'retained'} for item in volumes]}
-    save(receipt_path, result)
+    save(home / 'teardown.json', result)
     return result
+
+
+def verify_bootstrap_objects(namespace, objects, proof):
+    import environment
+    expected = {(row['kind'], row['metadata']['name']): row for row in proof['objects']}
+    for item in [namespace, *(item for _, item in objects)]:
+        meta = item['metadata']; key = (item['kind'], meta['name'])
+        if key == ('ServiceAccount', 'default'):
+            environment.argo.require(not item.get('secrets') and not item.get('imagePullSecrets') and not meta.get('ownerReferences'), 'bootstrap default account changed')
+            continue
+        if key == ('ConfigMap', 'kube-root-ca.crt'):
+            environment.argo.require(set(item.get('data', {})) == {'ca.crt'} and not meta.get('ownerReferences'), 'bootstrap CA config changed')
+            continue
+        row = expected.get(key)
+        environment.argo.require(row and meta.get('uid') and not meta.get('ownerReferences') and not meta.get('finalizers')
+            and all(meta.get('labels', {}).get(k) == v for k, v in row['metadata']['labels'].items())
+            and all(environment.argo.document_hash(item.get(k)) == value for k, value in row['fields'].items()),
+            'bootstrap object differs from the exact registration intent')
