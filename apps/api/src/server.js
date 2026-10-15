@@ -342,7 +342,14 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
               for (const key of ['scope', 'provider']) if (params.has(key)) { if (params.getAll(key).length !== 1 || params.get(key) !== (key === 'scope' ? 'owned' : 'openstack')) throw new ServiceError('조회 조건이 잘못되었습니다.', 422); params.delete(key); }
               json(response, 200, page(products.personal.list(ownerId), params)); return;
             }
-            if (!child) { method(['GET']); json(response, 200, products.personal.get(id, ownerId)); return; }
+            if (!child) {
+              method(['GET']);
+              if (products.controlPlane?.isEnvironment(id)) {
+                await products.controlPlane.get(accountOwner || legacySessionId, id);
+                json(response, 200, products.controlPlane.targets(accountOwner || legacySessionId).find((row) => row.id === id)); return;
+              }
+              json(response, 200, products.personal.get(id, ownerId)); return;
+            }
             method(['applications', 'instances'].includes(child) ? ['GET'] : ['POST']);
             if (child === 'instances') { json(response, 200, { items: await products.personal.instances(id, ownerId), next_marker: null }); return; }
             if (child === 'applications') { json(response, 200, { items: products.personal.applications(id, ownerId), next_marker: null }); return; }
@@ -511,8 +518,8 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
             json(response, 200, page(products ? [...await products[kind](sessionId), ...(kind === 'targets' && accountOwner && accountOwner !== sessionId ? products.controlPlane?.targets(accountOwner) || [] : [])] : [], url.searchParams)); return;
           }
           if (!id && request.method === 'GET') {
-            json(response, 200, kind === 'plans' ? page(products.list(kind, sessionId), url.searchParams)
-              : products.list(kind, sessionId, pagination(url.searchParams))); return;
+            json(response, 200, kind === 'plans' ? page(products.list(kind, sessionId, undefined, accountOwner), url.searchParams)
+              : products.list(kind, sessionId, pagination(url.searchParams), accountOwner)); return;
           }
           const recordView = kind === 'deployments' && id && request.method === 'GET'
             && [...url.searchParams].length === 1 && url.searchParams.get('view') === 'record';

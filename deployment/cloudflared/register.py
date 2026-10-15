@@ -74,7 +74,8 @@ def inputs(config_path, request):
     require(isinstance(registry, dict) and type(registry.get('version')) is int and registry['version'] == 1
             and isinstance(registry.get('targets'), dict), 'TUNNEL_REGISTRY_INVALID')
     selected = registry['targets'][config['environment_id']]
-    require(selected.get('purpose') == 'runtime' and 'server_file' in selected, 'TUNNEL_RUNTIME_MISMATCH')
+    require(selected.get('purpose') == 'runtime' and ('server_file' in selected or
+            selected.get('profile') == 'kubeadm-1c2w' and 'cluster_file' in selected), 'TUNNEL_RUNTIME_MISMATCH')
     native, descriptor = runtime.registered_node(selected, config['environment_id'], 'tunnel.' + request['application_id'])
     require(native['target']['provider'] == descriptor['provider_kind'] == 'openstack'
             and descriptor['resource_id'] == config['resource_id']

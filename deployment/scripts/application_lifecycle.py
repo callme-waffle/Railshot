@@ -64,7 +64,7 @@ def load_binding(config, request):
 
 
 def ci_binding(profile, binding):
-    old = runtime.github_variable(profile['source_repository'], 'RAILSHOT_TARGET_BINDINGS')
+    old = runtime.github_variable(profile['source_repository'], 'RAILSHOT_TARGET_BINDINGS', **runtime.ci_options(profile))
     values = json.loads(old['value']) if old else {}
     selected = binding['registered']; app_id = binding['application_id']
     expected = {key: selected[key] for key in ('app', 'tenant')}
@@ -123,11 +123,16 @@ def control_inventory(binding, profile, *, allow_active=False):
 
 
 def unbind_ci(profile, binding):
+    with runtime.ci_writer(profile['source_repository']):
+        return _unbind_ci_locked(profile, binding)
+
+
+def _unbind_ci_locked(profile, binding):
     values, _ = ci_binding(profile, binding)
     updated = {key: value for key, value in values.items() if key != binding['application_id']}
     if updated != values:
         runtime.github_variable(profile['source_repository'], 'RAILSHOT_TARGET_BINDINGS',
-                                {'name': 'RAILSHOT_TARGET_BINDINGS', 'value': json.dumps(updated)})
+                                {'name': 'RAILSHOT_TARGET_BINDINGS', 'value': json.dumps(updated)}, **runtime.ci_options(profile))
     observed, _ = ci_binding(profile, binding)
     require(observed == updated, 'CI_BINDING_REMOVAL_UNVERIFIED')
 
@@ -249,8 +254,8 @@ def grant_cleanup(binding, expected):
                 and rule.get('verbs') in (['get', 'patch'], ['delete']) and rule.get('resourceNames')
                 and all(runtime.label(name) for name in rule['resourceNames']), 'CONTROL_ROLE_CHANGED')
         if rule['verbs'] == ['delete']:
-            pattern = {'applications': r'app-[a-f0-9]{24}-[a-z0-9-]+', 'appprojects': r'app-[a-f0-9]{24}',
-                       'secrets': r'railshot-app-[a-f0-9]{24}'}[rule['resources'][0]]
+            pattern = {'applications': r'(?:app|env)-[a-f0-9]{24}-[a-z0-9-]+', 'appprojects': r'(?:app|env)-[a-f0-9]{24}',
+                       'secrets': r'railshot-(?:app|env)-[a-f0-9]{24}'}[rule['resources'][0]]
             require(all(re.fullmatch(pattern, name) for name in rule['resourceNames']), 'CONTROL_ROLE_CHANGED')
     for (group, resource), name in names.items():
         matching = [rule for rule in rules if rule['apiGroups'] == [group] and rule['resources'] == [resource]

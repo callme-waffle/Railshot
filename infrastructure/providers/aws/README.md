@@ -99,7 +99,8 @@ EFS/mount target 접근과 edge state를 읽는다. ALB 구성·DNS record와 �
 성공은 서로 다른 evidence다. 앱 registration은 공통 bootstrap이 실제로 수행하고
 그 receipt를 facade가 확인해야 deployment binding이 성립한다.
 
-삭제는 공통 facade가 연결 앱이 없음을 확인한 뒤 edge, CSI policy, EFS mount
+삭제는 공통 facade가 연결 앱이 없음을 확인한 뒤 fresh STS child에서 CI/Argo/관측/edge
+공통 teardown을 먼저 완료하고, CSI policy, EFS mount
 targets, VM, network 순서로 수행한다. EFS filesystem/access points와 EBS data/root
 volume은 ID를 기록해 보존하고 비용이 계속 발생할 수 있다. 보존된 파일시스템과
 볼륨의 추가 폐기는 이 동작에 포함하지 않는다. 부분 삭제/timeout은 unknown으로
@@ -124,3 +125,25 @@ terraform -chdir=infrastructure/terraform/aws-csi-role test
 장애 후 관측, 앱 삭제와 환경 정리/데이터 보존을 확인한다. DB backup/restore는
 별도 PostgreSQL 모듈과 통합해 검증한다. 아직 실행하지 않은 항목은 미실행이며
 미검증 결과를 성공으로 기록하지 않는다.
+
+### 앱 작업의 자격 갱신과 추가 입력
+
+생성된 `authority.json`은 `config:{auth,account_id}`, `context:{environment_id,owner_id,account_id,credential_ref,policy_revision}`, `credentials_file`만 기록합니다. auth는 source private file/instance-profile 참조이며 STS secret bytes를 authority에 저장하지 않습니다. 공통 `environment_action.py` 고정 wrapper는 등록·라우트·수명주기·로그·관측 등 각 실행에 앞서 exact role/account/binding을 검증하고 새 Session을 발급합니다. 갱신된 child 환경은 SSM에도 전달됩니다. 기존 1시간짜리 `session.json`을 며칠 뒤 그대로 쓰는 경로는 지원 완료로 보지 않습니다.
+
+앱 template `profile.ingress.observability_config_file`은 기존 observability/register.py 형식 private 설정, `ci_credentials_file`은 GitHub Actions repository variables write 권한이 있는 0600 JSON `{ "token": "직접 private 파일에만 입력" }` 참조가 필요합니다. 이 값을 채팅/PR/로그에 넣지 않습니다. 생성된 `aws_authority_file`은 provider가 채우며 사용자 임의 환경 credential override가 아닙니다.
+
+### 단일 PostgreSQL 연결
+
+`database_config_file`은 [단일 PostgreSQL 입력 계약](../../../docs/architecture/standalone-postgres.md)의 private 파일이다. helper는 `postgres-config.json`과 빈 복구 승인 양식을 생성한다. standalone 선택 시 예산은 4개 VM·디스크와 외부 object 저장소 비용을 포함해야 한다. provider는 DB VM의 등록된 SSH key/known-hosts를 결합하고, fresh STS child에서 설치→SQL/TLS·외부 full backup 확인→application bundle 생성→공통 bootstrap을 순서대로 실행한다. 이후 describe/status/backup/restore 역시 fresh STS child를 사용한다.
+
+S3 `instance` 모드는 DB 전용 EC2 role/profile을 생성하고, 지정 bucket의 `<prefix>/<environment_id>/*`에만 object read/write/delete/multipart 권한을 부여한다. bucket 목록은 같은 prefix로 제한한다. control/worker 역할에는 backup 권한을 추가하지 않는다. Seoul S3 endpoint만 허용하며 S3-compatible 외부 저장소는 `secret` 참조 모드로 사용할 수 있다. SSE-KMS bucket은 별도 승인된 KMS 정책이 필요하며 이 adapter는 임의 KMS 권한을 부여하지 않는다.
+
+`database.ready`는 실제 standalone receipt가 true일 때만 반영하며 VM 생성, configuration file 또는 IAM 연결만으로 ready를 만들지 않는다. 실환경 role 전파/외부 bucket 접근·복구는 아직 검증하지 않았다.
+
+### 고정 관리 주소와 오프라인 검증
+
+runtime 3개 VM에는 EIP를 할당하며 예산 파일의 `elastic_ip_count: 3` 및 실제 원가 산정에 포함한다. control-plane API 6443은 `management_source_cidrs`의 실제 Argo/운영자 egress public /32만 허용한다. `observer_source_cidrs`는 관측 설정의 `observer_source_cidr`와 일치해야 하며 두 metrics NodePort만 허용한다. 앱 workers와 DB에는 공개 API ingress를 추가하지 않는다. SSH는 계속 SSM만 사용한다. native EIP allocation의 instance/private IP를 조회하여 고정 주소를 검증하며 공통 registry는 CA 및 private IP TLS serverName을 유지한다.
+
+DB는 첫 subnet의 +14 고정 주소를 사용한다(기본 `10.72.0.14`). 미리 준비하는 PostgreSQL 서버 인증서에는 이 IP SAN이 필요하다. VM readback 주소가 다르면 설치하지 않는다. DB VM은 EIP 없이 SSM과 별도 역할을 사용한다. `database:none` 입력에서는 `database_config_file`을 빈 문자열로 두고, standalone을 선택할 때 생성된 `postgres-config.json`을 완성한 후 해당 private 경로를 설정한다.
+
+오프라인 validate는 실제 앱 schema, GHCR 자격 형태, Route53 zone/domain/route, CI token 파일, observer 설정·포트·허용 source 일치, DB 선택 시 TLS/backup 입력, 예산 승인·만료를 확인한다. 네이티브 API 호출이나 live 준비 완료를 의미하지 않는다. bootstrap 중간 실패로 공통 binding receipt가 없는 경우 안전한 teardown 권한을 입증할 때까지 unknown cleanup으로 남긴다.

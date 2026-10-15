@@ -1,6 +1,7 @@
 """AWS Seoul adapter. Native evidence is required for every readiness claim."""
 from __future__ import annotations
 import importlib
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -56,6 +57,11 @@ class Adapter:
         p = Path(self.config['ssh_identity_file']); info = p.lstat()
         if not p.is_absolute() or p.is_symlink() or info.st_mode & 0o077 or info.st_uid != os.getuid():
             raise AwsError('AWS_SSH_IDENTITY_INVALID')
+        if spec['database']['mode'] == 'standalone':
+            sys.path.insert(0, str(ROOT / 'infrastructure/ansible'))
+            standalone = importlib.import_module('standalone')
+            if not self.config.get('database_config_file') or not standalone.validate_config(private_json(self.config['database_config_file']))['valid']:
+                raise AwsError('AWS_DATABASE_CONFIGURATION_REQUIRED')
         return zones
 
     def connection(self, context):
@@ -76,14 +82,27 @@ class Adapter:
         return {'status': 'succeeded', 'provider': 'aws', 'region': spec['region'], 'topology': spec['runtime'],
             'nodes': 4 if spec['database']['mode'] == 'standalone' else 3, 'zones': zones,
             'changes': [{'kind': 'vpc', 'action': 'create', 'count': 1}, {'kind': 'subnet', 'action': 'create', 'count': 2}, {'kind': 'compute', 'action': 'create', 'count': 4 if spec['database']['mode'] == 'standalone' else 3}, {'kind': 'efs', 'action': 'create', 'count': 1}, {'kind': 'alb', 'action': 'create', 'count': 1}],
+            'static_public_ip_count': 3, 'database_private_ip': self._database_ip() if spec['database']['mode'] == 'standalone' else None,
             'steps': ['network', 'compute', 'ssm', 'efs', 'csi_identity', 'kubeadm', 'edge', 'deployment_binding'],
-            'data_deletion': False, 'network_egress': 'public-ip-with-no-public-node-ingress',
+            'data_deletion': False, 'network_egress': 'public-ip; control API and metrics restricted to operator /32s',
             'plan_kind': 'environment-intent; native saved plans are checked at each dependency stage',
             'budget': approved, 'input_sha256': digest({'spec': spec, 'binding': self._binding(context)})}
 
     def _network(self, spec, context, session):
         variables = {'account_id': self._scope(context), 'environment_id': context['environment_id'], 'owner_id': context['owner_id'],
             'cidr': self.config.get('vpc_cidr', '10.72.0.0/16'), 'zones': self._spec(spec, context)}
+        template = private_json(self.config['application_template_file'])
+        observer = private_json(template['profile']['ingress']['observability_config_file'])
+        variables.update(management_source_cidrs=self.config['management_source_cidrs'], observer_source_cidrs=self.config['observer_source_cidrs'],
+            metrics_ports=[observer['node_metrics_port'], observer['cluster_metrics_port']])
+        variables['database_enabled'] = spec['database']['mode'] == 'standalone'
+        variables['database_backup'] = None
+        if variables['database_enabled']:
+            backup = private_json(self.config['database_config_file'])['backup']
+            if backup['identity'] == 'instance':
+                if backup['type'] != 's3' or backup['region'] != 'ap-northeast-2' or backup['endpoint'] not in ('s3.ap-northeast-2.amazonaws.com', 's3.amazonaws.com'):
+                    raise AwsError('AWS_DATABASE_BACKUP_SCOPE_INVALID')
+                variables['database_backup'] = {'bucket': backup['bucket'], 'prefix': backup['prefix'].strip('/') + '/' + context['environment_id']}
         return self._tf(context, 'network', 'aws-network', session).apply(variables)['network']
 
     def _nodes(self, spec, context, session, network):
@@ -95,22 +114,27 @@ class Adapter:
             node_id = 'rs-' + digest(context['environment_id'])[:20] + '-' + role
             tags = {'Project': 'railshot', 'ManagedBy': 'terraform', 'ProjectOwner': 'railshot-product', 'Target': node_id,
                 'Environment': context['environment_id'], 'Owner': context['owner_id']}
-            extra = {'environment_override.tf.json': json.dumps({'provider': {'aws': {'default_tags': [{'tags': tags}]}}})}
+            override = {'provider': {'aws': {'default_tags': [{'tags': tags}]}}}
+            if role == 'database': override['resource'] = {'aws_instance': {'node': {'private_ip': self._database_ip()}}}
+            extra = {'environment_override.tf.json': json.dumps(override)}
             tf = self._tf(context, 'nodes/' + role, 'aws', session, extra)
             variables = {'region': 'ap-northeast-2', 'account_id': self._scope(context), 'name': node_id, 'target_id': node_id,
                 'owner_ref': 'terraform:local:' + str(tf.home / 'terraform.tfstate'), 'product_environment': True,
                 'ami_id': self.config['ami_id'], 'instance_type': self.config.get('instance_type', 't3.large'),
-                'vpc_id': network['vpc_id'], 'subnet_id': network['subnets'][zone], 'allocate_eip': False,
+                'vpc_id': network['vpc_id'], 'subnet_id': network['subnets'][zone], 'allocate_eip': role != 'database',
                 'create_ci_plan_role': False, 'http_enabled': False, 'https_enabled': False,
-                'existing_instance_profile': network['profiles']['control' if role == 'control' else 'worker'],
+                'existing_instance_profile': network['profiles']['database' if role == 'database' else 'control' if role == 'control' else 'worker'],
                 'operator_ssh_public_key': self.config['ssh_public_key'], 'node_name': node_id,
                 'purpose': 'database' if role == 'database' else 'runtime', 'initialize_empty_data_disk': True,
                 'data_disk_gib': self.config.get('data_disk_gib', 100),
-                'additional_security_group_ids': [network['database_sg']] if role == 'database' else [network['cluster_sg']] + ([network['target_sg']] if role != 'control' else [])}
+                'additional_security_group_ids': [network['database_sg']] if role == 'database' else [network['cluster_sg'], network['metrics_sg']] + ([network['target_sg']] if role != 'control' else [network['control_api_sg']])}
             descriptors[role] = tf.apply(variables)['node_descriptor']
+            if role == 'database' and descriptors[role]['addresses']['private'] != self._database_ip(): raise AwsError('AWS_DATABASE_ADDRESS_MISMATCH', unknown=True)
             save(self._home(context) / (role + '.json'), descriptors[role])
         save(self._home(context) / 'nodes.json', descriptors)
         return descriptors
+
+    def _database_ip(self): return str(ipaddress.ip_network(self.config.get('vpc_cidr', '10.72.0.0/16'))[14])
 
     def _observe(self, context, session, descriptors):
         ids = [d['instance_id'] for d in descriptors.values()]
@@ -124,6 +148,14 @@ class Adapter:
             row = rows[desc['instance_id']]; tags = {t['Key']: t['Value'] for t in row.get('Tags', [])}
             if tags.get('Environment') != context['environment_id'] or tags.get('Owner') != context['owner_id'] or row.get('PrivateIpAddress') != desc['addresses']['private']:
                 raise AwsError('AWS_RESOURCE_OWNERSHIP_MISMATCH')
+            if role == 'database' and row['PrivateIpAddress'] != self._database_ip(): raise AwsError('AWS_DATABASE_ADDRESS_MISMATCH')
+            # Stop does not release a runtime EIP; the instance response may omit
+            # PublicIpAddress while stopped, so verify its allocation independently.
+            if role != 'database':
+                public = desc['addresses']['public']
+                allocation = session.call('ec2', 'describe-addresses', '--public-ips', public).get('Addresses', [])
+                if not ipaddress.ip_address(public).is_global or len(allocation) != 1 or allocation[0].get('InstanceId') != desc['instance_id'] or allocation[0].get('PrivateIpAddress') != desc['addresses']['private']:
+                    raise AwsError('AWS_MANAGEMENT_ADDRESS_MISMATCH')
             resources.append({'kind': 'compute', 'role': role, 'id': desc['resource_id'], 'state': row['State']['Name'],
                 'private_ip': row['PrivateIpAddress'], 'zone': row['Placement']['AvailabilityZone'],
                 'root_volume_id': next((b['Ebs']['VolumeId'] for b in row.get('BlockDeviceMappings', []) if b.get('DeviceName') == row.get('RootDeviceName') and 'Ebs' in b), None)})
@@ -146,8 +178,10 @@ class Adapter:
         edgevars = private_json(self.config['edge_variables_file'])
         edgevars.update(name='rs-' + digest(context['environment_id'])[:20], vpc_id=network['vpc_id'], public_subnet_ids=list(network['subnets'].values()))
         save(home / 'edge-vars.json', edgevars)
+        save(home / 'authority.json', {'config': {'auth': self.config['auth'], 'account_id': self._scope(context)},
+            'context': self._binding(context), 'credentials_file': str(home / 'session.json')})
         edge = {'version': 1, 'cluster_id': context['environment_id'], 'provider': 'aws', 'account_id': self._scope(context), 'region': 'ap-northeast-2',
-            'variables_file': str(home / 'edge-vars.json'), 'credentials_file': str(home / 'session.json'),
+            'variables_file': str(home / 'edge-vars.json'), 'credentials_file': str(home / 'session.json'), 'aws_authority_file': str(home / 'authority.json'),
             'credential_binding': {'account_id': self._scope(context), 'role_arn': self.config['auth']['role_arn'], 'credential_ref': context['credential_ref'], 'policy_revision': context['policy_revision']},
             'worker_bindings': {descriptors[r]['resource_id']: {'security_group_id': network['target_sg']} for r in ('compute-a', 'compute-b')}}
         save(home / 'edge.json', edge)
@@ -184,8 +218,10 @@ class Adapter:
         if any(r['state'] != 'running' for r in resources):
             return {'status': 'blocked', 'resources': resources, 'blockers': ['AWS_INSTANCES_NOT_RUNNING'], 'readiness': {}}
         result = self._runtime(spec, context, session, network, descriptors)
+        if spec['database']['mode'] == 'standalone': self._database({'action': 'install'}, context, session)
         self._application_binding(context, network)
         save(home / 'registration-context.json', context)
+        session.materialize(home / 'session.json')
         registered = json.loads(self.runner([sys.executable, str(ROOT / 'infrastructure/providers/aws/register.py'),
             str(home / 'application-config.json'), str(home / 'registration-context.json')], env=session.env(), timeout=1800, mutation=True))
         if registered.get('status') != 'succeeded' or not registered.get('application_binding_receipt_path'):
@@ -193,15 +229,35 @@ class Adapter:
         save(home / 'application-binding-result.json', registered)
         return self._result(context, resources, result)
 
+    def _database(self, operation, context, session):
+        home = self._home(context)
+        config = private_json(self.config['database_config_file'])
+        config['ssh'] = {'user': 'railshot-operator', 'identity_file': self.config['ssh_identity_file'], 'known_hosts_file': str(home / 'database.known_hosts'), 'port': 22}
+        save(home / 'database-config.json', config)
+        database_context = {**context, 'operation_id': (context.get('operation_id') or 'observe') + '.database'}
+        save(home / 'database-context.json', database_context)
+        request = {'action': operation, 'descriptor_file': str(home / 'database.json'), 'config_file': str(home / 'database-config.json'), 'context_file': str(home / 'database-context.json')}
+        save(home / 'database-request.json', request)
+        result = json.loads(self.runner([sys.executable, str(ROOT / 'infrastructure/providers/aws/database.py'), str(home / 'database-request.json')], env=session.env(), timeout=1850, mutation=operation['action'] not in ('status', 'verify')))
+        save(home / 'database-result.json', result)
+        if result.get('status') != 'succeeded' or result.get('ready') is not True:
+            raise AwsError('AWS_DATABASE_UNVERIFIED', unknown=result.get('status') == 'unknown')
+        return result
+
     def _application_binding(self, context, network):
         home = self._home(context); eid = context['environment_id']
         template = private_json(self.config['application_template_file'])
         if set(template) != {'version', 'cd', 'profile'} or template['version'] != 1 or template['profile'].get('provider') != 'aws':
             raise AwsError('AWS_APPLICATION_TEMPLATE_INVALID')
         profile = template['profile']
-        profile['ingress'].update(cluster_file=str(home / 'cluster.json'), cluster_edge_config_file=str(home / 'edge.json'),
+        profile['ingress'].update(aws_authority_file=str(home / 'authority.json'), cluster_file=str(home / 'cluster.json'), cluster_edge_config_file=str(home / 'edge.json'),
             cluster_edge_state_dir=str(home / 'runtime/cluster-edge' / eid), target_security_group_id=network['target_sg'])
-        save(home / 'targets.json', {'version': 1, 'targets': {eid: {'profile': 'kubeadm-1c2w', 'cluster_file': str(home / 'cluster.json'), 'purpose': 'runtime'}}})
+        if (home / 'database-result.json').exists():
+            profile['ingress']['standalone_database'] = private_json(home / 'database-result.json')['application_bundle_file']
+        nodes = private_json(home / 'nodes.json')
+        save(home / 'targets.json', {'version': 1, 'targets': {eid: {'profile': 'kubeadm-1c2w', 'cluster_file': str(home / 'cluster.json'), 'purpose': 'runtime',
+            'management_endpoint': 'https://' + nodes['control']['addresses']['public'] + ':6443',
+            'metrics_endpoints': {n['target_id']: n['addresses']['public'] for role, n in nodes.items() if role != 'database'}}}})
         save(home / 'application-config.json', {'version': 1, 'state_dir': str(directory(home / 'applications')),
             'registry_file': str(home / 'targets.json'), 'cd': template['cd'], 'environments': {eid: profile}})
 
@@ -209,7 +265,11 @@ class Adapter:
         ready = {'infrastructure': all(r['state'] == 'running' for r in resources), 'cluster': runtime.get('runtime_ready') is True,
             'storage': runtime.get('storage_ready') is True, 'public_access': runtime.get('edge_ready') is True,
             'application_http': runtime.get('public_http_verified') is True, 'database': False, 'deployment_binding': False}
+        if (self._home(context) / 'database-result.json').exists():
+            database = private_json(self._home(context) / 'database-result.json')
+            ready['database'] = ready['infrastructure'] and database.get('ready') is True
         result = {'status': 'succeeded', 'resources': resources, 'readiness': ready,
+            'ownership_verified': True, 'mutation_in_progress': any(private_json(p).get('status') == 'unknown' for p in self._home(context).glob('**/attempt.json') if (p.parent / 'binding.json').exists()),
             'runtime_receipt_path': str(self._home(context) / 'runtime-result.json'), 'cluster_file': str(self._home(context) / 'cluster.json')}
         if (self._home(context) / 'application-config.json').exists(): result['application_config_path'] = str(self._home(context) / 'application-config.json')
         if (self._home(context) / 'application-binding-result.json').exists():
@@ -252,11 +312,22 @@ class Adapter:
             request = kubeadm.from_registry(private_json(home / 'cluster.json'), request_id=context['environment_id'] + '.observe')
             proof = edge.provision(request, state_dir=home / 'runtime/cluster-edge', deadline=time.monotonic() + 180, env=session.env())
             result['readiness']['public_access'] = proof.get('edge_ready') is True
+        spec = private_json(home / 'spec.json')
+        if spec['database']['mode'] == 'standalone':
+            database = self._database({'action': 'status'}, context, session)
+            result['readiness']['database'] = database.get('ready') is True
+            result['resources'] += [{'kind': 'database_backup', 'id': label, 'status': 'verified'} for label in database.get('backups', [])]
         result['status'] = 'succeeded' if all(result['readiness'][k] for k in ('infrastructure', 'cluster', 'storage')) else 'blocked'
         return result
 
     def operate(self, operation, context):
         if not isinstance(operation, dict) or not isinstance(operation.get('action'), str): raise AwsError('AWS_OPERATION_INVALID')
+        if operation['action'] in ('backup', 'restore'):
+            home = self._home(context); session = self._session(context)
+            if private_json(home / 'spec.json')['database']['mode'] != 'standalone': raise AwsError('AWS_DATABASE_NOT_CONFIGURED')
+            self._observe(context, session, private_json(home / 'nodes.json'))
+            self._database(operation, context, session)
+            return self.describe(context)
         operation = operation['action']
         if operation in ('reconcile', 'verify'): return self.describe(context)
         if operation not in ('start', 'resume', 'stop', 'reboot'): raise AwsError('AWS_OPERATION_UNSUPPORTED')
@@ -294,8 +365,18 @@ class Adapter:
         elif private_json(deletion)['binding'] != binding:
             raise AwsError('AWS_DELETE_BINDING_CHANGED')
         retained = {'root_volumes': private_json(deletion).get('root_volumes', {})}
+        registered = home / 'application-binding-result.json'
+        if registered.exists():
+            save(home / 'registration-context.json', context)
+            session.materialize(home / 'session.json')
+            result = json.loads(self.runner([sys.executable, str(ROOT / 'infrastructure/providers/aws/register.py'),
+                str(home / 'application-config.json'), str(home / 'registration-context.json'), 'teardown'], env=session.env(), timeout=1900, mutation=True))
+            if result.get('status') != 'succeeded': raise AwsError('AWS_APPLICATION_TEARDOWN_UNVERIFIED', unknown=True)
+            save(home / 'application-teardown-result.json', result)
+        elif (Path(context['state_dir']) / 'bootstrap' / context['environment_id']).exists():
+            raise AwsError('AWS_PARTIAL_BOOTSTRAP_RECONCILIATION_REQUIRED', unknown=True)
         edge_home = home / 'runtime/cluster-edge' / context['environment_id']
-        if (edge_home / 'terraform.tfstate').exists():
+        if (edge_home / 'terraform.tfstate').exists() and not registered.exists():
             if not (edge_home / 'aws-delete.json').exists():
                 journal = private_json(edge_home / 'journal.json')
                 sys.path.insert(0, str(ROOT / 'deployment/scripts'))

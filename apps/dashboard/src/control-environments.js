@@ -30,6 +30,14 @@ export function createEnvironmentManagement(request, onChange) {
         evidence.className = 'field-note';
         evidence.textContent = Object.entries(row.readiness).map(([key, value]) => `${({ infrastructure: '인프라', cluster: '클러스터', storage: '스토리지', database: 'DB', deployment_binding: '배포 연결', public_access: '공개 경로', application_http: '앱 HTTP' })[key] || key}: ${value ? '확인' : '미확인'}`).join(' · ');
         item.append(evidence);
+        if (row.plan?.changes?.length) {
+          const plan = document.createElement('p'); plan.className = 'field-note';
+          plan.textContent = `계획: ${row.plan.changes.map((change) => `${change.kind} ${change.action} ${change.count}개`).join(' · ')} · 만료 ${row.plan.expires_at} · 검토 ID ${row.plan.hash}`;
+          item.append(plan);
+        }
+        for (const [key, title] of [['retained', '보존된 자원'], ['residuals', '미삭제 자원']]) {
+          if (row[key]?.length) { const detail = document.createElement('p'); detail.textContent = `${title}: ${row[key].map((resource) => `${resource.kind} ${resource.id}`).join(', ')}`; item.append(detail); }
+        }
         if (row.blockers.length) { const detail = document.createElement('p'); detail.textContent = row.blockers.join(', '); item.append(detail); }
         for (const [action, text] of [['reconcile', '실제 상태 확인'], ...(row.status === 'planned' ? [['apply', '계획 실행']] : []), ...(row.status !== 'deleted' ? [['delete', '환경 삭제']] : [])]) {
           const button = document.createElement('button'); button.type = 'button'; button.className = 'secondary-button'; button.textContent = text;

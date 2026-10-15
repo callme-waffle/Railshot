@@ -47,7 +47,7 @@ their compute/network attachments. Missing, expired or insufficient budget appro
 and the existing authoritative billing ledger block creation.
 
 The common facade owns application registration verification, attachment guards,
-normalized HTTP resources and PostgreSQL integration. AWS creates the fourth DB
-VM and exports its pinned descriptor/SSH reference; it does not claim database
+normalized HTTP resources. AWS creates the fourth DB
+VM, grants only its separate role scoped backup access, and invokes the shared PostgreSQL executor through a fresh STS child. It does not claim database
 readiness from provisioning alone. See the provider README for all private inputs
 and explicit live-acceptance boundaries.

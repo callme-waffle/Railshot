@@ -237,7 +237,7 @@ function updateSelection() {
   const targetReady = target?.status === 'ready' && target.deployable === true;
   let connectionStatus;
   if (selected.registerNew) connectionStatus = '새 OpenStack 환경을 등록한 뒤 배포할 수 있습니다.';
-  else if (ownedTargetError && selected.environment === 'onprem') connectionStatus = `등록 환경 조회 실패: ${ownedTargetError}`;
+  else if (ownedTargetError && selected.environment === 'onprem' && !controlTarget.value) connectionStatus = `등록 환경 조회 실패: ${ownedTargetError}`;
   else if (selected.targetId) connectionStatus = targetReady
     ? `${target.label || target.id} 환경에 배포합니다.`
     : `${target?.label || selected.targetId} 환경은 ${targetStatusLabel(target?.status)} 상태라 아직 배포할 수 없습니다.`;
@@ -542,7 +542,7 @@ document.querySelector('#deploy-form').addEventListener('submit', async (event) 
   else if (selectedSource.kind === 'archive' && !archive.files[0].name.toLowerCase().endsWith('.zip')) error.textContent = 'ZIP 파일만 업로드할 수 있습니다.';
   else if (selected.environment === 'onprem' && selected.registerNew) error.textContent = '새 OpenStack 환경을 등록한 뒤 배포할 수 있습니다.';
   else if (selected.environment === 'onprem' && !selected.targetId) error.textContent = '배포할 등록 OpenStack 환경을 선택하세요.';
-  else if (selected.environment === 'onprem' && (ownedTargetError || option?.status !== 'ready' || option?.deployable !== true)) error.textContent = document.querySelector('#connection-status').textContent;
+  else if (selected.environment === 'onprem' && ((!controlTarget.value && ownedTargetError) || option?.status !== 'ready' || option?.deployable !== true)) error.textContent = document.querySelector('#connection-status').textContent;
   else if (selected.environment === 'cloud' && ((!selected.targetId && connectionError) || selectedProfiles().length > 1 || (profile ? !profile.supported : !option?.available))) error.textContent = connectionError || (profile || selectedProfiles().length > 1 ? document.querySelector('#connection-status').textContent : option?.message) || '실행 가능한 인프라가 아직 연결되지 않았습니다.';
   else {
     invalidateReview();

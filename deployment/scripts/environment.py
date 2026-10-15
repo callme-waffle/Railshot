@@ -16,6 +16,7 @@ import shlex
 import stat
 import sys
 import time
+import tempfile
 from urllib.error import HTTPError
 from urllib.parse import quote, urlencode, urlsplit
 from urllib.request import Request, urlopen
@@ -52,14 +53,54 @@ def label(value):
     return isinstance(value, str) and re.fullmatch(argo.LABEL, value)
 
 
+def cluster_management(selected, cluster, request, resource):
+    """Resolve operator routes only from the already bound native node snapshots."""
+    members = {member['id']: member for member in cluster['members']}
+    nodes = request['inventory']['control_plane'] + request['inventory']['workers']
+    public = {}
+    for node in nodes:
+        member = members[node['id']]
+        if request['target']['provider'] in ('aws', 'gcp', 'ncp'):
+            snapshot = read_private(member['descriptor_file'])
+            addresses = snapshot.get('addresses', {})
+            private = snapshot.get('private_ipv4', addresses.get('private'))
+            argo.require(snapshot['resource_id'] == node['resource_id'] and private == node['private_ipv4'],
+                         'management snapshot node binding differs')
+            address = snapshot.get('public_ipv4', addresses.get('public'))
+            if address is not None:
+                value = ipaddress.IPv4Address(address)
+                argo.require(value.is_global and not value.is_multicast, 'native public management IPv4 required')
+                public[node['id']] = str(value)
+        else:
+            public[node['id']] = node['ssh'].get('connect_host', node['private_ipv4'])
+    control = nodes[0]
+    if 'management_endpoint' in selected:
+        address = public.get(control['id'])
+        argo.require(address and selected['management_endpoint'] == f'https://{address}:6443',
+                     'management endpoint must match the native control IPv4 API')
+        resource['management_endpoint'] = selected['management_endpoint']
+        resource['addresses']['public'] = address
+    if 'metrics_endpoints' in selected:
+        addresses = selected['metrics_endpoints']
+        argo.require(isinstance(addresses, dict) and set(addresses) == {node['id'] for node in nodes}
+                     and all(addresses[key] == public.get(key) for key in addresses),
+                     'metrics endpoints must match all three native node addresses')
+        resource['addresses']['metrics'] = addresses[control['id']]
+        resource['node_metrics_addresses'] = [addresses[node['id']] for node in nodes]
+    else:
+        resource['node_metrics_addresses'] = [node['private_ipv4'] for node in nodes]
+
+
 def registered_node(selected, target_id, request_id, *, timeout_seconds=None):
     """Resolve the existing Ansible registry without claiming live cloud readiness."""
     timeout = selected.get('timeout_seconds', 1200) if timeout_seconds is None else timeout_seconds
     if selected.get('profile') == 'kubeadm-1c2w':
         import kubeadm
-        argo.require(set(selected) == {'profile', 'cluster_file', 'purpose'} and selected['purpose'] == 'runtime',
+        argo.require({'profile', 'cluster_file', 'purpose'} <= set(selected)
+                     and not set(selected) - {'profile', 'cluster_file', 'purpose', 'management_endpoint', 'metrics_endpoints'} and selected['purpose'] == 'runtime',
                      'prepared cluster registry fields differ')
-        request = kubeadm.from_registry(read_private(selected['cluster_file']), request_id=request_id)
+        cluster = read_private(selected['cluster_file'])
+        request = kubeadm.from_registry(cluster, request_id=request_id)
         argo.require(request['target']['id'] == target_id, 'cluster registry identity differs')
         node = request['inventory']['control_plane'][0]
         for member in request['inventory']['control_plane'] + request['inventory']['workers']:
@@ -68,6 +109,7 @@ def registered_node(selected, target_id, request_id, *, timeout_seconds=None):
         resource = {'target_id': target_id, 'provider_kind': request['target']['provider'],
                     'resource_id': node['resource_id'], 'addresses': {'private': node['private_ipv4']},
                     'registered_request': request, 'profile': 'kubeadm-1c2w'}
+        cluster_management(selected, cluster, request, resource)
         return request, resource
     if 'server_file' in selected:
         fields = {'resource_id', 'project_id', 'management_network', 'placement',
@@ -133,7 +175,7 @@ def load_configuration(registry, target_id, config, binding_file=None):
     argo.require(set(cd) == {'version', 'state_dir', 'repository', 'branch', 'context', 'targets'} and cd['version'] == 1
                  and isinstance(cd['targets'], dict) and target_id in cd['targets'], 'existing CD base config required')
     argo.require(set(settings) >= {'state_dir', 'source_repository', 'pull_secret_file'}
-                 and not set(settings) - {'state_dir', 'source_repository', 'pull_secret_file', 'edge_config_file', 'target_security_group_id', 'expires_at', 'observability_config_file'},
+                 and not set(settings) - {'state_dir', 'source_repository', 'pull_secret_file', 'edge_config_file', 'target_security_group_id', 'expires_at', 'observability_config_file', 'ci_credentials_file'},
                  'registration settings differ')
     argo.require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', settings['source_repository']), 'source repository required')
     if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
@@ -156,7 +198,7 @@ def load_configuration(registry, target_id, config, binding_file=None):
                  and target['namespace'] not in {'default', 'argocd', 'kube-system', 'kube-public', 'kube-node-lease'},
                  'dedicated application namespace required')
     expected_server = 'https://' + descriptor['addresses']['private'] + ':6443'
-    if request['target']['provider'] in ('openstack', 'gcp'):
+    if request['target']['provider'] in ('aws', 'openstack', 'gcp', 'ncp'):
         expected_server = descriptor.get('management_endpoint', expected_server)
     argo.require(target.get('cluster_server', expected_server) == expected_server
                  and target['architecture'] == request['target']['architecture'] == 'amd64',
@@ -274,6 +316,10 @@ def runtime_documents(target, owner, pull, binding):
               doc('Role', SA, rules=rules), doc('RoleBinding', SA,
                   roleRef={'apiGroup': 'rbac.authorization.k8s.io', 'kind': 'Role', 'name': SA},
                   subjects=[{'kind': 'ServiceAccount', 'name': SA, 'namespace': namespace}])]
+    # Baseline admission rejects host networking/privileged pods, including CSI instance-role escape paths.
+    # Application users have no namespace-write permission and cannot relax these labels.
+    result[0]['metadata']['labels'] = {**labels, 'pod-security.kubernetes.io/enforce': 'baseline',
+                                     'pod-security.kubernetes.io/enforce-version': 'v1.36'}
     def secret(name, values, kind='Opaque'):
         return doc('Secret', name, type=kind, data={k: base64.b64encode(v.encode()).decode() for k, v in values.items()})
     result.append(secret(target['image_pull_secret']['name'], {'.dockerconfigjson': json.dumps(pull)}, 'kubernetes.io/dockerconfigjson'))
@@ -546,8 +592,9 @@ def grant_control_objects(cd, registered, target_id, *, environment_id=None):
     argo.require(observed.get('rules') == rules, 'registration Role readback differs')
 
 
-def github_variable(repository, name, document=None, *, create=False):
-    token = os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+def github_variable(repository, name, document=None, *, create=False, credential_file=None):
+    token = read_private(credential_file).get('token') if credential_file else os.environ.get('GITHUB_TOKEN') or os.environ.get('GH_TOKEN')
+    argo.require(isinstance(token, str) and token and '\n' not in token and '\r' not in token, 'operator GitHub token required')
     argo.require(token, 'operator GitHub token required')
     path = '/repos/' + repository + '/actions/variables' + ('' if create else '/' + name)
     headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
@@ -566,9 +613,36 @@ def github_variable(repository, name, document=None, *, create=False):
         raise RuntimeError('GitHub variable operation unverified') from None
 
 
+def ci_options(settings):
+    reference = settings.get('ci_credentials_file') or settings.get('ingress', {}).get('ci_credentials_file')
+    return {'credential_file': reference} if reference else {}
+
+
+@contextmanager
+def ci_writer(repository):
+    # All internal writers share this repository-scoped lock. Multi-process API
+    # replicas must mount the same directory through RAILSHOT_CI_LOCK_DIR.
+    directory = bridge.private_directory(os.environ.get('RAILSHOT_CI_LOCK_DIR',
+        str(Path(tempfile.gettempdir()) / ('railshot-ci-writers-' + str(os.geteuid())))))
+    fd = os.open(Path(directory) / (hashlib.sha256(repository.encode()).hexdigest() + '.lock'), os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        info = os.fstat(fd)
+        argo.require(stat.S_ISREG(info.st_mode) and info.st_uid == os.geteuid() and not info.st_mode & 0o077, 'CI writer lock invalid')
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
 def bind_ci(settings, registered, target_id):
+    with ci_writer(settings['source_repository']):
+        return _bind_ci_locked(settings, registered, target_id)
+
+
+def _bind_ci_locked(settings, registered, target_id):
     repository = settings['source_repository']; name = 'RAILSHOT_TARGET_BINDINGS'
-    old = github_variable(repository, name)
+    options = ci_options(settings)
+    old = github_variable(repository, name, **options)
     bindings = json.loads(old['value']) if old else {}
     selected = {'app': registered['app'], 'tenant': registered['tenant'], 'image_pull_secret': registered['target']['image_pull_secret']}
     argo.require(isinstance(bindings, dict) and (target_id not in bindings or bindings[target_id] == selected), 'CI target binding conflict')
@@ -576,8 +650,8 @@ def bind_ci(settings, registered, target_id):
     validate_target({'CONFIGURED_BINDINGS': json.dumps(updated), 'TARGET_ID': target_id,
                      'APP': registered['app'], 'TENANT': registered['tenant']})
     if bindings != updated:
-        github_variable(repository, name, {'name': name, 'value': json.dumps(updated)}, create=old is None)
-    observed = github_variable(repository, name)
+        github_variable(repository, name, {'name': name, 'value': json.dumps(updated)}, create=old is None, **options)
+    observed = github_variable(repository, name, **options)
     argo.require(observed and json.loads(observed['value']) == updated, 'CI target binding readback differs')
 
 
@@ -622,6 +696,13 @@ def register(registry_file, target_id, config_file, state_dir, binding_file=None
                 return record
         registered = cd['targets'][target_id]; target = registered['target']
         preflight_renewal(cd, registered, target_id, allow_existing=record_path.exists())
+        # Persist exact intended object hashes before the first external write.
+        # Partial cleanup uses these proofs without retaining duplicate Secret bytes.
+        documents = runtime_documents(target, owner, pull, binding)
+        save(home / 'cleanup-proof.json', {'input_sha256': digest, 'owner': owner, 'registered': registered,
+            'objects': [{'kind': doc['kind'], 'metadata': doc['metadata'],
+                         'fields': {key: argo.document_hash(value) for key, value in doc.items()
+                                    if key not in ('apiVersion', 'kind', 'metadata')}} for doc in documents]})
         record.update(status='running', app=registered['app'], namespace=target['namespace'], cluster_server=target['cluster_server'])
         def checkpoint(stage):
             record['stage'] = stage; save(record_path, record)
@@ -663,7 +744,7 @@ def register(registry_file, target_id, config_file, state_dir, binding_file=None
                 checkpoint('argo')
                 tls_options = {}
                 if (request['target']['provider'] == 'openstack' and request['inventory']['control_plane'][0]['ssh'].get('connect_host')
-                        or request['target']['provider'] == 'gcp' and identity['descriptor'].get('management_endpoint')):
+                        or identity['descriptor'].get('management_endpoint')):
                     tls_options['tls_server_name'] = identity['descriptor']['addresses']['private']
                 renewal, expiration = register_argo(kube, cd, registered, target_id, owner, binding, **tls_options)
                 save(home / 'renewal.json', renewal); complete('argo')

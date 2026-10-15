@@ -42,6 +42,12 @@ def _ensure(config, publication_request, prepared):
     # finalize has checked both hashes against release.json and the current registration.
     request = runtime.read_private(directory / 'route-request.json')
     ingress = request['ingress']
+    if request['provider'] == 'ncp':
+        import ncp_routes
+        return ncp_routes.ensure(config, publication_request, prepared, request)
+    if ingress.get('cluster_edge_config_file'):
+        import cluster_applications
+        return cluster_applications.ensure(config, publication_request, prepared, request)
     applications.require(request['provider'] in ('aws', 'gcp', 'openstack'), 'APPLICATION_ROUTE_PROVIDER_UNAVAILABLE')
     paths = ('edge_config_file', 'dns_config_file') + (('tunnel_config_file',) if request['provider'] == 'openstack' else ())
     applications.require(all(isinstance(ingress.get(key), str) and Path(ingress[key]).is_absolute()

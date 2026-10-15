@@ -16,7 +16,7 @@ class Adapter:
     def __init__(self):
         self.calls = 0
         self.failure = False
-        self.result = {'status': 'succeeded', 'readiness': dict.fromkeys(('infrastructure', 'cluster', 'storage', 'deployment_binding'), True),
+        self.result = {'status': 'succeeded', 'readiness': dict.fromkeys(('infrastructure', 'cluster', 'storage', 'public_access', 'deployment_binding'), True),
                        'resources': [{'id': 'instance-id', 'kind': 'vm', 'secret': 'never-public'}], 'application_config_path': '/private/app.json'}
     def plan(self, spec, context):
         return {'changes': [{'kind': 'vm', 'action': 'create', 'count': 3}], 'secret': 'not-public'}
@@ -111,6 +111,28 @@ class ControlTests(unittest.TestCase):
         spec = copy.deepcopy(SPEC); spec['runtime']['control_planes'] = True
         with self.assertRaisesRegex(ProviderError, 'INVALID_ENVIRONMENT_SPEC'):
             validate_spec(spec)
+
+    def test_queued_admission_recovers_without_replaying_started_mutation(self):
+        environment = self.plan()
+        self.call('admit', environment_id=environment, operation_action='apply', idempotency_key='recover-1')
+        pending = self.call('pending')['items']
+        self.assertEqual(len(pending), 1)
+        self.call(pending[0]['action'], environment_id=environment, idempotency_key=pending[0]['idempotency_key'])
+        self.assertEqual(self.adapter.calls, 1)
+        self.assertEqual(self.call('pending')['items'], [])
+
+    def test_reconciled_partial_environment_can_be_cleaned_up(self):
+        environment = self.plan(); self.adapter.failure = True
+        self.call('apply', environment_id=environment, idempotency_key='apply-1')
+        self.adapter.result = {'status': 'blocked', 'ownership_verified': True, 'mutation_in_progress': False,
+                               'readiness': {}, 'resources': [{'kind': 'vm', 'id': 'owned-vm'}]}
+        self.assertEqual(self.call('reconcile', environment_id=environment)['status'], 'blocked')
+        self.assertEqual(self.call('delete', environment_id=environment, idempotency_key='cleanup-1')['status'], 'deleted')
+
+    def test_missing_frontend_readback_prevents_deployment(self):
+        self.adapter.result['readiness']['public_access'] = False
+        row = self.call('apply', environment_id=self.plan(), idempotency_key='apply-1')
+        self.assertFalse(row['deployable'])
 
 
 if __name__ == '__main__':

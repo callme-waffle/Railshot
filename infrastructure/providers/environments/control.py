@@ -29,16 +29,16 @@ def private_dir(value):
     return path
 
 
-def read_private(path):
+def read_private(path, *, maximum=4 * 1024 * 1024):
     path = Path(path)
     if not path.is_absolute() or path.resolve() != path:
         raise ProviderError('PRIVATE_CONFIGURATION_INVALID', 503)
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), 'rb') as stream:
         info = os.fstat(stream.fileno())
         if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
-                or info.st_mode & 0o077 or info.st_size > 4 * 1024 * 1024):
+                or info.st_mode & 0o077 or info.st_size > maximum):
             raise ProviderError('PRIVATE_CONFIGURATION_INVALID', 503)
-        return json.loads(stream.read(4 * 1024 * 1024 + 1))
+        return json.loads(stream.read(maximum + 1))
 
 
 def save(path, value):
@@ -97,6 +97,8 @@ def public(record):
                            for item in result.get('resources', []) if isinstance(item, dict)]
     output['retained'] = [{key: item[key] for key in ('kind', 'id', 'status') if key in item}
                           for item in result.get('retained', []) if isinstance(item, dict)]
+    output['residuals'] = [{key: item[key] for key in ('kind', 'id', 'status') if key in item}
+                           for item in result.get('residuals', []) if isinstance(item, dict)]
     output['operations'] = [{key: operation[key] for key in ('id', 'action', 'status', 'created_at', 'updated_at', 'error') if key in operation}
                             for operation in record.get('operations', {}).values()]
     for operation in output['operations']:
@@ -175,6 +177,17 @@ class ControlPlane:
         if action == 'list':
             return {'items': [public(row) for row in (read_private(path) for path in sorted(self.root.glob('*.json')))
                               if row['owner_id'] == owner]}
+        if action == 'pending':
+            pending = []
+            for path in sorted(self.root.glob('*.json')):
+                record = read_private(path)
+                if record['owner_id'] == owner and record['status'] == 'queued':
+                    for operation in record['operations'].values():
+                        if operation['status'] == 'queued':
+                            pending.append({'environment_id': record['id'], 'action': operation['action'],
+                                            'idempotency_key': operation['idempotency_key'],
+                                            'operation': operation.get('operation')})
+            return {'items': pending}
         if action in ('connection', 'catalog'):
             account = self.account(request.get('account_id'), owner)
             adapter = self.adapter_factory(account['provider'], account['adapter'])
@@ -220,13 +233,19 @@ class ControlPlane:
             if action in ('binding', 'confirm_binding'):
                 result = record.get('result', {})
                 evidence = result.get('readiness', {})
-                required = ('infrastructure', 'cluster', 'storage') + (('database',) if record['spec']['database']['mode'] == 'standalone' else ())
+                required = ('infrastructure', 'cluster', 'storage', 'public_access') + (('database',) if record['spec']['database']['mode'] == 'standalone' else ())
                 if result.get('status') != 'succeeded' or not all(evidence.get(key) is True for key in required):
                     raise ProviderError('ENVIRONMENT_NOT_READY', 409)
                 path = result.get('application_config_path')
                 if not isinstance(path, str) or not Path(path).is_absolute():
                     raise ProviderError('APPLICATION_BINDING_MISSING', 409)
                 binding_hash = digest(read_private(path))
+                receipt_path = result.get('application_binding_receipt_path')
+                if not isinstance(receipt_path, str):
+                    raise ProviderError('APPLICATION_REGISTRATION_UNVERIFIED', 409)
+                receipt = read_private(receipt_path)
+                if receipt.get('status') != 'succeeded' or receipt.get('environment_id') != record['id'] or receipt.get('owner_id') != owner or receipt.get('account_id') != account['id'] or receipt.get('application_config_hash') != binding_hash:
+                    raise ProviderError('APPLICATION_REGISTRATION_UNVERIFIED', 409)
                 if action == 'confirm_binding':
                     if request.get('binding_hash') != binding_hash:
                         raise ProviderError('APPLICATION_BINDING_CHANGED', 409)
@@ -237,13 +256,19 @@ class ControlPlane:
                             operation['status'] = 'succeeded'
                     self.persist(record)
                     return public(record)
-                return {'environment_id': record['id'], 'spec': record['spec'], 'application_config_path': path, 'binding_hash': binding_hash}
+                return {'environment_id': record['id'], 'spec': record['spec'], 'application_config_path': path, 'binding_hash': binding_hash,
+                        'observer_product_file': receipt.get('observer_product_file')}
             adapter = self.adapter_factory(account['provider'], account['adapter'])
             if action in ('describe', 'reconcile'):
                 result = adapter.describe(self.context(record, account))
                 self.validate_result(result)
                 record['result'] = result
                 record['status'] = 'ready' if ready(result, record['spec']) else 'unknown'
+                if result.get('ownership_verified') is True and result.get('mutation_in_progress') is False:
+                    if result.get('no_resources') is True:
+                        record['status'] = 'planned'
+                    elif not ready(result, record['spec']):
+                        record['status'] = 'blocked'
                 if result.get('status') == 'succeeded' and result.get('state') == 'stopped' and result.get('stopped_verified') is True:
                     record['status'] = 'stopped'
                 if result.get('status') == 'succeeded' and result.get('deleted') is True and result.get('residuals') == []:
@@ -256,6 +281,8 @@ class ControlPlane:
                                 or operation['action'] == 'operate' and operation.get('operation', {}).get('action') == 'stop' and record['status'] == 'stopped'
                                 or operation['action'] == 'operate' and operation.get('operation', {}).get('action') == 'start' and record['status'] == 'ready'):
                             operation['status'] = 'succeeded'
+                        elif record['status'] in ('blocked', 'planned'):
+                            operation['status'] = 'blocked'
                         else:
                             operation['status'] = 'unknown'
                         operation['updated_at'] = self.clock()
@@ -270,6 +297,8 @@ class ControlPlane:
                 payload = request.get('operation')
                 if not isinstance(payload, dict) or payload.get('action') not in ('start', 'stop', 'backup', 'restore', 'verify'):
                     raise ProviderError('OPERATION_UNSUPPORTED', 422)
+                if payload['action'] == 'restore' and request.get('restore_authorization') != {'restore_authorized': True, 'active_applications': 0}:
+                    raise ProviderError('RESTORE_PRODUCT_GUARD_REQUIRED', 409)
             if not account['allow_apply']:
                 raise ProviderError('ACCOUNT_EXECUTION_DISABLED', 403)
             key = request.get('idempotency_key')
@@ -301,7 +330,7 @@ class ControlPlane:
                     raise ProviderError('ENVIRONMENT_DELETED', 409)
                 operation = {'id': operation_id, 'action': action, 'fingerprint': fingerprint,
                              'status': 'queued', 'created_at': self.clock(), 'updated_at': self.clock(),
-                             'operation': request.get('operation')}
+                             'operation': request.get('operation'), 'idempotency_key': key}
                 record['operations'][operation_id] = operation
                 record['status'] = 'queued'
                 self.persist(record)
@@ -310,6 +339,8 @@ class ControlPlane:
             operation['status'] = record['status'] = 'running'
             self.persist(record)  # Dispatch marker is durable before any native side effect.
             context = self.context(record, account, operation_id)
+            if action == 'operate' and request.get('operation', {}).get('action') == 'restore':
+                context.update(restore_authorized=True, active_applications=0)
             try:
                 if action == 'apply':
                     result = adapter.apply(record['spec'], context)
