@@ -48,7 +48,8 @@
             "aws",
             "gcp",
             "openstack",
-            "onprem"
+            "onprem",
+            "ncp"
           ]
         },
         "placement": {

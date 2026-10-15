@@ -36,7 +36,7 @@ def require(value, message):
 def validate(request):
     runtime, target, inv = request['runtime'], request['target'], request['inventory']
     require(runtime['profile'] == PROFILE and request['operation'] == 'runtime.install', 'kubeadm profile requires runtime.install')
-    require(target['provider'] in ('aws', 'gcp', 'openstack') and target['architecture'] == 'amd64', 'kubeadm requires AWS/GCP/OpenStack amd64')
+    require(target['provider'] in ('aws', 'gcp', 'openstack', 'ncp') and target['architecture'] == 'amd64', 'kubeadm requires AWS/GCP/OpenStack amd64')
     require(isinstance(target.get('account_id'), str) and target['account_id'], 'kubeadm account/project binding required')
     require(len(inv['control_plane']) == 1 and len(inv['workers']) == 2, 'kubeadm profile requires one control-plane and two compute nodes')
     require(all(isinstance(n.get('availability_zone'), str) and n['availability_zone'] for n in nodes(request)), 'each node requires its availability zone')
@@ -152,6 +152,11 @@ def from_registry(config, *, request_id, operation='runtime.install'):
                  resource_id=member['resource_id'], project_id=account, management_network=member['management_network'],
                  placement=region, architecture='amd64', initialization='preconfigured', ssh=member['ssh'])
             node = legacy['inventory']['control_plane'][0]
+        elif provider == 'ncp':
+            require(set(member) == common | {'descriptor_file'}, 'NCP typed descriptor required')
+            sys.path.insert(0, str(ansible.ROOT))
+            from infrastructure.providers.ncp.runtime import node as ncp_node
+            node = ncp_node(config, member)
         else:
             raise ansible.ContractError('unsupported cluster provider')
         node['availability_zone'] = member['availability_zone']
@@ -166,6 +171,8 @@ def addon_lock_keys(request):
         key = storage.get('aws', {}).get('filesystem_id', request['target']['id'])
     elif provider == 'gcp':
         key = storage.get('gcp', {}).get('instance_name', request['target']['id'])
+    elif provider == 'ncp':
+        key = storage.get('ncp', {}).get('nas_volume_instance_no', request['target']['id'])
     else:
         ceph = storage.get('cephfs', {})
         key = ':'.join(str(ceph.get(k, '')) for k in ('cluster_id', 'fs_name', 'subvolume_group'))
