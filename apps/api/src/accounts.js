@@ -118,6 +118,13 @@ export function createAccountData(db, mailer = accountMailSender()) {
       const row = db.prepare(`SELECT s.account_id, s.csrf_token, s.expires_at, a.email, a.verified_at
         FROM account_sessions s JOIN accounts a ON a.id = s.account_id WHERE s.token_hash = ? AND s.expires_at > ?`)
         .get(digest(token), Date.now());
+      // Account ownership survives cookie rotation, while legacy browser sessions
+      // retain their original ownership. This row is never a login credential.
+      if (row?.verified_at) {
+        const now = Date.now();
+        db.prepare('INSERT INTO sessions VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET last_seen_at=excluded.last_seen_at')
+          .run(`account:${row.account_id}`, now, now, 8640000000000000);
+      }
       return row && row.verified_at ? { id: row.account_id, email: row.email, csrf_token: row.csrf_token,
         expires_at: new Date(row.expires_at).toISOString() } : null;
     },

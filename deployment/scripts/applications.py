@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import re
 import stat
+import sys
 
 import environment as runtime
 from service_name import service_name
@@ -93,6 +94,28 @@ def load_config(config_path):
         require(isinstance(profile['ingress'], dict) and len(runtime.bridge.encoded(profile['ingress'])) <= 16384)
         service_name('validation-app', profile['tenant'], name, profile['ingress'].get('base_domain'))
     return config
+
+
+def register_observation(config, profile, descriptor, binding, home):
+    observer = profile['ingress'].get('observability_config_file')
+    if not observer:
+        return None
+    absolute(observer)
+    request = {'version': 1, 'target_id': binding['environment_id'], 'environment_id': binding['environment_id'],
+               'application_id': binding['application_id'], 'app': binding['registered']['app'],
+               'namespace': binding['application_id'], 'node_ip': descriptor['addresses']['private'],
+               'probe_url': 'https://' + binding['hostname'] + '/', 'registry_file': config['registry_file'],
+               'context': config['cd']['context']}
+    runtime.save(home / 'observability-request.json', request)
+    code = runtime.ansible.execute([sys.executable, str(runtime.ROOT / 'observability/register.py'),
+        '--config', observer, '--request', str(home / 'observability-request.json'), '--out', str(home / 'observability.json')],
+        900, dict(os.environ))
+    require(code == 0, 'APPLICATION_OBSERVABILITY_UNVERIFIED')
+    result = runtime.read_private(home / 'observability.json')
+    require(result.get('status') == 'succeeded' and result.get('registered') is True
+            and result.get('target_id') == binding['environment_id'] and result.get('app') == binding['registered']['app'],
+            'APPLICATION_OBSERVABILITY_UNVERIFIED')
+    return {'registered': True, 'collection_state': 'pending'}
 
 
 def _inputs(config, request):
@@ -205,7 +228,7 @@ def register(config_path, request):
         mutation_started = False
         try:
             # Resolve existing runtime networking before granting permissions or dispatching CI.
-            if profile['provider'] == 'aws' and profile['ingress'].get('edge_config_file'):
+            if profile['provider'] == 'aws' and profile['ingress'].get('edge_config_file') and not profile['ingress'].get('cluster_edge_config_file'):
                 try:
                     runtime.aws_security_group(descriptor, profile['ingress'].get('target_security_group_id'))
                 except (OSError, RuntimeError, ValueError, KeyError, TypeError) as exc:
@@ -259,11 +282,12 @@ def register(config_path, request):
                     step('permissions', lambda: runtime.grant_control_objects(cd, registered, app_id, environment_id=env_id))
                     tls = {'tls_server_name': descriptor['addresses']['private']} if (
                         profile['provider'] == 'openstack' and native['inventory']['control_plane'][0]['ssh'].get('connect_host')
-                        or profile['provider'] == 'gcp' and descriptor.get('management_endpoint')) else {}
+                        or descriptor.get('management_endpoint')) else {}
                     renewal, expiry = step('argo', lambda: runtime.register_argo(kube, cd, registered, app_id, app_id, None, **tls))
                     step('credentials', lambda: runtime.install_renewal(cd, renewal))
                     record['cluster_registration'] = step('cluster', lambda: runtime.share_application_cluster(kube, cd, registered, env_id))
                     step('ci', lambda: runtime.bind_ci(profile, registered, app_id))
+                    record['observability'] = step('observability', lambda: register_observation(config, profile, descriptor, binding, home))
                     runtime.save(home / 'binding.json', binding)
                     record.update(status='succeeded', stage='registered', runtime_permissions_version=2, credentials={'renewal': 'configured', 'expires_at': expiry},
                                   binding_sha256=hashlib.sha256(runtime.read_private(home / 'binding.json', raw=True)).hexdigest())

@@ -1,0 +1,672 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Railshot common environment control plane",
+    "version": "1.0.0",
+    "description": "Authenticated owner scope. Provider credentials and paths are server operator references. Managed accounts are explicitly owner-bound. Mutation requires Idempotency-Key; login-cookie mutation additionally requires X-Railshot-CSRF. Restores require stopped applications and a separate private DB approval. Local tests are not live acceptance."
+  },
+  "paths": {
+    "/api/v1/tenancies": {
+      "get": {
+        "operationId": "listTenancies",
+        "summary": "List registered owned or managed accounts bound to the authenticated owner",
+        "responses": {
+          "200": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "./product.openapi.json#/components/parameters/limit"
+          },
+          {
+            "$ref": "./product.openapi.json#/components/parameters/marker"
+          }
+        ]
+      }
+    },
+    "/api/v1/tenancies/{id}/checks": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "checkTenancy",
+        "summary": "Observe native account authentication without provisioning",
+        "responses": {
+          "200": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/tenancies/{id}/catalogs": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getTenancyCatalog",
+        "summary": "List operator-approved native profiles",
+        "responses": {
+          "200": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/clusters": {
+      "get": {
+        "operationId": "listClusters",
+        "summary": "List environments and durable operations",
+        "responses": {
+          "200": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "items",
+                    "next_marker"
+                  ],
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Cluster"
+                      }
+                    },
+                    "next_marker": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "./product.openapi.json#/components/parameters/limit"
+          },
+          {
+            "$ref": "./product.openapi.json#/components/parameters/marker"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "planCluster",
+        "summary": "Create an expiring reviewed resource plan; does not apply resources",
+        "responses": {
+          "201": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClusterSpec"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/clusters/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getCluster",
+        "summary": "Read durable environment state",
+        "responses": {
+          "200": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteCluster",
+        "summary": "Delete an unused environment, preserving provider-retained data",
+        "responses": {
+          "202": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./product.openapi.json#/components/schemas/Accepted"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          },
+          "200": {
+            "description": "Terminal replay or synchronous reconcile result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/clusters/{id}/operations": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "schema": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+          }
+        }
+      ],
+      "post": {
+        "operationId": "createClusterOperation",
+        "summary": "Apply, observe, or operate an environment through the registered provider",
+        "responses": {
+          "202": {
+            "description": "Owner-scoped result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "./product.openapi.json#/components/schemas/Accepted"
+                }
+              }
+            },
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authenticated owner required"
+          },
+          "403": {
+            "description": "Policy denies execution"
+          },
+          "404": {
+            "description": "Resource not owned or absent"
+          },
+          "409": {
+            "description": "Conflict, in use, or reconciliation required"
+          },
+          "422": {
+            "description": "Invalid input"
+          },
+          "503": {
+            "description": "Provider or operator configuration unavailable"
+          },
+          "200": {
+            "description": "Terminal replay or synchronous reconcile result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cluster"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "enum": [
+                      "apply",
+                      "reconcile",
+                      "delete",
+                      "start",
+                      "stop",
+                      "backup",
+                      "restore",
+                      "verify"
+                    ]
+                  },
+                  "backup_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ClusterSpec": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "name",
+          "provider",
+          "account_id",
+          "region",
+          "scope",
+          "runtime",
+          "database"
+        ],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "enum": [
+              "aws",
+              "gcp",
+              "ncp",
+              "openstack"
+            ]
+          },
+          "account_id": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "shared",
+              "dedicated"
+            ]
+          },
+          "application_name": {
+            "type": "string"
+          },
+          "runtime": {
+            "const": {
+              "kind": "kubeadm",
+              "control_planes": 1,
+              "workers": 2
+            }
+          },
+          "database": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "enum": [
+                  "none",
+                  "standalone"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "Cluster": {
+        "type": "object",
+        "required": [
+          "id",
+          "spec",
+          "status",
+          "readiness",
+          "deployable",
+          "operations"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ClusterSpec"
+          },
+          "status": {
+            "enum": [
+              "planned",
+              "queued",
+              "running",
+              "ready",
+              "blocked",
+              "unknown",
+              "stopped",
+              "deleted"
+            ]
+          },
+          "deployable": {
+            "type": "boolean"
+          },
+          "readiness": {
+            "type": "object",
+            "properties": {
+              "infrastructure": {
+                "type": "boolean"
+              },
+              "cluster": {
+                "type": "boolean"
+              },
+              "storage": {
+                "type": "boolean"
+              },
+              "public_access": {
+                "type": "boolean"
+              },
+              "database": {
+                "type": "boolean"
+              },
+              "deployment_binding": {
+                "type": "boolean"
+              },
+              "application_http": {
+                "type": "boolean"
+              }
+            }
+          },
+          "plan": {
+            "type": "object",
+            "properties": {
+              "hash": {
+                "type": "string"
+              },
+              "expires_at": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "format": "date-time"
+              },
+              "changes": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                }
+              },
+              "retention": {
+                "type": "string"
+              }
+            }
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "retained": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "residuals": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

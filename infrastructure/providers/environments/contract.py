@@ -12,7 +12,7 @@ import re
 PROVIDERS = {'aws', 'gcp', 'ncp', 'openstack'}
 REGIONS = {'aws': 'ap-northeast-2', 'gcp': 'asia-northeast3', 'ncp': 'KR'}
 READINESS = ('infrastructure', 'cluster', 'storage', 'public_access', 'database', 'deployment_binding', 'application_http')
-REQUIRED_READINESS = ('infrastructure', 'cluster', 'storage', 'database', 'deployment_binding')
+REQUIRED_READINESS = ('infrastructure', 'cluster', 'storage', 'public_access', 'database', 'deployment_binding')
 ID = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
 
 

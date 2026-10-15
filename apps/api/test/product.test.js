@@ -702,7 +702,7 @@ test('UI environment selection preserves the source app identity and rejects mis
     service: { targetId: 'demo', deploy: async (value) => { submitted.push(value); return { run_id: '123', source_commit: publication.source_commit }; },
       status: async () => ({ run_id: 123, state: 'published', publication: { ...publication, app: 'calculator' } }) } });
   const options = await (await fetch(`${base}/api/v1/options`)).json();
-  assert.deepEqual(options.items.map(({ provider, available }) => [provider, available]), [['aws', true], ['gcp', false], ['openstack', false], ['proxmox', false]]);
+  assert.deepEqual(options.items.map(({ provider, available }) => [provider, available]), [['aws', true], ['gcp', false], ['ncp', false], ['openstack', false], ['proxmox', false]]);
   const selection = () => { const value = form(); value.delete('app'); value.delete('target_id'); value.set('environment', 'cloud'); value.set('provider', 'aws'); value.set('source_name', 'Calculator'); return value; };
   for (const [mutate, status] of [
     [(value) => { value.set('environment', 'onprem'); value.set('provider', 'openstack'); }, 409],
@@ -763,7 +763,7 @@ test('HTTP provider selection rejects other source apps before fetching or dispa
         return { state: 'published', publication: runs.get(runId) };
       } } });
   const options = await (await fetch(`${base}/api/v1/options`)).json();
-  assert.deepEqual(options.items.map(({ provider, available }) => [provider, available]), [['aws', true], ['gcp', true], ['openstack', true], ['proxmox', false]]);
+  assert.deepEqual(options.items.map(({ provider, available }) => [provider, available]), [['aws', true], ['gcp', true], ['ncp', false], ['openstack', true], ['proxmox', false]]);
   const targets = await (await fetch(`${base}/api/v1/targets`)).json();
   assert.deepEqual(targets.items.map(({ id, provider }) => [id, provider]), [['demo', 'aws'], ['stack-gcp', 'gcp'], ['stack-openstack', 'openstack']]);
   for (const [provider, environment, id, app] of [['aws', 'cloud', 'demo', 'demo-app'], ['gcp', 'cloud', 'stack-gcp', 'gcp-app'], ['openstack', 'onprem', 'stack-openstack', 'openstack-app']]) {

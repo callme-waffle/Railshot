@@ -99,7 +99,7 @@ export async function createDashboardData(db, root) {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some((key) => !Object.hasOwn(defaults, key))
             || ('view' in input && !['deploy', 'history', 'monitor', 'connections', 'personal'].includes(input.view))
             || ('environment' in input && !['cloud', 'onprem'].includes(input.environment))
-            || ('provider' in input && !['', 'aws', 'gcp', 'openstack', 'proxmox'].includes(input.provider))) throw new DashboardError('화면 설정을 확인하세요.');
+            || ('provider' in input && !['', 'aws', 'gcp', 'ncp', 'openstack', 'proxmox'].includes(input.provider))) throw new DashboardError('화면 설정을 확인하세요.');
         const previous = db.prepare('SELECT data FROM preferences WHERE session_id = ?').get(id);
         const data = { ...defaults, ...(previous ? JSON.parse(previous.data) : {}), ...input };
         db.prepare('INSERT INTO preferences VALUES (?, ?) ON CONFLICT(session_id) DO UPDATE SET data=excluded.data').run(id, JSON.stringify(data));
