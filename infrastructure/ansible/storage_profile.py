@@ -15,6 +15,7 @@ import re
 import signal
 import stat
 import subprocess
+import sys
 import time
 
 HERE = Path(__file__).resolve().parent
@@ -142,15 +143,24 @@ def validate(request):
         if provider == 'aws':
             if not re.fullmatch(r'[0-9]{12}', scope):
                 raise StorageError('AWS account_id must contain 12 digits')
-            cfg = _object(storage['aws'], ('vpc_id', 'worker_subnet_ids', 'filesystem_id', 'controller_credentials_secret', 'controller_credentials_file'),
-                          ('vpc_id', 'worker_subnet_ids', 'controller_credentials_secret'), 'AWS storage')
+            cfg = _object(storage['aws'], ('vpc_id', 'worker_subnet_ids', 'filesystem_id', 'controller_credentials_secret', 'controller_credentials_file', 'identity_mode', 'controller_node'),
+                          ('vpc_id', 'worker_subnet_ids'), 'AWS storage')
             _text(cfg['vpc_id'], 'VPC ID', r'vpc-[a-f0-9]{8,17}')
             subnets = cfg['worker_subnet_ids']
             if not isinstance(subnets, dict) or set(subnets) != {n['id'] for n in workers}:
                 raise StorageError('AWS worker_subnet_ids must name both workers')
             for subnet in subnets.values():
                 _text(subnet, 'subnet ID', r'subnet-[a-f0-9]{8,17}')
-            _text(cfg['controller_credentials_secret'], 'CSI credential Secret', r'[a-z0-9][a-z0-9-]{0,62}')
+            if cfg.get('identity_mode', 'secret') == 'instance_profile':
+                controls = request['inventory']['control_plane']
+                if len(controls) != 1 or cfg.get('controller_node') != controls[0]['id'] or set(cfg) & {'controller_credentials_secret', 'controller_credentials_file'}:
+                    raise StorageError('Instance-profile CSI must run on the admitted control node without static secrets')
+            elif cfg.get('identity_mode', 'secret') == 'secret':
+                _text(cfg['controller_credentials_secret'], 'CSI credential Secret', r'[a-z0-9][a-z0-9-]{0,62}')
+                if 'controller_node' in cfg:
+                    raise StorageError('Secret CSI mode does not select a control node')
+            else:
+                raise StorageError('Unsupported AWS CSI identity mode')
             if 'controller_credentials_file' in cfg:
                 _path(cfg['controller_credentials_file'], 'remote CSI credentials_file')
             if storage['mode'] == 'reuse':
@@ -239,13 +249,19 @@ def _cloud_env(storage, provider, original):
                    AWS_PAGER='', AWS_CONFIG_FILE='/dev/null', AWS_SHARED_CREDENTIALS_FILE='/dev/null',
                    AWS_EC2_METADATA_DISABLED='true', TF_IN_AUTOMATION='1')
     else:
-        if data.get('type') != 'service_account' or data.get('project_id') != storage['binding']['account_id']:
-            raise StorageError('GCP credential project must match cluster project')
+        sys.path.insert(0, str(ROOT))
+        from infrastructure.ansible.cloud_credentials import gcp_credential_identity
+        try:
+            gcp_credential_identity(data, str(credential), storage['binding']['account_id'])
+        except ValueError as error:
+            raise StorageError('GCP credential project/identity must match cluster project') from error
         # ADC is read by Terraform; REST observations use a short-lived token from
         # the same service account via gcloud with its isolated configuration.
         env.update(GOOGLE_APPLICATION_CREDENTIALS=str(credential),
                    CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=str(credential),
                    CLOUDSDK_CORE_PROJECT=storage['binding']['account_id'], TF_IN_AUTOMATION='1')
+        if original.get('CLOUDSDK_CONFIG'):
+            env['CLOUDSDK_CONFIG'] = original['CLOUDSDK_CONFIG']
     return env
 
 

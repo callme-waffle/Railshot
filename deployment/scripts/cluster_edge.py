@@ -123,11 +123,12 @@ def cloud_auth(config):
                 all(isinstance(value, str) and value and '\x00' not in value for value in credential.values()),
                 'CLUSTER_EDGE_CREDENTIAL_INVALID')
     elif config['provider'] == 'gcp':
-        require(credential.get('type') == 'service_account' and credential.get('project_id') == config['account_id'] and
-                isinstance(credential.get('client_email'), str) and
-                re.fullmatch(r'[a-z0-9-]+@' + re.escape(config['account_id']) + r'\.iam\.gserviceaccount\.com', credential['client_email']) and
-                isinstance(credential.get('private_key'), str) and '-----BEGIN PRIVATE KEY-----' in credential['private_key'] and
-                credential.get('token_uri') == 'https://oauth2.googleapis.com/token', 'CLUSTER_EDGE_CREDENTIAL_INVALID')
+        sys.path.insert(0, str(ROOT))
+        from infrastructure.ansible.cloud_credentials import gcp_credential_identity
+        try:
+            gcp_credential_identity(credential, config['credentials_file'], config['account_id'])
+        except ValueError as error:
+            raise EdgeError('CLUSTER_EDGE_CREDENTIAL_INVALID') from error
     else:
         allowed = {'OS_AUTH_URL', 'OS_PROJECT_ID', 'OS_REGION_NAME', 'OS_USERNAME', 'OS_PASSWORD',
                    'OS_USER_DOMAIN_NAME', 'OS_USER_DOMAIN_ID', 'OS_APPLICATION_CREDENTIAL_ID',
@@ -167,6 +168,7 @@ def credential_env(config, original):
     elif config['provider'] == 'gcp':
         env.update(GOOGLE_APPLICATION_CREDENTIALS=config['credentials_file'], CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=config['credentials_file'],
                    CLOUDSDK_CORE_PROJECT=config['account_id'])
+        if original.get('CLOUDSDK_CONFIG'): env['CLOUDSDK_CONFIG'] = original['CLOUDSDK_CONFIG']
     else:
         env.update(credential)
         env.update(OS_PROJECT_ID=config['account_id'], OS_REGION_NAME=config['region'],
@@ -187,7 +189,7 @@ def validate(request):
     config = private_json(request['runtime']['edge'])
     fields = {'version', 'cluster_id', 'provider', 'account_id', 'region', 'variables_file', 'worker_bindings', 'credentials_file'}
     require(isinstance(config, dict) and fields <= set(config) <= fields |
-            {'dns_config_file', 'tunnel', 'timeout_seconds', 'aws_authority_file', 'gcp_authority_file'} and type(config['version']) is int and config['version'] == 1,
+            {'dns_config_file', 'tunnel', 'timeout_seconds', 'credential_binding', 'aws_authority_file', 'gcp_authority_file'} and type(config['version']) is int and config['version'] == 1,
             'CLUSTER_EDGE_CONFIG_INVALID')
     require(config['provider'] in PROVIDERS and
             (config['cluster_id'], config['provider'], config['account_id'], config['region']) ==
@@ -235,6 +237,22 @@ def validate(request):
             require(re.fullmatch(UUID, binding['subnet_id']), 'CLUSTER_EDGE_COMPUTE_BINDING_MISMATCH')
     credential = cloud_auth(config)
     authority_hashes = {'provider_credentials': digest({key: config[key] for key in ('provider', 'account_id', 'region', 'credentials_file')})}
+    if 'credential_binding' in config:
+        binding = config['credential_binding']
+        require(config['provider'] == 'aws' and isinstance(binding, dict) and
+                set(binding) == {'account_id', 'role_arn', 'credential_ref', 'policy_revision'} and
+                binding['account_id'] == config['account_id'] and
+                isinstance(binding['role_arn'], str) and re.fullmatch(r'arn:aws:iam::' + re.escape(config['account_id']) + r':role/[A-Za-z0-9_+=,.@/-]+', binding['role_arn']) and
+                all(isinstance(binding[k], str) and binding[k] for k in ('credential_ref', 'policy_revision')) and
+                'AWS_SESSION_TOKEN' in credential, 'CLUSTER_EDGE_CREDENTIAL_BINDING_INVALID')
+        # Rotating STS session bytes are not durable authority. The configured role,
+        # account and policy remain bound; the AWS account is observed at execution.
+        authority_hashes['provider_credentials'] = digest(binding)
+    # GCP binds the refreshable credential identity independently of AWS STS.
+    # The AWS-only binding check above still rejects cross-provider role inputs.
+    if config['provider'] == 'gcp':
+        from infrastructure.ansible.cloud_credentials import gcp_credential_identity
+        authority_hashes['provider_credentials'] = digest(gcp_credential_identity(credential, config['credentials_file'], config['account_id']))
     for provider, key in (('aws', 'account_id'), ('gcp', 'project_id')):
         if config.get(provider + '_authority_file'):
             require(config['provider'] == provider, 'CLUSTER_EDGE_CREDENTIAL_INVALID')
@@ -768,6 +786,11 @@ def provision(request, *, state_dir, runner=None, deadline=None, env=None, kube=
         if config['provider'] == 'aws' and isinstance(executor, NativeRunner):
             caller = json.loads(executor(['aws', 'sts', 'get-caller-identity', '--output', 'json', '--no-cli-pager'], cwd=root))
             require(caller.get('Account') == config['account_id'], 'CLUSTER_EDGE_SCOPE_MISMATCH')
+            if config.get('credential_binding'):
+                role_name = config['credential_binding']['role_arn'].rsplit('/', 1)[1]
+                require(isinstance(caller.get('Arn'), str) and caller['Arn'].startswith(
+                    'arn:aws:sts::' + config['account_id'] + ':assumed-role/' + role_name + '/'),
+                    'CLUSTER_EDGE_CREDENTIAL_ROLE_MISMATCH')
         if config['provider'] == 'openstack':
             token = json.loads(executor(['openstack', 'token', 'issue', '-f', 'json'], cwd=root))
             require(token.get('project_id') == config['account_id'], 'CLUSTER_EDGE_SCOPE_MISMATCH')
