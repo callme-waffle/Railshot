@@ -23,7 +23,7 @@ def initialize(directory, provider, owner):
         raise ProviderError('INPUT_DIRECTORY_MUST_BE_OUTSIDE_REPOSITORY', 422)
     directory = private_dir(directory)
     config = directory / 'control.json'
-    if config.exists():
+    if config.exists() or (directory / 'INPUTS.txt').exists():
         raise ProviderError('INPUT_FILE_ALREADY_EXISTS', 409)
     account = {'id': provider + '-account', 'owner_id': owner, 'provider': provider, 'ownership': 'owned',
                'credential_ref': provider + '-credential', 'regions': [REGIONS.get(provider, 'RegionOne')],
@@ -41,9 +41,24 @@ def initialize(directory, provider, owner):
             raise ProviderError('INPUT_FILE_ALREADY_EXISTS_OR_INVALID', 409)
     for name, content in template.get('files', {}).items():
         save(directory / name, content)
+    guide = directory / 'INPUTS.txt'
+    if guide.exists():
+        raise ProviderError('INPUT_FILE_ALREADY_EXISTS', 409)
+    notes = template.get('notes', [])
+    text = ('Private operator input templates. Execution remains disabled.\n'
+            'Do not send secret values through chat, git, shell arguments or PR comments.\n'
+            'Use an operator secure editor or secret manager; keep directory 0700 and files 0600.\n'
+            'Owner: GET /api/v1/logins as the intended user, then prefix account_id with account:.\n'
+            'Offline validate reports field names and codes only; it never provisions resources.\n'
+            'CI credential JSON: {"token":""}; profile.ingress.ci_credentials_file references this file.\n'
+            'Observer: profile.ingress.observability_config_file references the existing collector registration profile.\n')
+    text += '\n'.join(note for note in notes if isinstance(note, str)) + '\n'
+    fd = os.open(guide, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(text)
     save(config, {'version': 1, 'policy_revision': 'initial', 'state_dir': str(directory / 'state'), 'accounts': [account]})
     # Template contains only names and disabled policy, never guessed cloud values or secret placeholders.
-    return {'valid': True, 'created': ['control.json', *template.get('files', {}).keys()], 'verification': 'template_only', 'execution_enabled': False}
+    return {'valid': True, 'created': ['control.json', 'INPUTS.txt', *template.get('files', {}).keys()], 'verification': 'template_only', 'execution_enabled': False}
 
 
 def validate(config):

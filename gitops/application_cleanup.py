@@ -411,6 +411,12 @@ def check_journals(root):
 
 
 def plan(binding, action):
+    if binding.get('provider') == 'ncp':
+        import ncp_routes
+        return ncp_routes.plan(binding, action)
+    if binding.get('ingress', {}).get('cluster_edge_config_file'):
+        import cluster_applications
+        return cluster_applications.lifecycle_plan(binding, action)
     checked(binding, action)
     config = config_at(binding)
     with ExitStack() as stack:
@@ -519,6 +525,12 @@ def validate_locked(binding, action, expected_plan, config, dns_config, root):
 
 def validate(binding, action, expected_plan):
     """Provider read-only validation of the SAME reviewed plan before caller writes."""
+    if binding.get('provider') == 'ncp':
+        import ncp_routes
+        return ncp_routes.validate(binding, action, expected_plan)
+    if binding.get('ingress', {}).get('cluster_edge_config_file'):
+        import cluster_applications
+        return cluster_applications.lifecycle_validate(binding, action, expected_plan)
     checked(binding, action)
     config = config_at(binding)
     with ExitStack() as stack:
@@ -530,6 +542,12 @@ def validate(binding, action, expected_plan):
 
 def inspect_execution(binding, action, expected_plan):
     """Read a reviewed route intent; an uncertain provider write is never replayed."""
+    if binding.get('provider') == 'ncp':
+        import ncp_routes
+        return ncp_routes.observe(binding, action, expected_plan)
+    if binding.get('ingress', {}).get('cluster_edge_config_file'):
+        import cluster_applications
+        return cluster_applications.lifecycle_validate(binding, action, expected_plan)
     checked(binding, action)
     config = config_at(binding)
     with ExitStack() as stack:
@@ -549,6 +567,12 @@ def inspect_execution(binding, action, expected_plan):
 
 
 def execute(binding, action, expected_plan):
+    if binding.get('provider') == 'ncp':
+        import ncp_routes
+        return ncp_routes.execute(binding, action, expected_plan)
+    if binding.get('ingress', {}).get('cluster_edge_config_file'):
+        import cluster_applications
+        return cluster_applications.lifecycle_execute(binding, action, expected_plan)
     checked(binding, action)
     config = config_at(binding)
     with ExitStack() as stack:

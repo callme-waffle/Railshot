@@ -208,7 +208,9 @@ class Adapter:
         observer=read_private(next(iter(profiles.values()))['ingress']['observability_config_file'])
         source=observer.get('observer_source_cidr',observer['observer_ip']+'/32')
         require(ipaddress.IPv4Network(source).prefixlen==32 and ipaddress.IPv4Network(source).network_address.is_global,'NCP_OBSERVER_PUBLIC_SOURCE_REQUIRED')
-        rules=[{'protocolTypeCode':'TCP','ipBlock':source,'portRange':'30000-32767'}]
+        ports=[observer['node_metrics_port'],observer['cluster_metrics_port']]
+        require(all(type(port) is int and 30000<=port<=32767 for port in ports) and len(set(ports))==2,'NCP_OBSERVER_PORT_INVALID')
+        rules=[{'protocolTypeCode':'TCP','ipBlock':source,'portRange':str(port)} for port in ports]
         for port in ('22','6443'):rules.append({'protocolTypeCode':'TCP','ipBlock':cfg['network']['management_cidr'],'portRange':port})
         for protocol in ('TCP','UDP'):
             rules.append({'protocolTypeCode':protocol,'accessControlGroupSequence':group,'portRange':'1-65535'})
@@ -270,12 +272,16 @@ class Adapter:
                 'loginKeyName':nodes['login_key_name'],'initScriptNo':host['init_script_no'],'associateWithPublicIp':True,'feeSystemTypeCode':'MTRAT',
                 'blockStorageMappingList.1.order':0,'blockStorageMappingList.1.blockStorageSize':50,
                 'blockStorageMappingList.1.blockStorageVolumeTypeCode':'CB1'}
+            if role=='database':
+                params['networkInterfaceList.1.ip']=str(ipaddress.IPv4Network(cfg['network']['vm_subnet_cidr']).network_address+14)
             self._create(client,home,value,step,'server',params)
         row=wait(client,resource(value,step));require(row.get('vpcNo')==network['vpc_no'] and row.get('subnetNo')==network['vm_subnet_no'],'NCP_SERVER_NETWORK_CHANGED')
         public=str(ipaddress.IPv4Address(row['publicIp']));require(ipaddress.IPv4Address(public).is_global,'NCP_MANAGEMENT_PUBLIC_IP_REQUIRED')
         nics=row.get('networkInterfaceNoList',[]);require(len(nics)==1,'NCP_NIC_BINDING_CHANGED')
         result=client.call('vserver','getNetworkInterfaceList',{'networkInterfaceNoList.1':nics[0]})
         nic=result.get('networkInterfaceList',[]);require(len(nic)==1 and nic[0].get('instanceNo')==row['serverInstanceNo'] and nic[0].get('subnetNo')==network['vm_subnet_no'] and nic[0].get('accessControlGroupNoList')==[network['acg_no']],'NCP_NIC_OWNER_CHANGED')
+        if role=='database':
+            require(nic[0].get('ip')==str(ipaddress.IPv4Network(cfg['network']['vm_subnet_cidr']).network_address+14),'NCP_DATABASE_ADDRESS_CHANGED')
         require(nic[0].get('deleteOnTermination') is True,'NCP_NIC_AUTODELETE_REQUIRED')
         ip_result=client.call('vserver','getPublicIpInstanceList',{'publicIp':public,'vpcNo':network['vpc_no']})
         ips=ip_result.get('publicIpInstanceList',[])
@@ -369,7 +375,9 @@ class Adapter:
         result=kubeadm.run(request,state_dir=str(home/'runtime'))
         value['readiness'].update(cluster=result.get('runtime_ready') is True,storage=result.get('storage_ready') is True,public_access=result.get('edge_ready') is True)
         save(home/'state.json',value);require(result.get('status')=='succeeded','NCP_RUNTIME_NOT_READY')
-        registry=home/'registry.json';save(registry,{'version':1,'targets':{name:{'profile':'kubeadm-1c2w','cluster_file':str(cluster_file),'purpose':'runtime'}}})
+        registry=home/'registry.json';save(registry,{'version':1,'targets':{name:{'profile':'kubeadm-1c2w','cluster_file':str(cluster_file),'purpose':'runtime',
+            'management_endpoint':'https://'+value['nodes']['control']['public_ipv4']+':6443',
+            'metrics_endpoints':{name+'-'+role:value['nodes'][role]['public_ipv4'] for role in ('control','worker-a','worker-b')}}}})
         app=template(read_private(cfg['application_template_file']),{'environment_id':name,'registry_file':str(registry),'state_dir':str(home)})
         profiles=app['environments'];require(len(profiles)==1,'NCP_APPLICATION_TEMPLATE_AMBIGUOUS')
         profile=next(iter(profiles.values()));app['environments']={name:profile};app['registry_file']=str(registry)

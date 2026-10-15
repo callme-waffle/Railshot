@@ -168,8 +168,10 @@ export async function createProductStore(directory) {
     read: () => structuredClone(state),
     operationPage(kind, sessionId, { limit, marker }) {
       if (!['builds', 'deployments', 'environments'].includes(kind)) throw new Error('Invalid operation kind');
-      const where = `kind = ?${sessionId ? ' AND session_id = ?' : ' AND (session_id IS NULL OR session_id NOT IN (SELECT session_id FROM owners))'}${kind === 'builds' ? " AND json_extract(record, '$.ci.run_id') IS NOT NULL" : ''}`;
-      const args = sessionId ? [kind, sessionId] : [kind];
+      const owners = Array.isArray(sessionId) ? [...new Set(sessionId.filter(Boolean))] : sessionId ? [sessionId] : [];
+      if (owners.length > 2 || owners.some((owner) => typeof owner !== 'string')) throw new Error('Invalid operation owner');
+      const where = `kind = ?${owners.length ? ` AND session_id IN (${owners.map(() => '?').join(',')})` : " AND (session_id IS NULL OR (session_id NOT LIKE 'account:%' AND session_id NOT IN (SELECT session_id FROM owners)))"}${kind === 'builds' ? " AND json_extract(record, '$.ci.run_id') IS NOT NULL" : ''}`;
+      const args = [kind, ...owners];
       const publicId = kind === 'builds' ? "CAST(json_extract(record, '$.ci.run_id') AS TEXT)" : 'id';
       const anchor = marker === null ? null : db.prepare(`SELECT id, COALESCE(created_at, '') AS created FROM operations WHERE ${where} AND ${publicId} = ?`).get(...args, marker);
       if (marker !== null && !anchor) throw new DashboardError('marker가 잘못되었습니다.');

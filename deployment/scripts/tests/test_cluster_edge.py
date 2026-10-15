@@ -254,7 +254,8 @@ class ClusterEdgeTests(unittest.TestCase):
         self.assertNotIn('private-fixture', json.dumps(prepared))
         old = prepared['binding_sha256']
         edge.durable_write(self.root / 'cloud-credentials.json', edge.encoded({'AWS_ACCESS_KEY_ID': 'key-new', 'AWS_SECRET_ACCESS_KEY': 'changed-secret'}))
-        self.assertNotEqual(edge.validate(self.request)['binding_sha256'], old)
+        self.assertEqual(edge.validate(self.request)['binding_sha256'], old)
+        self.assertEqual(edge.NativeRunner(edge.validate(self.request), time.monotonic() + 60, env=original).env['AWS_SECRET_ACCESS_KEY'], 'changed-secret')
 
     def test_gcp_explicit_adc_and_openstack_application_auth_scope(self):
         config = dict(self.config, provider='gcp', account_id='railshot-project', region='asia-northeast3')

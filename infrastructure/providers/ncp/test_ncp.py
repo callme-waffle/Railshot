@@ -103,8 +103,11 @@ class RuntimeTests(Fixture):
         inventory=kubeadm.inventory(request)['all']['children']['kubeadm_control']['hosts']['node-1']
         self.assertEqual(inventory['ansible_host'],'8.8.4.1')
         self.assertIn('StrictHostKeyChecking=yes',inventory['ansible_ssh_common_args']);self.assertIn('HostKeyAlias=10.84.1.11',inventory['ansible_ssh_common_args'])
-        request,descriptor=environment.registered_node({'profile':'kubeadm-1c2w','purpose':'runtime','cluster_file':self.write('cluster.json',config)},'cluster-test','test-registration')
+        selected={'profile':'kubeadm-1c2w','purpose':'runtime','cluster_file':self.write('cluster.json',config),
+            'management_endpoint':'https://8.8.4.1:6443','metrics_endpoints':{f'node-{i}':f'8.8.4.{i}' for i in (1,2,3)}}
+        request,descriptor=environment.registered_node(selected,'cluster-test','test-registration')
         self.assertEqual(descriptor['management_endpoint'],'https://8.8.4.1:6443');self.assertEqual(descriptor['addresses']['metrics'],'8.8.4.1')
+        self.assertEqual(descriptor['node_metrics_addresses'],['8.8.4.1','8.8.4.2','8.8.4.3'])
     def test_descriptor_cannot_redirect_guest_ssh(self):
         config=self.cluster();config['members'][0]['ssh']['connect_host']='8.8.8.8'
         with self.assertRaisesRegex(ProviderError,'IDENTITY_CHANGED'):kubeadm.from_registry(config,request_id='test-native-contract')
@@ -267,12 +270,13 @@ class NetworkCloud:
 class NetworkTests(Fixture):
     def test_new_network_real_native_graph_and_scoped_management_rules(self):
         profile=ncp.config_template(str(self.home))['adapter'];profile['network']['management_cidr']='8.8.8.8/32'
-        self.write('applications.json',{'environments':{'generated':{'ingress':{'observability_config_file':self.write('observer.json',{'observer_ip':'8.8.4.4'})}}}})
+        self.write('applications.json',{'environments':{'generated':{'ingress':{'observability_config_file':self.write('observer.json',{'observer_ip':'8.8.4.4','node_metrics_port':30910,'cluster_metrics_port':30911})}}}})
         adapter=ncp.Adapter(profile);value={'resources':[],'steps':{}};client=NetworkCloud()
         adapter._network(client,self.home,value,{'environment_id':'env-test','owner_id':'account:test'})
         self.assertEqual(len(client.rows['subnet']),2)
         for row in client.rules['INBND']:
             if row.get('portRange') in ('22','6443'):self.assertEqual(row['ipBlock'],'8.8.8.8/32')
+        self.assertEqual({row['portRange'] for row in client.rules['INBND'] if row.get('ipBlock')=='8.8.4.4/32'},{'30910','30911'})
         count=len([action for action,_ in client.calls if action.startswith('create') or action.startswith('add')])
         adapter._network(client,self.home,value,{'environment_id':'env-test','owner_id':'account:test'})
         self.assertEqual(count,len([action for action,_ in client.calls if action.startswith('create') or action.startswith('add')]))

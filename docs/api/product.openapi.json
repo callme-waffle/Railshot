@@ -3914,6 +3914,24 @@
     },
     "/api/v1/readiness": {
       "$ref": "./personal.openapi.json#/paths/~1api~1v1~1readiness"
+    },
+    "/api/v1/tenancies": {
+      "$ref": "./clusters.openapi.json#/paths/~1api~1v1~1tenancies"
+    },
+    "/api/v1/tenancies/{id}/checks": {
+      "$ref": "./clusters.openapi.json#/paths/~1api~1v1~1tenancies~1{id}~1checks"
+    },
+    "/api/v1/tenancies/{id}/catalogs": {
+      "$ref": "./clusters.openapi.json#/paths/~1api~1v1~1tenancies~1{id}~1catalogs"
+    },
+    "/api/v1/clusters": {
+      "$ref": "./clusters.openapi.json#/paths/~1api~1v1~1clusters"
+    },
+    "/api/v1/clusters/{id}": {
+      "$ref": "./clusters.openapi.json#/paths/~1api~1v1~1clusters~1{id}"
+    },
+    "/api/v1/clusters/{id}/operations": {
+      "$ref": "./clusters.openapi.json#/paths/~1api~1v1~1clusters~1{id}~1operations"
     }
   },
   "components": {

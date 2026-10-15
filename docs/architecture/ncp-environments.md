@@ -177,3 +177,5 @@ For offline quote preparation, `digest(spec)` and
 `digest({k:v for k,v in adapter.items() if k!='budget'})` use sorted canonical JSON
 from `infrastructure.providers.environments.control`; the digest command need not
 print any credential values. Plan does not claim an authoritative price estimate.
+
+단일 PostgreSQL VM은 `vm_subnet_cidr`의 network address + 14를 고정 private IPv4로 요청하며 NIC readback에서 동일 주소를 확인합니다. VM 생성 전 TLS server certificate의 IP SAN을 이 주소로 발급해야 합니다. 예를 들어 `10.90.1.0/24`이면 `10.90.1.14`입니다. 인증서/private key는 저장소 밖 private config 참조로만 제공합니다.
