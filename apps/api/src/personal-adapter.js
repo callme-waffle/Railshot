@@ -141,7 +141,7 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
     const args = config.gateway.command ? ['-n', config.gateway.command, '--request', request] : [gatewayScript, '--config', config.gateway.config_path, '--request', request];
     return runner(executable, args, { mutation: action !== 'verify', timeout: 60000 });
   }
-  async function execute(target, { job_id = randomUUID(), argv, delete_data, public_key } = {}) {
+  async function execute(target, { job_id = randomUUID(), argv, delete_data, public_key, guest } = {}) {
     if (!/^[A-Za-z0-9_-]{1,64}$/.test(job_id) || !Array.isArray(argv) || !argv.length || argv.length > 64
         || argv.some((part) => typeof part !== 'string' || !part.length || part.length > 4096 || /[\x00-\x1f]/.test(part))
         || delete_data !== undefined && delete_data !== true || public_key !== undefined && typeof public_key !== 'string') throw new Error('Invalid OpenStack operation');
@@ -153,6 +153,7 @@ export async function createPersonalAdapter({ configPath, stateDirectory, base, 
     const folder = join(stateDirectory, target.id), request = { version: 1, job_id, action: 'openstack.execute',
       ...(target.account_id ? { target_id: target.id, generation: target.generation, unlock_key: vault.unwrap(target.vault) } : {}), params: {
       argv, ...(delete_data !== undefined ? { delete_data } : {}), ...(public_key !== undefined ? { public_key } : {}),
+      ...(guest !== undefined ? { guest } : {}),
     } };
     const encoded = JSON.stringify(request);
     if (Buffer.byteLength(encoded) > 16384) throw new Error('OpenStack operation too large');

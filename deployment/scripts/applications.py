@@ -117,7 +117,8 @@ def _inputs(config, request):
     resource = native['inventory']['control_plane'][0]['ssh']['transport_ref'] if profile['provider'] == 'aws' else descriptor['resource_id']
     physical = {'provider': profile['provider'], 'resource_id': resource}
     if profile['provider'] == 'openstack':
-        physical['project_id'] = selected['project_id']
+        physical['project_id'] = (native['target']['account_id'] if selected.get('profile') == 'kubeadm-1c2w'
+                                  else selected['project_id'])
     authority = {**physical, 'cluster_server': endpoint, 'private_address': descriptor['addresses']['private'],
                  'ssh': native['inventory']['control_plane'][0]['ssh']}
     # Key contents are not persisted or hashed into ownership: a key rotation with the same

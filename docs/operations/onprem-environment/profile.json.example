@@ -1,0 +1,27 @@
+{
+  "account_id": "onprem-account",
+  "credential_ref": "onprem-project-credential",
+  "project_id": "REPLACE_PROJECT_ID",
+  "region": "RegionOne",
+  "remote_config_file": "/etc/railshot/private/onprem/transport.json",
+  "network": {
+    "cidr": "10.80.0.0/24",
+    "external_network_id": "REPLACE_EXTERNAL_NETWORK_ID",
+    "management_network_id": "REPLACE_REACHABLE_MANAGEMENT_NETWORK_ID",
+    "management_cidr": "10.90.0.10/32"
+  },
+  "nodes": {
+    "image_id": "REPLACE_UBUNTU_AMD64_IMAGE_ID",
+    "flavor_id": "REPLACE_KUBEADM_FLAVOR_ID",
+    "availability_zones": ["nova", "nova", "nova"],
+    "ssh": {"user": "ubuntu", "identity_file": "/etc/railshot/private/onprem/guest_ed25519"},
+    "public_key_file": "/etc/railshot/private/onprem/guest_ed25519.pub"
+  },
+  "storage_template_file": "/etc/railshot/private/onprem/storage.json",
+  "edge_template_file": "/etc/railshot/private/onprem/edge.json",
+  "application_template_file": "/etc/railshot/private/onprem/applications.json",
+  "database": {
+    "flavor_id": "REPLACE_POSTGRES_FLAVOR_ID",
+    "config_file": "/etc/railshot/private/onprem/postgres.json"
+  }
+}

