@@ -32,6 +32,7 @@ CHARTS = {
                 'url': 'https://ceph.github.io/csi-charts/cephfs/ceph-csi-cephfs-3.18.1.tgz'},
 }
 
+CHARTS['nfs'] = dict(CHARTS['filestore'])
 
 class InstallError(ValueError):
     pass
@@ -101,18 +102,28 @@ def render(config):
     params = {}
     mount_options = []
     if backend == 'efs':
-        secret = config['aws']['controller_credentials_secret']
+        secret = config['aws'].get('controller_credentials_secret')
         values = {'controller': {'replicaCount': 2, 'affinity': affinity(workers, {'app': 'efs-csi-controller'}),
                                  'env': [{'name': key, 'valueFrom': {'secretKeyRef': {'name': secret, 'key': key, 'optional': key == 'AWS_SESSION_TOKEN'}}}
                                          for key in ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN')] +
                                         [{'name': 'AWS_REGION', 'value': config['binding']['region']},
                                          {'name': 'AWS_EC2_METADATA_DISABLED', 'value': 'true'}]},
                   'node': {'affinity': affinity(workers)}, 'storageClasses': []}
+        if config['aws'].get('identity_mode') == 'instance_profile':
+            node = config['aws'].get('controller_node')
+            if not isinstance(node, str) or not re.fullmatch(r'[a-z][a-z0-9-]{0,62}', node) or node in workers:
+                raise InstallError('Instance-profile controller requires the dedicated control node')
+            values['controller'] = {'replicaCount': 1, 'hostNetwork': True,
+                'dnsPolicy': 'ClusterFirstWithHostNet', 'nodeSelector': {'kubernetes.io/hostname': node},
+                'tolerations': [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}],
+                'tags': {'railshot-cluster': cluster},
+                'env': [{'name': 'AWS_REGION', 'value': config['binding']['region']},
+                        {'name': 'AWS_EC2_METADATA_DISABLED', 'value': 'false'}]}
         params = {'provisioningMode': 'efs-ap', 'fileSystemId': descriptor['filesystem_id'], 'directoryPerms': '0770',
                   'gidRangeStart': '10000', 'gidRangeEnd': '20000', 'basePath': '/' + cluster,
                   'subPathPattern': '${.PVC.namespace}/${.PVC.name}', 'ensureUniqueDirectory': 'true', 'reuseAccessPoint': 'false'}
         mount_options = ['tls']
-    elif backend == 'filestore':
+    elif backend in ('filestore', 'nfs'):
         values = {'controller': {'replicas': 2, 'affinity': affinity(workers, {'app': 'csi-nfs-controller'}, required=True), 'enableSnapshotter': False,
                                  'defaultOnDeletePolicy': 'retain'},
                   'node': {'affinity': affinity(workers)}, 'storageClass': {'create': False}}
@@ -186,7 +197,7 @@ def _secret_data(path, required, allowed):
 def ensure_secrets(kube, config):
     cluster = config['binding']['cluster_id']
     refs = []
-    if config['backend'] == 'efs':
+    if config['backend'] == 'efs' and config['aws'].get('identity_mode', 'secret') == 'secret':
         cfg = config['aws']
         refs = [(cfg['controller_credentials_secret'], cfg.get('controller_credentials_file'),
                  ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'), ('AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_SESSION_TOKEN'))]
@@ -275,7 +286,7 @@ def _verify_proof_volume(config, pvc, pv):
     attrs = csi.get('volumeAttributes', {})
     if config['backend'] == 'efs' and not csi.get('volumeHandle', '').startswith(descriptor['filesystem_id'] + '::'):
         raise InstallError('Proof PV belongs to a different EFS filesystem')
-    if config['backend'] == 'filestore' and (attrs.get('server') != descriptor['server'] or attrs.get('share') != descriptor['share']):
+    if config['backend'] in ('filestore', 'nfs') and (attrs.get('server') != descriptor['server'] or attrs.get('share') != descriptor['share']):
         raise InstallError('Proof PV belongs to a different Filestore export')
     if config['backend'] == 'cephfs' and (attrs.get('clusterID') != config['cephfs']['cluster_id'] or attrs.get('fsName') != config['cephfs']['fs_name']):
         raise InstallError('Proof PV belongs to a different Ceph filesystem')
