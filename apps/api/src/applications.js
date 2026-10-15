@@ -23,7 +23,7 @@ export async function createApplicationAdapter({ configPath, ciIdentity, loadPub
   await privateDirectory(config.state_dir);
   const fingerprint = hash(config);
   const targets = Object.fromEntries(Object.entries(config.environments).map(([id, value]) => {
-    if (!TARGET_ID.test(id) || !['aws', 'gcp', 'openstack'].includes(value.provider)
+    if (!TARGET_ID.test(id) || !['aws', 'gcp', 'ncp', 'openstack'].includes(value.provider)
         || !TENANT_NAME.test(value.tenant || '')) throw fail('APPLICATION_CONFIGURATION_INVALID', 503);
     if (!ciIdentity || value.tenant !== ciIdentity.tenant || value.source_repository !== ciIdentity.sourceRepository)
       throw fail('APPLICATION_CI_CONFIGURATION_MISMATCH', 503);
