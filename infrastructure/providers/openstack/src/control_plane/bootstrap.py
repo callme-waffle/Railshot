@@ -61,7 +61,9 @@ def get_providers(
         if isinstance(connection.session, ControllerSession):
             connection.session.request_id = ctx.request_id
         yield ProviderBundle(
-            compute=OpenStackComputeAdapter(connection, ctx.project_id, ctx.provider_id),
+            compute=OpenStackComputeAdapter(
+                connection, ctx.project_id, ctx.provider_id, settings.region_name
+            ),
             catalog=OpenStackCatalogAdapter(connection, ctx.project_id, ctx.provider_id),
             health=OpenStackHealthAdapter(connection, ctx.project_id, ctx.provider_id),
         )

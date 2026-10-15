@@ -82,6 +82,9 @@ def check_schema(value, rule, path='$'):
 
 def validate(request):
     check_schema(request, json.loads(SCHEMA.read_text()))
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        import kubeadm
+        kubeadm.validate(request)
     inventory = request.get('inventory', {})
     nodes = inventory.get('control_plane', []) + inventory.get('workers', [])
     ids, addresses, resources = set(), set(), set()
@@ -121,7 +124,7 @@ def validate(request):
                     raise ContractError('SSM transport does not match the target resource')
             else:
                 project, zone, instance = parts
-                if request['target']['provider'] != 'gcp' or request['target']['placement'] != zone or (
+                if request['target']['provider'] != 'gcp' or (request['target']['placement'] != zone if not request.get('runtime', {}).get('profile') else node.get('availability_zone') != zone) or (
                         node['resource_id'] != f'projects/{project}/zones/{zone}/instances/{instance}'):
                     raise ContractError('IAP transport does not match the target resource')
     placements = request.get('patroni', {}).get('placements', [])
@@ -152,6 +155,8 @@ def fail(result, status, code, message, *, unknown=False):
 
 
 def support_error(request):
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        return None
     if request['operation'] == 'patroni.install':
         return ('PATRONI_PLAYBOOK_UNAVAILABLE', 'Placement is recorded; the team Patroni playbook is not connected to this executor.')
     inv = request['inventory']
@@ -175,6 +180,9 @@ def private_file(path, *, identity=False):
 
 
 def build_inventory(request, forwarded=None):
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        import kubeadm
+        return kubeadm.inventory(request, forwarded)
     node = request['inventory']['control_plane'][0]
     ssh = node['ssh']
     # A controller-owned localhost tunnel does not permit ProxyCommand/config inheritance.
@@ -198,6 +206,9 @@ def build_inventory(request, forwarded=None):
 
 def playbook_variables(request):
     """Map the public contract to the variables the existing team playbooks consume."""
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        import kubeadm
+        return kubeadm.variables(request)
     node = request['inventory']['control_plane'][0]
     return {'railshot_request_id': request['request_id'], 'railshot_target_id': request['target']['id'],
             'railshot_resource_id': node['resource_id'],
@@ -314,6 +325,10 @@ def _run(request, *, validate_only=False, runner=execute):
 
 def run(request, *, validate_only=False, runner=execute, state_dir=None):
     """Persist once-only request admission and lock both the logical and physical target."""
+    if (isinstance(request, dict) and isinstance(request.get('runtime'), dict)
+            and request['runtime'].get('profile') == 'kubeadm-1c2w'):
+        import kubeadm
+        return kubeadm.run(request, validate_only=validate_only, runner=runner, state_dir=state_dir)
     preview = _run(request, validate_only=True)
     if validate_only or preview['status'] != 'validated':
         return preview
@@ -337,16 +352,29 @@ def normalize_lock_keys(keys):
 def lock_keys(request):
     keys = []
     for node in request.get('database_nodes', [request]):
-        physical = node['inventory']['control_plane'][0]
-        keys.extend(('target:' + node['target']['id'], 'resource:' + physical['resource_id']))
-        reference = physical['ssh'].get('transport_ref')
-        if reference:
-            kind, *parts = transport_parts(reference)
-            keys.append('transport:' + reference)
-            if kind == 'ssm':
-                # Preserve raw-ID locks used before canonical transport identities existed.
-                keys.append('resource:' + parts[1])
+        keys.append('target:' + node['target']['id'])
+        for physical in node['inventory']['control_plane'] + node['inventory']['workers']:
+            keys.append('resource:' + physical['resource_id'])
+            reference = physical['ssh'].get('transport_ref')
+            if reference:
+                kind, *parts = transport_parts(reference)
+                keys.append('transport:' + reference)
+                if kind == 'ssm':
+                    keys.append('resource:' + parts[1])
+        if node.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+            import kubeadm
+            keys.extend(kubeadm.addon_lock_keys(node))
     return normalize_lock_keys(keys)
+
+
+def request_sha256(request):
+    """Include the effective private edge configuration behind its file reference."""
+    identity = request
+    if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+        import kubeadm
+        binding = kubeadm._addon('cluster_edge').validate(request)['binding_sha256']
+        identity = {'request': request, 'edge_binding_sha256': binding}
+    return hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
 def run_locked(request, result, identities, operation, *, state_dir=None):
@@ -369,7 +397,7 @@ def run_locked(request, result, identities, operation, *, state_dir=None):
                 except BlockingIOError:
                     return fail(result, 'blocked', 'TARGET_BUSY', 'Another request owns this target')
             path = directory / (hashlib.sha256(request['request_id'].encode()).hexdigest() + '.json')
-            digest = hashlib.sha256(json.dumps(request, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+            digest = request_sha256(request)
             if path.exists() or path.is_symlink():
                 private_file(path, identity=True)
                 prior = json.loads(path.read_text())
@@ -475,6 +503,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     inputs = parser.add_mutually_exclusive_group()
     inputs.add_argument('--request', default='-', help='JSON file or - for stdin')
+    inputs.add_argument('--cluster-file', help='Private prepared-three-server operator specification')
     inputs.add_argument('--node-descriptor', help='Terraform output -json node_descriptor file')
     parser.add_argument('--request-id')
     parser.add_argument('--operation', choices=('guest.check', 'runtime.install'), default='runtime.install')
@@ -486,7 +515,7 @@ def main(argv=None):
     parser.add_argument('--validate-only', action='store_true', help='No SSH or file-reference checks; never marks readiness')
     args = parser.parse_args(argv)
     try:
-        source = args.node_descriptor or args.request
+        source = args.cluster_file or args.node_descriptor or args.request
         if source == '-':
             raw = sys.stdin.buffer.read(MAX_BYTES + 1)
         else:
@@ -496,6 +525,10 @@ def main(argv=None):
             raise ContractError('Request exceeds 1 MiB')
         request = json.loads(raw, object_pairs_hook=unique_pairs,
                              parse_constant=lambda _: (_ for _ in ()).throw(ContractError('Non-finite JSON number')))
+        if args.cluster_file:
+            import kubeadm
+            private_file(args.cluster_file, identity=True)
+            request = kubeadm.from_registry(request, request_id=args.request_id, operation=args.operation)
         if args.node_descriptor:
             request = from_descriptor(request, request_id=args.request_id, operation=args.operation,
                                       ssh={'user': args.ssh_user, 'identity_file': args.identity_file,

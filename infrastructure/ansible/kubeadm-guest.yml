@@ -1,0 +1,180 @@
+---
+- name: Inspect all prepared kubeadm guests before installation
+  hosts: kubeadm_nodes
+  gather_facts: true
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Require the first prepared-server profile
+      ansible.builtin.assert:
+        that:
+          - groups.kubeadm_control | length == 1
+          - groups.kubeadm_compute | length == 2
+          - ansible_facts.distribution == 'Ubuntu'
+          - ansible_facts.distribution_version in ['22.04', '24.04']
+          - ansible_facts.architecture == 'x86_64'
+          - ansible_facts.service_mgr == 'systemd'
+          - ansible_facts.memtotal_mb >= 1800
+          - ansible_facts.processor_vcpus >= 2
+          - ansible_facts.swaptotal_mb == 0
+          - railshot_node_ip in ansible_facts.all_ipv4_addresses
+          - not ansible_check_mode
+          - "(ansible_facts.mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first | int) >= 10737418240"
+    - name: Inspect initialization completion
+      ansible.builtin.stat:
+        path: /usr/bin/cloud-init
+      register: railshot_cloud_init
+    - name: Read cloud-init completion without rerunning it
+      ansible.builtin.command:
+        argv: [/usr/bin/cloud-init, status, --format, json]
+      when: railshot_cloud_init.stat.exists
+      register: railshot_cloud_status
+      changed_when: false
+    - name: Require completed cloud-init if present
+      ansible.builtin.assert:
+        that: (railshot_cloud_status.stdout | from_json).status == 'done'
+      when: railshot_cloud_init.stat.exists
+    - name: Inspect legacy and kubeadm ownership paths
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/railshot/kubeadm-identity.json
+        - /etc/rancher/k3s
+        - /var/lib/rancher/k3s
+        - /usr/local/bin/k3s
+        - /etc/kubernetes
+        - /var/lib/kubelet/config.yaml
+        - /etc/containerd/config.toml
+        - /usr/local/bin/containerd
+      register: railshot_existing
+    - name: Refuse legacy migration and preexisting unowned runtime
+      ansible.builtin.assert:
+        that:
+          - not railshot_existing.results[1].stat.exists
+          - not railshot_existing.results[2].stat.exists
+          - not railshot_existing.results[3].stat.exists
+          - >-
+            railshot_existing.results[0].stat.exists or not (railshot_existing.results[4].stat.exists
+            or railshot_existing.results[5].stat.exists or railshot_existing.results[6].stat.exists
+            or railshot_existing.results[7].stat.exists)
+        fail_msg: Existing runtime is not a fresh or owned kubeadm target; migration and adoption require separate work.
+    - name: Read existing immutable node ownership before any mutation
+      ansible.builtin.slurp:
+        src: /etc/railshot/kubeadm-identity.json
+      register: railshot_owned_identity
+      when: railshot_existing.results[0].stat.exists
+      no_log: true
+    - name: Reject configuration and membership changes before package work
+      ansible.builtin.assert:
+        that:
+          - (railshot_owned_identity.content | b64decode | from_json) == railshot_guest_identity
+      vars:
+        railshot_guest_identity:
+          profile: "{{ railshot_profile }}"
+          target_id: "{{ railshot_target_id }}"
+          resource_id: "{{ railshot_resource_id }}"
+          node_id: "{{ inventory_hostname }}"
+          node_ip: "{{ railshot_node_ip }}"
+          role: "{{ railshot_node_role }}"
+          versions: "{{ railshot_versions }}"
+          members: "{{ railshot_expected_nodes }}"
+          pod_cidr: "{{ railshot_pod_cidr }}"
+          service_cidr: "{{ railshot_service_cidr }}"
+      when: railshot_existing.results[0].stat.exists
+      no_log: true
+    - name: Inspect previously installed managed binaries
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/usr/local/bin/containerd, /usr/local/sbin/runc, /usr/bin/kubeadm, /usr/bin/kubelet]
+      register: railshot_binary_stats
+      when: railshot_existing.results[0].stat.exists
+    - name: Verify actual installed versions before reusing binaries
+      ansible.builtin.command:
+        argv: "{{ item.argv }}"
+      loop:
+        - {argv: [/usr/local/bin/containerd, --version], index: 0, expected: "v{{ railshot_versions.containerd }}"}
+        - {argv: [/usr/local/sbin/runc, --version], index: 1, expected: "version {{ railshot_versions.runc }}"}
+        - {argv: [/usr/bin/kubeadm, version, -o, short], index: 2, expected: "v{{ railshot_versions.kubernetes }}"}
+        - {argv: [/usr/bin/kubelet, --version], index: 3, expected: "v{{ railshot_versions.kubernetes }}"}
+      register: railshot_actual_version
+      changed_when: false
+      failed_when: railshot_actual_version.rc != 0 or item.expected not in railshot_actual_version.stdout
+      when: railshot_existing.results[0].stat.exists and railshot_binary_stats.results[item.index].stat.exists
+    - name: Read owned container runtime configuration
+      ansible.builtin.slurp:
+        src: /etc/containerd/config.toml
+      register: railshot_containerd_config
+      when: railshot_existing.results[0].stat.exists and railshot_existing.results[6].stat.exists
+    - name: Require unchanged container runtime configuration
+      ansible.builtin.assert:
+        that: (railshot_containerd_config.content | b64decode) == lookup('template', 'roles/kubeadm_node/templates/containerd.toml.j2')
+      when: railshot_existing.results[0].stat.exists and railshot_existing.results[6].stat.exists
+    - name: Inspect initialized control API
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: railshot_admin_config
+      when: inventory_hostname in groups.kubeadm_control
+    - name: Observe existing kubeadm configuration before any mutation
+      ansible.builtin.command:
+        argv: [/usr/bin/kubectl, --kubeconfig=/etc/kubernetes/admin.conf, -n, kube-system, get, configmap, kubeadm-config, -o, json]
+      register: railshot_current_kubeadm
+      changed_when: false
+      when: inventory_hostname in groups.kubeadm_control and railshot_admin_config.stat.exists
+    - name: Reject modified kubeadm network or version before mutation
+      ansible.builtin.assert:
+        that:
+          - railshot_current_config.kubernetesVersion == 'v' + railshot_versions.kubernetes
+          - railshot_current_config.controlPlaneEndpoint == railshot_api_address + ':6443'
+          - railshot_current_config.networking.podSubnet == railshot_pod_cidr
+          - railshot_current_config.networking.serviceSubnet == railshot_service_cidr
+      vars:
+        railshot_current_config: "{{ (railshot_current_kubeadm.stdout | from_json).data.ClusterConfiguration | from_yaml }}"
+      when: inventory_hostname in groups.kubeadm_control and railshot_admin_config.stat.exists
+    - name: Inspect immutable cluster UID
+      ansible.builtin.stat:
+        path: /etc/railshot/kubeadm-cluster-uid.json
+      register: railshot_uid_marker
+      when: inventory_hostname in groups.kubeadm_control
+    - name: Read recorded cluster UID before mutation
+      ansible.builtin.slurp:
+        src: /etc/railshot/kubeadm-cluster-uid.json
+      register: railshot_current_uid
+      when: inventory_hostname in groups.kubeadm_control and railshot_uid_marker.stat.exists
+      no_log: true
+    - name: Observe actual cluster UID before mutation
+      ansible.builtin.command:
+        argv: [/usr/bin/kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, namespace, kube-system, -o, json]
+      register: railshot_actual_uid
+      changed_when: false
+      when: inventory_hostname in groups.kubeadm_control and railshot_uid_marker.stat.exists
+    - name: Reject replacement of the recorded cluster before mutation
+      ansible.builtin.assert:
+        that: (railshot_current_uid.content | b64decode | from_json).kube_system_uid == (railshot_actual_uid.stdout | from_json).metadata.uid
+      when: inventory_hostname in groups.kubeadm_control and railshot_uid_marker.stat.exists
+      no_log: true
+    - name: Observe previously installed Cilium values before mutation
+      ansible.builtin.command:
+        argv: [/usr/local/bin/helm, get, values, cilium, --namespace, kube-system, --kubeconfig, /etc/kubernetes/admin.conf, --output, json]
+      register: railshot_current_cilium
+      changed_when: false
+      failed_when: false
+      when: inventory_hostname in groups.kubeadm_control and railshot_admin_config.stat.exists
+    - name: Reject incompatible existing Cilium configuration
+      ansible.builtin.assert:
+        that:
+          - (railshot_current_cilium.stdout | from_json).ipam.mode == 'kubernetes'
+          - (railshot_current_cilium.stdout | from_json).kubeProxyReplacement == false
+          - (railshot_current_cilium.stdout | from_json).operator.replicas == 2
+      when: inventory_hostname in groups.kubeadm_control and railshot_admin_config.stat.exists and railshot_current_cilium.rc == 0
+    - name: Issue one receipt after every requested guest passes
+      ansible.builtin.copy:
+        dest: "{{ railshot_receipt_path }}"
+        mode: '0600'
+        content: >-
+          {{ {'request_id': railshot_request_id, 'target_id': railshot_target_id,
+          'stage': 'guest', 'nonce': railshot_nonce, 'guest_ready': true,
+          'node_ids': groups.kubeadm_nodes | sort} | to_json }}
+      delegate_to: localhost
+      become: false
+      when: inventory_hostname == groups.kubeadm_control[0]
+      no_log: true

@@ -16,7 +16,15 @@ locals {
     (r.host == var.base_domain && var.apex_certificate_arn != null) ||
     (endswith(r.host, ".${var.base_domain}") && length(split(".", r.host)) == length(split(".", var.base_domain)) + 1)
   ])
-  aws_target_rules = { for pair in toset([for r in values(local.active_routes) : "${r.target_security_group_id}:${r.node_port}" if r.provider_kind == "aws"]) :
+  extra_targets = { for item in flatten([for route_key, route in local.active_routes : [
+    for node_key, node in var.compute_nodes : {
+      key = "${route_key}:${node_key}", route_key = route_key, node = node, port = route.node_port
+    } if node.private_ip != route.target_private_ip
+  ]]) : item.key => item }
+  aws_target_rules = { for pair in toset(concat(
+    [for r in values(local.active_routes) : "${r.target_security_group_id}:${r.node_port}" if r.provider_kind == "aws"],
+    [for item in values(local.extra_targets) : "${item.node.security_group_id}:${item.port}"]
+    )) :
     pair => { security_group_id = split(":", pair)[0], port = tonumber(split(":", pair)[1]) }
   }
 }
@@ -25,9 +33,32 @@ data "aws_subnet" "alb" {
   for_each = var.public_subnet_ids
   id       = each.value
 }
+data "aws_instance" "compute" {
+  for_each    = var.compute_nodes
+  instance_id = each.value.resource_id
+  lifecycle {
+    postcondition {
+      condition     = self.private_ip == each.value.private_ip && self.availability_zone == each.value.availability_zone && contains(self.vpc_security_group_ids, each.value.security_group_id)
+      error_message = "Every compute target must match its existing instance, VPC, AZ, private IP and attached target SG."
+    }
+  }
+}
+
+data "aws_subnet" "compute" {
+  for_each = var.compute_nodes
+  id       = data.aws_instance.compute[each.key].subnet_id
+  lifecycle {
+    postcondition {
+      condition     = self.vpc_id == var.vpc_id
+      error_message = "Every existing compute subnet must belong to the bound cluster VPC."
+    }
+  }
+}
+
 data "aws_route53_zone" "public" {
-  count   = var.zone_id == null ? 0 : 1
-  zone_id = var.zone_id
+  count        = var.zone_id == null ? 0 : 1
+  zone_id      = var.zone_id
+  private_zone = false
 }
 resource "aws_route53_zone" "app" {
   count = var.zone_id == null ? 1 : 0
@@ -60,6 +91,16 @@ resource "aws_security_group" "alb" {
       from_port   = egress.value.node_port
       to_port     = egress.value.node_port
       cidr_blocks = ["${egress.value.target_private_ip}/32"]
+    }
+  }
+  dynamic "egress" {
+    for_each = local.extra_targets
+    content {
+      description = ""
+      protocol    = "tcp"
+      from_port   = egress.value.port
+      to_port     = egress.value.port
+      cidr_blocks = ["${egress.value.node.private_ip}/32"]
     }
   }
   dynamic "egress" {
@@ -117,6 +158,10 @@ resource "aws_lb" "app" {
       error_message = "ALB subnets must belong to the registered VPC and span at least two AZs."
     }
     precondition {
+      condition     = alltrue([for node in values(var.compute_nodes) : contains([for subnet in data.aws_subnet.alb : subnet.availability_zone], node.availability_zone)])
+      error_message = "ALB public subnets must enable every compute target AZ."
+    }
+    precondition {
       condition     = var.zone_id == null ? true : (!data.aws_route53_zone.public[0].private_zone && trimsuffix(data.aws_route53_zone.public[0].name, ".") == var.base_domain)
       error_message = "The existing Route53 zone must be public and match base_domain."
     }
@@ -135,15 +180,29 @@ resource "aws_lb_target_group" "app" {
   target_type = "ip"
   health_check {
     path    = each.value.health_path
-    matcher = "200-399"
+    matcher = each.value.expected_status == null ? "200-399" : tostring(each.value.expected_status)
   }
-  lifecycle { create_before_destroy = true }
+  lifecycle {
+    create_before_destroy = true
+    precondition {
+      condition     = length(var.compute_nodes) == 0 || anytrue([for node in values(var.compute_nodes) : node.private_ip == each.value.target_private_ip && node.security_group_id == each.value.target_security_group_id])
+      error_message = "Cluster route primary target must be one of the two bound compute nodes."
+    }
+  }
 }
 resource "aws_lb_target_group_attachment" "app" {
   for_each         = local.active_routes
   target_group_arn = aws_lb_target_group.app[each.key].arn
   target_id        = each.value.target_private_ip
   port             = each.value.node_port
+}
+
+resource "aws_lb_target_group_attachment" "compute" {
+  for_each         = local.extra_targets
+  target_group_arn = aws_lb_target_group.app[each.value.route_key].arn
+  target_id        = each.value.node.private_ip
+  port             = each.value.port
+  depends_on       = [data.aws_instance.compute, data.aws_subnet.compute]
 }
 
 # Existing certificates are allowed; otherwise one wildcard serves all app routes.
@@ -211,6 +270,12 @@ resource "aws_lb_listener_rule" "app" {
   priority     = each.value.priority
   condition {
     host_header { values = [each.value.host] }
+  }
+  dynamic "condition" {
+    for_each = each.value.path_prefix == "/" ? [] : [each.value.path_prefix]
+    content {
+      path_pattern { values = [condition.value, "${condition.value}/*"] }
+    }
   }
   action {
     type             = "forward"

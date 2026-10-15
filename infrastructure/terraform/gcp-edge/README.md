@@ -79,3 +79,12 @@ Sources: [LB firewall](https://docs.cloud.google.com/load-balancing/docs/firewal
 [LB pricing](https://cloud.google.com/load-balancing/pricing),
 [IP pricing](https://cloud.google.com/vpc/network-pricing),
 [Certificate Manager pricing](https://cloud.google.com/certificate-manager/pricing).
+
+## kubeadm 3노드 프로파일
+
+기존 단일 노드 기본값과 resource 주소는 유지한다. `compute_nodes`를 사용하면 reviewed
+compute 2대 중 primary binding은 기존 주소에 두고, 다른 compute를 추가 등록한다.
+새 클러스터는 [`cluster_edge.py`](../../../deployment/scripts/cluster_edge.py)가 canonical
+inventory와 private authority를 비교한 뒤 이 값을 생성한다. 기존 live state를 새
+클러스터 stage로 인수하지 않는다. 입력 예제·소유권·재실행·실환경 검증은
+[클러스터 공개 접근 절차](../../../docs/architecture/kubeadm-cluster-edge.md)를 따른다.

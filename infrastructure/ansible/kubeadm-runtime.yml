@@ -1,0 +1,249 @@
+---
+- name: Prepare all nodes under the immutable kubeadm profile
+  hosts: kubeadm_nodes
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  roles:
+    - kubeadm_node
+
+- name: Initialize the sole control-plane
+  hosts: kubeadm_control
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Inspect control-plane initialization
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/etc/kubernetes/admin.conf, /etc/kubernetes/pki]
+      register: railshot_control_files
+    - name: Refuse ambiguous interrupted initialization
+      ansible.builtin.assert:
+        that: railshot_control_files.results[0].stat.exists or not railshot_control_files.results[1].stat.exists
+        fail_msg: Partial kubeadm initialization needs operator reconciliation before resuming.
+    - name: Check existing cluster UID before reusing an initialized API
+      ansible.builtin.command:
+        argv: [/usr/bin/kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, namespace, kube-system, -o, json]
+      register: railshot_namespace_identity
+      changed_when: false
+      when: railshot_control_files.results[0].stat.exists
+    - name: Inspect retained cluster UID
+      ansible.builtin.stat:
+        path: /etc/railshot/kubeadm-cluster-uid.json
+      register: railshot_cluster_uid_stat
+    - name: Read retained cluster UID
+      ansible.builtin.slurp:
+        src: /etc/railshot/kubeadm-cluster-uid.json
+      register: railshot_cluster_uid
+      when: railshot_cluster_uid_stat.stat.exists
+      no_log: true
+    - name: Reject replacement of a recorded cluster
+      ansible.builtin.assert:
+        that: (railshot_cluster_uid.content | b64decode | from_json).kube_system_uid == (railshot_namespace_identity.stdout | from_json).metadata.uid
+      when: railshot_cluster_uid_stat.stat.exists and railshot_control_files.results[0].stat.exists
+      no_log: true
+    - name: Render the fixed control-plane configuration
+      ansible.builtin.template:
+        src: roles/kubeadm_node/templates/init.yml.j2
+        dest: /var/lib/railshot/kubeadm/init.yml
+        mode: '0600'
+    - name: Initialize kubeadm once while retaining kube-proxy
+      ansible.builtin.command:
+        argv: [/usr/bin/kubeadm, init, --config, /var/lib/railshot/kubeadm/init.yml]
+        creates: /etc/kubernetes/admin.conf
+      no_log: true
+    - name: Check observed control-plane API availability
+      ansible.builtin.command:
+        argv: [/usr/bin/kubectl, --kubeconfig=/etc/kubernetes/admin.conf, get, --raw=/readyz, --request-timeout=10s]
+      register: railshot_api_health
+      retries: 30
+      delay: 5
+      until: railshot_api_health.rc == 0 and railshot_api_health.stdout == 'ok'
+      changed_when: false
+    - name: Install fixed bootstrap token cleanup observer
+      ansible.builtin.copy:
+        src: kubeadm_cleanup.py
+        dest: /var/lib/railshot/kubeadm/cleanup.py
+        mode: '0700'
+    - name: Create a short-lived bootstrap token for this execution
+      ansible.builtin.command:
+        argv: [/usr/bin/kubeadm, token, create, "{{ railshot_bootstrap_token }}", --ttl, 30m]
+      register: railshot_token_result
+      changed_when: true
+      no_log: true
+    - name: Hold the token in transient inventory memory
+      ansible.builtin.set_fact:
+        railshot_join_token: "{{ railshot_token_result.stdout }}"
+      no_log: true
+    - name: Compute the public CA discovery hash
+      ansible.builtin.shell: >-
+        set -o pipefail;
+        openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt |
+        openssl pkey -pubin -outform DER |
+        sha256sum | cut -d ' ' -f 1
+      args:
+        executable: /bin/bash
+      register: railshot_ca_hash
+      changed_when: false
+    - name: Download the pinned Helm binary archive
+      ansible.builtin.get_url:
+        url: "https://get.helm.sh/helm-v{{ railshot_versions.helm }}-linux-amd64.tar.gz"
+        checksum: "sha256:https://get.helm.sh/helm-v{{ railshot_versions.helm }}-linux-amd64.tar.gz.sha256sum"
+        dest: "/var/lib/railshot/kubeadm/helm-v{{ railshot_versions.helm }}-linux-amd64.tar.gz"
+        mode: '0600'
+    - name: Extract the pinned Helm binary
+      ansible.builtin.unarchive:
+        src: "/var/lib/railshot/kubeadm/helm-v{{ railshot_versions.helm }}-linux-amd64.tar.gz"
+        dest: /var/lib/railshot/kubeadm
+        remote_src: true
+        creates: /var/lib/railshot/kubeadm/linux-amd64/helm
+    - name: Install the pinned Helm binary
+      ansible.builtin.copy:
+        src: /var/lib/railshot/kubeadm/linux-amd64/helm
+        dest: /usr/local/bin/helm
+        remote_src: true
+        mode: '0755'
+    - name: Inspect existing Cilium daemonset ownership
+      ansible.builtin.command:
+        argv: [/usr/bin/kubectl, --kubeconfig=/etc/kubernetes/admin.conf, -n, kube-system, get, daemonset, cilium, --ignore-not-found, -o, json]
+      changed_when: false
+      register: railshot_existing_cilium
+    - name: Reject unowned Cilium adoption
+      ansible.builtin.assert:
+        that:
+          - (railshot_existing_cilium.stdout | from_json).metadata.annotations['meta.helm.sh/release-name'] == 'cilium'
+          - (railshot_existing_cilium.stdout | from_json).metadata.annotations['meta.helm.sh/release-namespace'] == 'kube-system'
+          - (railshot_existing_cilium.stdout | from_json).metadata.labels['app.kubernetes.io/managed-by'] == 'Helm'
+      when: railshot_existing_cilium.stdout | length > 0
+    - name: Install the pinned Cilium chart with kube-proxy retained
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/helm
+          - upgrade
+          - --install
+          - cilium
+          - oci://quay.io/cilium/charts/cilium
+          - --version
+          - "{{ railshot_versions.cilium }}"
+          - --namespace
+          - kube-system
+          - --kubeconfig
+          - /etc/kubernetes/admin.conf
+          - --set
+          - ipam.mode=kubernetes
+          - --set
+          - kubeProxyReplacement=false
+          - --set
+          - operator.replicas=2
+      changed_when: true
+
+- name: Join only the two requested compute nodes
+  hosts: kubeadm_compute
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Join compute with transient credential cleanup
+      block:
+        - name: Render worker joining parameters with CA pinning
+          ansible.builtin.template:
+            src: roles/kubeadm_node/templates/join.yml.j2
+            dest: /var/lib/railshot/kubeadm/join.yml
+            mode: '0600'
+          no_log: true
+        - name: Join the cluster once using the requested node identity
+          ansible.builtin.command:
+            argv: [/usr/bin/kubeadm, join, --config, /var/lib/railshot/kubeadm/join.yml]
+            creates: /etc/kubernetes/kubelet.conf
+          no_log: true
+      always:
+        - name: Remove the transient joining credential
+          ansible.builtin.file:
+            path: /var/lib/railshot/kubeadm/join.yml
+            state: absent
+          no_log: true
+
+- name: Verify all three registered node identities and system addons
+  hosts: kubeadm_control
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Remove the short-lived bootstrap token after joining
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /var/lib/railshot/kubeadm/cleanup.py, "{{ railshot_join_token }}"]
+      changed_when: true
+      no_log: true
+    - name: Set compute scheduling and topology labels
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - label
+          - node
+          - "{{ item.id }}"
+          - "node-role.kubernetes.io/worker="
+          - "topology.kubernetes.io/zone={{ item.availability_zone }}"
+          - --overwrite
+      loop: "{{ railshot_expected_nodes | selectattr('id', 'in', railshot_worker_ids) | list }}"
+      changed_when: true
+    - name: Require every requested node to be Ready
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - wait
+          - --for=condition=Ready
+          - "node/{{ item.id }}"
+          - "--timeout={{ railshot_wait_timeout_seconds }}s"
+      loop: "{{ railshot_expected_nodes }}"
+      changed_when: false
+    - name: Require system addon rollouts
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/kubectl
+          - --kubeconfig=/etc/kubernetes/admin.conf
+          - -n
+          - kube-system
+          - rollout
+          - status
+          - "{{ item }}"
+          - "--timeout={{ railshot_wait_timeout_seconds }}s"
+      loop: [daemonset/cilium, deployment/cilium-operator, deployment/coredns, daemonset/kube-proxy]
+      changed_when: false
+    - name: Install fixed readiness observer
+      ansible.builtin.copy:
+        src: kubeadm_readiness.py
+        dest: /var/lib/railshot/kubeadm/readiness.py
+        mode: '0700'
+    - name: Write the private expected cluster identity
+      ansible.builtin.copy:
+        dest: /var/lib/railshot/kubeadm/expected.json
+        content: >-
+          {{ {'nodes': railshot_expected_nodes, 'workers': railshot_worker_ids,
+          'version': 'v' + railshot_versions.kubernetes, 'target_id': railshot_target_id,
+          'api_address': railshot_api_address, 'pod_cidr': railshot_pod_cidr,
+          'service_cidr': railshot_service_cidr} | to_json }}
+        mode: '0600'
+    - name: Observe identities and immutable cluster UID
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /var/lib/railshot/kubeadm/readiness.py, /var/lib/railshot/kubeadm/expected.json]
+      changed_when: false
+    - name: Install fixed inter-worker network observer
+      ansible.builtin.copy:
+        src: kubeadm_network.py
+        dest: /var/lib/railshot/kubeadm/network.py
+        mode: '0700'
+    - name: Verify cross-worker Pod DNS Service and NetworkPolicy behavior
+      ansible.builtin.command:
+        argv: [/usr/bin/python3, /var/lib/railshot/kubeadm/network.py, "{{ railshot_worker_ids | to_json }}", "{{ railshot_wait_timeout_seconds | string }}"]
+      changed_when: false
+    - name: Issue runtime readiness only after observed checks
+      ansible.builtin.copy:
+        dest: "{{ railshot_receipt_path }}"
+        mode: '0600'
+        content: >-
+          {{ {'request_id': railshot_request_id, 'target_id': railshot_target_id,
+          'stage': 'runtime', 'nonce': railshot_nonce, 'runtime_ready': true,
+          'node_ids': railshot_expected_nodes | map(attribute='id') | sort} | to_json }}
+      delegate_to: localhost
+      become: false
+      no_log: true

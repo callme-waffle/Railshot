@@ -1,0 +1,16 @@
+[Unit]
+Description=Railshot managed containerd
+After=network.target
+[Service]
+ExecStart=/usr/local/bin/containerd
+Type=notify
+Delegate=yes
+KillMode=process
+Restart=always
+RestartSec=5
+LimitNOFILE=infinity
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+[Install]
+WantedBy=multi-user.target

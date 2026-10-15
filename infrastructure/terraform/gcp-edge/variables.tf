@@ -81,3 +81,27 @@ variable "routes" {
     error_message = "Applications on this VM must have distinct hostnames and NodePorts."
   }
 }
+
+variable "compute_nodes" {
+  description = "Optional two-compute kubeadm profile; includes the primary instance and one additional zonal endpoint."
+  type        = map(object({ instance_name = string, private_ip = string, availability_zone = string }))
+  default     = {}
+  validation {
+    condition = length(var.compute_nodes) == 0 || (length(var.compute_nodes) == 2 &&
+      length(distinct([for node in values(var.compute_nodes) : "${node.availability_zone}/${node.instance_name}"])) == 2 &&
+      length(distinct([for node in values(var.compute_nodes) : node.private_ip])) == 2 &&
+      alltrue([for node in values(var.compute_nodes) : can(cidrnetmask("${node.private_ip}/32")) &&
+        can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", node.private_ip)) &&
+    can(regex("^[a-z][a-z0-9-]{0,61}[a-z0-9]$", node.instance_name)) && length(node.availability_zone) > 0]))
+    error_message = "Use exactly two distinct existing compute instances with reviewed RFC1918 addresses, or omit the profile."
+  }
+}
+variable "certificate_dns_owner_id" {
+  description = "Cluster-scoped DNS writer owner for the primary certificate. Null preserves the legacy operator-managed DNS authorization path."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.certificate_dns_owner_id == null ? true : can(regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$", var.certificate_dns_owner_id))
+    error_message = "Use the bound cluster DNS owner identity."
+  }
+}

@@ -1,4 +1,10 @@
 locals {
+  extra_compute_members = { for item in flatten([for route_key, route in var.routes : [
+    for node_key, node in var.compute_nodes : {
+      key = "${route_key}:${node_key}", route_key = route_key, node = node, node_port = route.node_port
+    } if node.private_ip != route.target_private_ip
+  ]]) : item.key => item }
+
   # The input alphabet contains no regex metacharacters. Match path segments,
   # so /api matches /api and /api/items, but never /apix or /api-v2.
   path_patterns = { for key, route in var.routes :

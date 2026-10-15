@@ -406,3 +406,12 @@ def test_only_personal_app_lifecycle_ssh_extends_native_deadline(monkeypatch):
     with environment.runtime_kubectl(native) as kube:
         kube(APP, 'delete', '--raw', '/api/v1/namespaces/' + APP, '-f', '-', document={})
     assert calls == [30, 300, 30, 30]
+
+
+def test_explicit_kubeadm_relay_prefix_keeps_legacy_profile_boundary():
+    native = shlex.join(access.KUBEADM_PREFIX + ['default', 'get', 'nodes', '-o', 'json'])
+    assert access.parse(native, None, TARGET, 'kubeadm-1c2w') == ('default', ['get', 'nodes', '-o', 'json'], 'read')
+    with pytest.raises(ValueError):
+        access.parse(native, None, TARGET)
+    with pytest.raises(ValueError):
+        access.parse(command('default', 'get', 'nodes', '-o', 'json'), None, TARGET, 'kubeadm-1c2w')

@@ -77,3 +77,12 @@ terraform -chdir=infrastructure/terraform/aws-edge fmt -check
 출력은 `zone_id`, `name_servers`, `app_urls`, `target_group_arns`, `alb_dns_name`, `alb_security_group_id`, `certificate_arn`이다. `readiness`는 계속 `configured-references-only; runtime and public HTTP unverified`다. 실제 인수는 각 target health, DNS/TLS/host routing, NodePort health path와 외부 HTTPS를 각각 확인한다. ALB health check는 target IP와 포트를 Host로 사용하므로 지정 경로가 기본 virtual host에서도 응답해야 한다. 공유 ALB의 두 AZ가 각 단일 고객 노드의 HA를 보장하지는 않는다.
 
 근거: [ALB IP target 제약](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/load-balancer-target-groups.html), [Terraform IP target attachment](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/lb_target_group_attachment), [Route53 Alias](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-to-elb-load-balancer.html).
+
+## kubeadm 3노드 프로파일
+
+기존 단일 노드 기본값과 resource 주소는 유지한다. `compute_nodes`를 사용하면 reviewed
+compute 2대 중 primary binding은 기존 주소에 두고, 다른 compute를 추가 등록한다.
+새 클러스터는 [`cluster_edge.py`](../../../deployment/scripts/cluster_edge.py)가 canonical
+inventory와 private authority를 비교한 뒤 이 값을 생성한다. 기존 live state를 새
+클러스터 stage로 인수하지 않는다. 입력 예제·소유권·재실행·실환경 검증은
+[클러스터 공개 접근 절차](../../../docs/architecture/kubeadm-cluster-edge.md)를 따른다.

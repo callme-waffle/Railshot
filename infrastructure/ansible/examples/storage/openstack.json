@@ -1,0 +1,28 @@
+{
+  "runtime": {
+    "storage": {
+      "backend": "cephfs",
+      "mode": "reuse",
+      "binding": {
+        "cluster_id": "demo",
+        "provider": "openstack",
+        "region": "RegionOne",
+        "account_id": "railshot-project"
+      },
+      "cephfs": {
+        "cluster_id": "d4df80c6-41a8-4f4a-bac1-20d1eb32d502",
+        "monitors": [
+          "10.1.0.1:3300"
+        ],
+        "fs_name": "apps",
+        "subvolume_group": "railshot-demo",
+        "provisioner_secret": "ceph-provisioner",
+        "node_secret": "ceph-node",
+        "secret_files": {
+          "ceph-provisioner": "/etc/railshot-secrets/ceph-provisioner.json",
+          "ceph-node": "/etc/railshot-secrets/ceph-node.json"
+        }
+      }
+    }
+  }
+}

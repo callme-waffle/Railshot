@@ -40,7 +40,7 @@ variable "enabled" {
 }
 
 variable "routes" {
-  description = "Administrator-assigned longest-prefix host/path routes, one existing K3s NodePort member per route."
+  description = "Administrator-assigned longest-prefix host/path routes; legacy primary NodePort member plus an optional second bound compute member."
   type = map(object({
     host              = string
     path_prefix       = optional(string, "/")
@@ -48,6 +48,7 @@ variable "routes" {
     member_subnet_id  = string
     node_port         = number
     health_path       = string
+    expected_status   = optional(number, 200)
   }))
   validation {
     condition = length(var.routes) > 0 && length(var.routes) <= 50 && alltrue([for key, route in var.routes :
@@ -57,6 +58,7 @@ variable "routes" {
       can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", route.target_private_ip)) &&
       can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", route.member_subnet_id)) &&
       route.node_port >= 30000 && route.node_port <= 32767 && floor(route.node_port) == route.node_port &&
+      route.expected_status == 200 &&
       length(route.path_prefix) <= 200 && can(regex("^/([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$", route.path_prefix)) &&
       length(route.health_path) <= 1024 && can(regex("^/([A-Za-z0-9_-]+(/[A-Za-z0-9_-]+)*)?$", route.health_path))
     ])
@@ -65,5 +67,31 @@ variable "routes" {
   validation {
     condition     = length(distinct([for route in values(var.routes) : "${route.host}${route.path_prefix}"])) == length(var.routes)
     error_message = "Each host/path prefix must be unique. Root fallback and nested paths are supported."
+  }
+}
+
+variable "vip_address" {
+  description = "Optional reviewed unused VIP for a new cluster edge, matching the existing tunnel origin. Empty leaves legacy provider-assigned addressing unchanged."
+  type        = string
+  default     = null
+  validation {
+    condition     = var.vip_address == null ? true : can(cidrnetmask("${var.vip_address}/32"))
+    error_message = "Use the reviewed private IPv4 VIP or null."
+  }
+}
+variable "compute_nodes" {
+  description = "Optional two-compute kubeadm profile with each existing member's Neutron subnet."
+  type        = map(object({ resource_id = string, private_ip = string, availability_zone = string, subnet_id = string }))
+  default     = {}
+  validation {
+    condition = length(var.compute_nodes) == 0 || (length(var.compute_nodes) == 2 &&
+      length(distinct([for node in values(var.compute_nodes) : node.resource_id])) == 2 &&
+      length(distinct([for node in values(var.compute_nodes) : node.private_ip])) == 2 &&
+      alltrue([for node in values(var.compute_nodes) :
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", node.resource_id)) &&
+        can(regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", node.subnet_id)) &&
+        can(cidrnetmask("${node.private_ip}/32")) &&
+    can(regex("^(10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.)", node.private_ip)) && length(node.availability_zone) > 0]))
+    error_message = "Use exactly two distinct reviewed existing compute UUID/IP/AZ/subnet bindings, or omit the profile."
   }
 }

@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "cluster_id": "prepared-aws",
+  "provider": "aws",
+  "account_id": "123456789012",
+  "region": "ap-northeast-2",
+  "members": [
+    {
+      "id": "control",
+      "role": "control_plane",
+      "availability_zone": "ap-northeast-2a",
+      "ssh": {
+        "user": "ubuntu",
+        "port": 22,
+        "identity_file": "/etc/railshot/operator/id_ed25519",
+        "known_hosts_file": "/etc/railshot/operator/known_hosts"
+      },
+      "descriptor_file": "/etc/railshot/operator/control-descriptor.json"
+    },
+    {
+      "id": "compute-a",
+      "role": "workers",
+      "availability_zone": "ap-northeast-2b",
+      "ssh": {
+        "user": "ubuntu",
+        "port": 22,
+        "identity_file": "/etc/railshot/operator/id_ed25519",
+        "known_hosts_file": "/etc/railshot/operator/known_hosts"
+      },
+      "descriptor_file": "/etc/railshot/operator/compute-a-descriptor.json"
+    },
+    {
+      "id": "compute-b",
+      "role": "workers",
+      "availability_zone": "ap-northeast-2c",
+      "ssh": {
+        "user": "ubuntu",
+        "port": 22,
+        "identity_file": "/etc/railshot/operator/id_ed25519",
+        "known_hosts_file": "/etc/railshot/operator/known_hosts"
+      },
+      "descriptor_file": "/etc/railshot/operator/compute-b-descriptor.json"
+    }
+  ],
+  "runtime": {
+    "wait_timeout_seconds": 300,
+    "storage": {
+      "backend": "efs",
+      "mode": "reuse",
+      "binding": {
+        "cluster_id": "prepared-aws",
+        "provider": "aws",
+        "account_id": "123456789012",
+        "region": "ap-northeast-2"
+      }
+    },
+    "edge": "/etc/railshot/operator/aws-edge.json"
+  }
+}

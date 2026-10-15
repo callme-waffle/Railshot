@@ -478,3 +478,14 @@ def test_upstream_logging_correlates_ids_without_private_response(caplog):
     assert "private-password" not in caplog.text
     assert "private-host" not in caplog.text
     session.session.close()
+
+
+def test_server_snapshot_retains_observed_zone_and_configured_region(conn):
+    conn.compute.get_server.return_value = server(availability_zone="nova-a")
+    result = OpenStackComputeAdapter(conn, "project", "provider", "RegionOne").get_server(CTX, "s")
+    assert result.availability_zone == "nova-a"
+    assert result.region == "RegionOne"
+    conn.compute.get_server.return_value = server()
+    result = OpenStackComputeAdapter(conn, "project", "provider").get_server(CTX, "s")
+    assert result.availability_zone is None
+    assert result.region is None

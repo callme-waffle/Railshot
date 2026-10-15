@@ -41,6 +41,8 @@ class ServerResponse(ResourceResponse):
     project_id: str
     status: str
     addresses: list[AddressResponse]
+    availability_zone: str | None = None
+    region: str | None = None
 
 
 class ImageResponse(ResourceResponse):

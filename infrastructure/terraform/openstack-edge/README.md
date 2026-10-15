@@ -92,3 +92,12 @@ API 생성 뒤 ACTIVE 대기 중 timeout/프로세스 중단이 발생하면 실
 - [Octavia TLS cookbook](https://docs.openstack.org/octavia/latest/user/guides/basic-cookbook.html#deploy-a-tls-terminated-https-load-balancer): TLS 참조·PKCS12 사용.
 
 이 단계의 증거는 로컬 format/validate, offline routing/input tests와 provider lock뿐이다. 현장 apply/destroy, Amphora 설치·접속, 인증서 권한, health/TLS/HTTP, Cloudflare는 아직 이 모듈의 실제 실행으로 검증하지 않았다.
+
+## kubeadm 3노드 프로파일
+
+기존 단일 노드 기본값과 resource 주소는 유지한다. `compute_nodes`를 사용하면 reviewed
+compute 2대 중 primary binding은 기존 주소에 두고, 다른 compute를 추가 등록한다.
+새 클러스터는 [`cluster_edge.py`](../../../deployment/scripts/cluster_edge.py)가 canonical
+inventory와 private authority를 비교한 뒤 이 값을 생성한다. 기존 live state를 새
+클러스터 stage로 인수하지 않는다. 입력 예제·소유권·재실행·실환경 검증은
+[클러스터 공개 접근 절차](../../../docs/architecture/kubeadm-cluster-edge.md)를 따른다.

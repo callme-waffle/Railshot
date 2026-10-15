@@ -1,0 +1,146 @@
+---
+- name: Set immutable node and cluster ownership
+  ansible.builtin.set_fact:
+    kubeadm_node_kubeadm_identity:
+      profile: "{{ railshot_profile }}"
+      target_id: "{{ railshot_target_id }}"
+      resource_id: "{{ railshot_resource_id }}"
+      node_id: "{{ inventory_hostname }}"
+      node_ip: "{{ railshot_node_ip }}"
+      role: "{{ railshot_node_role }}"
+      versions: "{{ railshot_versions }}"
+      members: "{{ railshot_expected_nodes }}"
+      pod_cidr: "{{ railshot_pod_cidr }}"
+      service_cidr: "{{ railshot_service_cidr }}"
+- name: Inspect immutable ownership
+  ansible.builtin.stat:
+    path: /etc/railshot/kubeadm-identity.json
+  register: kubeadm_node_identity_stat
+- name: Read existing ownership
+  ansible.builtin.slurp:
+    src: /etc/railshot/kubeadm-identity.json
+  register: kubeadm_node_previous_identity
+  when: kubeadm_node_identity_stat.stat.exists
+  no_log: true
+- name: Reject target changes and implicit upgrades
+  ansible.builtin.assert:
+    that: (kubeadm_node_previous_identity.content | b64decode | from_json) == kubeadm_node_kubeadm_identity
+  when: kubeadm_node_identity_stat.stat.exists
+  no_log: true
+- name: Prepare private ownership and download directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0700'
+  loop: [/etc/railshot, /var/lib/railshot/kubeadm]
+- name: Record ownership before mutation
+  ansible.builtin.copy:
+    dest: /etc/railshot/kubeadm-identity.json
+    content: "{{ kubeadm_node_kubeadm_identity | to_json }}"
+    mode: '0600'
+  no_log: true
+- name: Install runtime and storage prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gpg, conntrack, socat, iptables, nfs-common, ceph-common, python3-yaml]
+    update_cache: true
+    cache_valid_time: 3600
+- name: Load kernel prerequisites
+  ansible.builtin.command:
+    argv: [/usr/sbin/modprobe, "{{ item }}"]
+  loop: [overlay, br_netfilter]
+  changed_when: false
+- name: Persist kernel modules
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/railshot-kubeadm.conf
+    content: "overlay\nbr_netfilter\n"
+    mode: '0644'
+- name: Persist cluster network sysctls
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-railshot-kubeadm.conf
+    content: "net.ipv4.ip_forward=1\nnet.bridge.bridge-nf-call-iptables=1\nnet.bridge.bridge-nf-call-ip6tables=1\n"
+    mode: '0644'
+  notify: Apply managed sysctls
+- name: Download pinned containerd with upstream checksum
+  ansible.builtin.get_url:
+    url: >-
+      {{ 'https://github.com/containerd/containerd/releases/download/v' ~ railshot_versions.containerd
+      ~ '/containerd-' ~ railshot_versions.containerd ~ '-linux-amd64.tar.gz' }}
+    checksum: >-
+      {{ 'sha256:https://github.com/containerd/containerd/releases/download/v' ~ railshot_versions.containerd
+      ~ '/containerd-' ~ railshot_versions.containerd ~ '-linux-amd64.tar.gz.sha256sum' }}
+    dest: "/var/lib/railshot/kubeadm/containerd-{{ railshot_versions.containerd }}-linux-amd64.tar.gz"
+    mode: '0600'
+- name: Install pinned containerd binaries
+  ansible.builtin.unarchive:
+    src: "/var/lib/railshot/kubeadm/containerd-{{ railshot_versions.containerd }}-linux-amd64.tar.gz"
+    dest: /usr/local
+    remote_src: true
+    creates: /usr/local/bin/containerd
+- name: Download pinned runc
+  ansible.builtin.get_url:
+    url: "https://github.com/opencontainers/runc/releases/download/v{{ railshot_versions.runc }}/runc.amd64"
+    checksum: "sha256:https://github.com/opencontainers/runc/releases/download/v{{ railshot_versions.runc }}/runc.sha256sum"
+    dest: /var/lib/railshot/kubeadm/runc.amd64
+    mode: '0700'
+- name: Install pinned runc
+  ansible.builtin.copy:
+    src: /var/lib/railshot/kubeadm/runc.amd64
+    dest: /usr/local/sbin/runc
+    remote_src: true
+    mode: '0755'
+- name: Prepare containerd configuration directory
+  ansible.builtin.file:
+    path: /etc/containerd
+    state: directory
+    mode: '0755'
+- name: Configure systemd container runtime
+  ansible.builtin.template:
+    src: containerd.toml.j2
+    dest: /etc/containerd/config.toml
+    mode: '0644'
+  notify: Restart managed containerd
+- name: Install managed containerd service
+  ansible.builtin.template:
+    src: containerd.service.j2
+    dest: /etc/systemd/system/containerd.service
+    mode: '0644'
+  notify: Restart managed containerd
+- name: Start managed containerd
+  ansible.builtin.systemd_service:
+    name: containerd
+    daemon_reload: true
+    enabled: true
+    state: started
+- name: Flush container runtime configuration before kubeadm
+  ansible.builtin.meta: flush_handlers
+- name: Prepare package keyrings
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+- name: Download Kubernetes signed repository key
+  ansible.builtin.get_url:
+    url: https://pkgs.k8s.io/core:/stable:/v1.36/deb/Release.key
+    dest: /etc/apt/keyrings/railshot-kubernetes.asc
+    mode: '0644'
+- name: Configure the pinned minor repository
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/railshot-kubernetes.list
+    content: "deb [signed-by=/etc/apt/keyrings/railshot-kubernetes.asc] https://pkgs.k8s.io/core:/stable:/v1.36/deb/ /\n"
+    mode: '0644'
+- name: Install the same exact Kubernetes version on all nodes
+  ansible.builtin.apt:
+    name:
+      - "kubeadm={{ railshot_versions.kubernetes }}-1.1"
+      - "kubelet={{ railshot_versions.kubernetes }}-1.1"
+      - "kubectl={{ railshot_versions.kubernetes }}-1.1"
+    update_cache: true
+- name: Hold cluster packages against implicit upgrades
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: [kubeadm, kubelet, kubectl]
+- name: Enable kubelet for kubeadm bootstrap
+  ansible.builtin.systemd_service:
+    name: kubelet
+    enabled: true

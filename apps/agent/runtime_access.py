@@ -31,6 +31,7 @@ MARKER = '# Managed by RailShot personal client v1\n'
 MAX_BYTES = 1048576
 LABEL = re.compile(r'[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?')
 PREFIX = ['sudo', '-n', 'k3s', 'kubectl', '--request-timeout=20s', '-n']
+KUBEADM_PREFIX = ['sudo', '-n', '/usr/bin/kubectl', '--kubeconfig=/etc/kubernetes/admin.conf', '--request-timeout=20s', '-n']
 APP_CONTROLS = {'deployments.apps': ('Deployment', 'replicas'), 'statefulsets.apps': ('StatefulSet', 'replicas'),
                 'cronjobs.batch': ('CronJob', 'suspend'), 'jobs.batch': ('Job', 'suspend')}
 TUNNEL_NAME = 'railshot-tunnel'
@@ -256,14 +257,23 @@ def validate_runtime(config, runtime):
     ssh = runtime['ssh']
     require(set(ssh) == {'host', 'user', 'port', 'identity_file', 'known_hosts_file'})
     require(ssh['host'] == host and ssh['port'] == 22 and re.fullmatch(r'[a-z_][a-z0-9_-]{0,31}', ssh['user']) and ssh['user'] != 'root')
+    require(runtime.get('profile', 'legacy-k3s') in ('legacy-k3s', 'kubeadm-1c2w'))
+    if runtime.get('profile') == 'kubeadm-1c2w':
+        members = runtime.get('members')
+        require(isinstance(members, list) and len(members) == 3
+                and sum(n.get('role') == 'control_plane' for n in members) == 1
+                and sum(n.get('role') == 'workers' for n in members) == 2
+                and any(n.get('role') == 'control_plane' and n.get('resource_id') == runtime['resource_id']
+                        and n.get('private_ipv4') == host for n in members), 'KUBEADM_RUNTIME_BINDING_INVALID')
     safe(ssh['identity_file']); safe(ssh['known_hosts_file'])
     return runtime
 
 
-def parse(command, document, target):
+def parse(command, document, target, profile='legacy-k3s'):
     require(isinstance(command, str) and len(command) <= 4096 and not any(ord(c) < 32 for c in command))
     parts = shlex.split(command)
-    require(parts[:6] == PREFIX and len(parts) >= 8)
+    prefix = KUBEADM_PREFIX if profile == 'kubeadm-1c2w' else PREFIX
+    require(parts[:6] == prefix and len(parts) >= 8)
     namespace, args = parts[6], parts[7:]
     if namespace == 'default' and isinstance(document, dict) and document.get('kind') == 'Namespace':
         namespace = document.get('metadata', {}).get('name', '')
@@ -437,12 +447,12 @@ def ssh_command(runtime, namespace, args):
             '-o', 'IdentityAgent=none', '-o', 'StrictHostKeyChecking=yes', '-o', 'GlobalKnownHostsFile=/dev/null',
             '-o', 'ProxyCommand=none', '-o', 'PermitLocalCommand=no', '-o', 'ConnectTimeout=10',
             '-o', 'UserKnownHostsFile=' + ssh['known_hosts_file'], '-i', ssh['identity_file'],
-            '-p', '22', ssh['user'] + '@' + ssh['host'], shlex.join(PREFIX + [namespace, *args])]
+            '-p', '22', ssh['user'] + '@' + ssh['host'], shlex.join((KUBEADM_PREFIX if runtime.get('profile') == 'kubeadm-1c2w' else PREFIX) + [namespace, *args])]
 
 
 def execute(config, runtime, envelope, runner=run):
     require(isinstance(envelope, dict) and set(envelope) == {'command', 'document'})
-    namespace, args, action = parse(envelope['command'], envelope['document'], config['target_id'])
+    namespace, args, action = parse(envelope['command'], envelope['document'], config['target_id'], runtime.get('profile', 'legacy-k3s'))
     def remote(ns, argv, document=None):
         raw = runner(ssh_command(runtime, ns, argv), input=None if document is None else json.dumps(document))
         return json.loads(raw) if raw else None

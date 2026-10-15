@@ -85,6 +85,13 @@ class Jobs:
         if not isinstance(self.targets, dict) or not self.targets:
             raise ValueError('registered target allowlist required')
         for target_id, target in self.targets.items():
+            if isinstance(target, dict) and target.get('profile') == 'kubeadm-1c2w':
+                if (not re.fullmatch(r'[a-z][a-z0-9-]{0,62}', target_id)
+                        or set(target) != {'profile', 'cluster_file', 'purpose'}
+                        or target['purpose'] != 'runtime'
+                        or not isinstance(target['cluster_file'], str) or not Path(target['cluster_file']).is_absolute()):
+                    raise ValueError('invalid registered kubeadm cluster')
+                continue
             common = {'ssh', 'timeout_seconds', 'purpose'}
             openstack = {'server_file', 'resource_id', 'project_id', 'management_network',
                          'placement', 'architecture', 'initialization'}
@@ -109,7 +116,7 @@ class Jobs:
                 record = private_json(path)
                 required = {'request_id', 'target_id', 'operation', 'request_sha256', 'status',
                             'created_at', 'updated_at', 'result', 'error'}
-                if (not isinstance(record, dict) or not required <= set(record) or set(record) - required - {'lock_keys'}
+                if (not isinstance(record, dict) or not required <= set(record) or set(record) - required - {'lock_keys', 'profile'}
                         or not isinstance(record.get('request_id'), str)
                         or path.name != self.path(record['request_id']).name
                         or record.get('status') not in {'queued', 'running', 'succeeded', 'failed', 'blocked', 'unknown'}):
@@ -148,7 +155,7 @@ class Jobs:
         request = self.resolve(body['target_id'], body['request_id'], body['operation'],
                                purpose='runtime' if body['operation'] == 'runtime.install' else None)
         if parameters:
-            request['runtime'] = parameters
+            request['runtime'] = {**request.get('runtime', {}), **parameters}
         try:
             return ansible.validate(request)
         except ValueError:
@@ -160,7 +167,15 @@ class Jobs:
             raise APIError('TARGET_NOT_REGISTERED', 404)
         if purpose is not None and target.get('purpose', 'runtime') != purpose:
             raise APIError('TARGET_PURPOSE_MISMATCH', 400)
+        if target.get('profile') == 'kubeadm-1c2w' and operation != 'runtime.install':
+            raise APIError('KUBEADM_OPERATION_UNSUPPORTED', 400)
         try:
+            if target.get('profile') == 'kubeadm-1c2w':
+                import kubeadm
+                request = kubeadm.from_registry(private_json(target['cluster_file']), request_id=request_id, operation=operation)
+                if request['target']['id'] != target_id:
+                    raise ValueError('cluster target binding mismatch')
+                return request
             if 'server_file' in target:
                 request = ansible.from_openstack(private_json(target['server_file']),
                     request_id=request_id, operation=operation, target_id=target_id,
@@ -209,7 +224,7 @@ class Jobs:
 
     def submit(self, body):
         request = self.prepare(body)
-        digest = hashlib.sha256(encoded(request)).hexdigest()
+        digest = ansible.request_sha256(request)
         with self.lock:
             prior = self.records.get(request['request_id'])
             if prior:
@@ -232,6 +247,8 @@ class Jobs:
                       'request_sha256': digest, 'status': 'queued', 'created_at': time.time(),
                       'updated_at': time.time(), 'result': None, 'error': None,
                       'lock_keys': ansible.lock_keys(request)}
+            if request.get('runtime', {}).get('profile') == 'kubeadm-1c2w':
+                record['profile'] = 'kubeadm-1c2w'
             self.save(record)  # Durable acceptance precedes any executor dispatch.
             self.active = body['request_id']
             try:
@@ -249,7 +266,7 @@ class Jobs:
                 or result.get('status') not in ('succeeded', 'invalid', 'blocked', 'failed')
                 or any(type(result.get(key)) is not bool for key in (
                     'guest_ready', 'runtime_ready', 'application_ready', 'public_http_verified'))
-                or result['application_ready'] or result['public_http_verified']):
+                or result['application_ready'] or (result['public_http_verified'] and record.get('profile') != 'kubeadm-1c2w')):
             raise ValueError('executor result binding mismatch')
         if result['status'] == 'succeeded' and (not result['guest_ready'] or (
                 record['operation'] == 'runtime.install' and not result['runtime_ready'])):
@@ -263,7 +280,14 @@ class Jobs:
         public_result = {key: result[key] for key in ('status', 'guest_ready', 'runtime_ready',
                                                     'application_ready', 'public_http_verified', 'replayed')}
         public_result['stage'] = result['stage'] if result.get('stage') in (
-            'validation', 'executor_preflight', 'guest', 'runtime', 'database') else 'unknown'
+            'validation', 'executor_preflight', 'guest', 'runtime', 'database', 'storage_backend', 'storage', 'edge', 'transport_cleanup') else 'unknown'
+        if record.get('profile') == 'kubeadm-1c2w':
+            for key in ('storage_backend_ready', 'storage_csi_ready', 'storage_pvc_ready', 'storage_ready', 'edge_ready'):
+                if type(result.get(key)) is not bool:
+                    raise ValueError('kubeadm addon result binding mismatch')
+                public_result[key] = result[key]
+            if result['status'] == 'succeeded' and not (result['storage_ready'] and result['edge_ready']):
+                raise ValueError('kubeadm success without addon readiness')
         if record['operation'] == 'database.configure':
             public_result['database_ready'] = result['database_ready']
         record.update(status='unknown' if unknown else 'failed' if result['status'] == 'invalid' else result['status'],

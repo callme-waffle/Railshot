@@ -42,6 +42,8 @@ class Server:
     project_id: str
     status: str
     addresses: tuple[Address, ...]
+    availability_zone: str | None = None
+    region: str | None = None
 
 
 @dataclass(frozen=True)

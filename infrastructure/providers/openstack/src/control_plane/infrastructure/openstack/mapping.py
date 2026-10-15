@@ -27,7 +27,7 @@ def number(resource: Any, key: str, *, minimum: int = 0) -> int:
     return value
 
 
-def server(resource: Any) -> Server:
+def server(resource: Any, *, region: str | None = None) -> Server:
     addresses = []
     raw = getattr(resource, "addresses", None) or {}
     if not isinstance(raw, Mapping):
@@ -47,12 +47,19 @@ def server(resource: Any) -> Server:
             except ValueError as exc:
                 raise UpstreamFailure() from exc
             addresses.append(Address(network, address, 4 if version == 4 else 6))
+    availability_zone = getattr(resource, "availability_zone", None)
+    if availability_zone is not None and (
+        not isinstance(availability_zone, str) or not availability_zone.strip()
+    ):
+        raise UpstreamFailure()
     return Server(
         text_field(resource, "id"),
         text_field(resource, "name", default=""),
         text_field(resource, "project_id"),
         text_field(resource, "status", default="UNKNOWN"),
         tuple(addresses),
+        availability_zone,
+        region,
     )
 
 
