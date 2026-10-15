@@ -32,6 +32,7 @@ CHARTS = {
                 'url': 'https://ceph.github.io/csi-charts/cephfs/ceph-csi-cephfs-3.18.1.tgz'},
 }
 
+CHARTS['nfs'] = dict(CHARTS['filestore'])
 
 class InstallError(ValueError):
     pass
@@ -112,7 +113,7 @@ def render(config):
                   'gidRangeStart': '10000', 'gidRangeEnd': '20000', 'basePath': '/' + cluster,
                   'subPathPattern': '${.PVC.namespace}/${.PVC.name}', 'ensureUniqueDirectory': 'true', 'reuseAccessPoint': 'false'}
         mount_options = ['tls']
-    elif backend == 'filestore':
+    elif backend in ('filestore', 'nfs'):
         values = {'controller': {'replicas': 2, 'affinity': affinity(workers, {'app': 'csi-nfs-controller'}, required=True), 'enableSnapshotter': False,
                                  'defaultOnDeletePolicy': 'retain'},
                   'node': {'affinity': affinity(workers)}, 'storageClass': {'create': False}}
@@ -275,7 +276,7 @@ def _verify_proof_volume(config, pvc, pv):
     attrs = csi.get('volumeAttributes', {})
     if config['backend'] == 'efs' and not csi.get('volumeHandle', '').startswith(descriptor['filesystem_id'] + '::'):
         raise InstallError('Proof PV belongs to a different EFS filesystem')
-    if config['backend'] == 'filestore' and (attrs.get('server') != descriptor['server'] or attrs.get('share') != descriptor['share']):
+    if config['backend'] in ('filestore', 'nfs') and (attrs.get('server') != descriptor['server'] or attrs.get('share') != descriptor['share']):
         raise InstallError('Proof PV belongs to a different Filestore export')
     if config['backend'] == 'cephfs' and (attrs.get('clusterID') != config['cephfs']['cluster_id'] or attrs.get('fsName') != config['cephfs']['fs_name']):
         raise InstallError('Proof PV belongs to a different Ceph filesystem')

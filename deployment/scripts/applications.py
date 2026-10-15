@@ -72,7 +72,7 @@ def load_config(config_path):
     for name, profile in config['environments'].items():
         require(isinstance(name, str) and re.fullmatch(ENVIRONMENT, name))
         require(exact(profile, ('provider', 'tenant', 'source_repository', 'pull_secret_file', 'target', 'ingress')))
-        require(profile['provider'] in ('aws', 'gcp', 'openstack') and isinstance(profile['tenant'], str)
+        require(profile['provider'] in ('aws', 'gcp', 'openstack', 'ncp') and isinstance(profile['tenant'], str)
                 and re.fullmatch(r'[a-z0-9]{1,20}', profile['tenant']))
         require(isinstance(profile['source_repository'], str) and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', profile['source_repository']))
         absolute(profile['pull_secret_file'])
@@ -116,6 +116,8 @@ def _inputs(config, request):
     # The validated SSM reference joins AWS ARN/raw instance-ID aliases without a cloud lookup.
     resource = native['inventory']['control_plane'][0]['ssh']['transport_ref'] if profile['provider'] == 'aws' else descriptor['resource_id']
     physical = {'provider': profile['provider'], 'resource_id': resource}
+    if profile['provider'] == 'ncp':
+        physical['member_no'] = native['target']['account_id']
     if profile['provider'] == 'openstack':
         physical['project_id'] = selected['project_id']
     authority = {**physical, 'cluster_server': endpoint, 'private_address': descriptor['addresses']['private'],
@@ -259,7 +261,7 @@ def register(config_path, request):
                     step('permissions', lambda: runtime.grant_control_objects(cd, registered, app_id, environment_id=env_id))
                     tls = {'tls_server_name': descriptor['addresses']['private']} if (
                         profile['provider'] == 'openstack' and native['inventory']['control_plane'][0]['ssh'].get('connect_host')
-                        or profile['provider'] == 'gcp' and descriptor.get('management_endpoint')) else {}
+                        or profile['provider'] in ('gcp', 'ncp') and descriptor.get('management_endpoint')) else {}
                     renewal, expiry = step('argo', lambda: runtime.register_argo(kube, cd, registered, app_id, app_id, None, **tls))
                     step('credentials', lambda: runtime.install_renewal(cd, renewal))
                     record['cluster_registration'] = step('cluster', lambda: runtime.share_application_cluster(kube, cd, registered, env_id))

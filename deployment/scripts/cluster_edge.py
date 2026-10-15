@@ -177,6 +177,10 @@ def credential_env(config, original):
 
 
 def validate(request):
+    if request.get('target', {}).get('provider') == 'ncp':
+        sys.path.insert(0, str(ROOT))
+        from infrastructure.providers.ncp.edge import validate_cluster
+        return validate_cluster(request)
     """Bind private provider authority to the core's validated 3-node inventory."""
     target, inventory = request['target'], request['inventory']
     require(request['runtime'].get('profile') == 'kubeadm-1c2w', 'CLUSTER_EDGE_PROFILE_REQUIRED')
@@ -705,6 +709,9 @@ def provision(request, *, state_dir, runner=None, deadline=None, env=None, kube=
     runner is an injected command/DNS/Tunnel transport for offline contract tests.
     No credentials or provider command output is returned to callers.
     """
+    if request.get('target', {}).get('provider') == 'ncp':
+        from infrastructure.providers.ncp.edge import provision_cluster
+        return provision_cluster(request, expected_binding_sha256=expected_binding_sha256, deadline=deadline)
     require(deadline is None or time.monotonic() < deadline, 'CLUSTER_EDGE_DEADLINE_EXCEEDED')
     prepared = validate(request)
     require(expected_binding_sha256 is None or expected_binding_sha256 == prepared['binding_sha256'], 'CLUSTER_EDGE_SCOPE_CHANGED')

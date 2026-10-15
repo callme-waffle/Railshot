@@ -66,7 +66,7 @@ def metrics_host(descriptor, node_ip):
     address = descriptor['addresses'].get('metrics', node_ip)
     if descriptor.get('provider_kind') == 'openstack':
         return address
-    if descriptor.get('provider_kind') == 'gcp' and ('metrics' in descriptor['addresses'] or descriptor.get('management_endpoint')):
+    if descriptor.get('provider_kind') in ('gcp', 'ncp') and ('metrics' in descriptor['addresses'] or descriptor.get('management_endpoint')):
         public = ipaddress.IPv4Address(descriptor['addresses'].get('public', ''))
         require(public.is_global and not public.is_multicast and address == str(public)
                 and descriptor.get('management_endpoint') == f'https://{public}:6443')

@@ -68,6 +68,11 @@ def registered_node(selected, target_id, request_id, *, timeout_seconds=None):
         resource = {'target_id': target_id, 'provider_kind': request['target']['provider'],
                     'resource_id': node['resource_id'], 'addresses': {'private': node['private_ipv4']},
                     'registered_request': request, 'profile': 'kubeadm-1c2w'}
+        if request['target']['provider']=='ncp':
+            public=ipaddress.IPv4Address(node['ssh']['connect_host'])
+            argo.require(public.is_global and not public.is_multicast,'NCP public management IPv4 required')
+            resource['addresses'].update(public=str(public),metrics=str(public))
+            resource['management_endpoint']=f'https://{public}:6443'
         return request, resource
     if 'server_file' in selected:
         fields = {'resource_id', 'project_id', 'management_network', 'placement',
@@ -156,7 +161,7 @@ def load_configuration(registry, target_id, config, binding_file=None):
                  and target['namespace'] not in {'default', 'argocd', 'kube-system', 'kube-public', 'kube-node-lease'},
                  'dedicated application namespace required')
     expected_server = 'https://' + descriptor['addresses']['private'] + ':6443'
-    if request['target']['provider'] in ('openstack', 'gcp'):
+    if request['target']['provider'] in ('openstack', 'gcp', 'ncp'):
         expected_server = descriptor.get('management_endpoint', expected_server)
     argo.require(target.get('cluster_server', expected_server) == expected_server
                  and target['architecture'] == request['target']['architecture'] == 'amd64',
@@ -663,7 +668,7 @@ def register(registry_file, target_id, config_file, state_dir, binding_file=None
                 checkpoint('argo')
                 tls_options = {}
                 if (request['target']['provider'] == 'openstack' and request['inventory']['control_plane'][0]['ssh'].get('connect_host')
-                        or request['target']['provider'] == 'gcp' and identity['descriptor'].get('management_endpoint')):
+                        or request['target']['provider'] in ('gcp', 'ncp') and identity['descriptor'].get('management_endpoint')):
                     tls_options['tls_server_name'] = identity['descriptor']['addresses']['private']
                 renewal, expiration = register_argo(kube, cd, registered, target_id, owner, binding, **tls_options)
                 save(home / 'renewal.json', renewal); complete('argo')

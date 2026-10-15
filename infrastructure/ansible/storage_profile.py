@@ -91,6 +91,11 @@ def _worker_resource(provider, node):
 
 
 def validate(request):
+    if request.get('target', {}).get('provider') == 'ncp':
+        import sys
+        sys.path.insert(0, str(ROOT))
+        from infrastructure.providers.ncp.runtime import validate_storage
+        return validate_storage(request)
     """Validate only; performs no file, SSH, cloud, or Kubernetes observation."""
     try:
         target = request['target']
@@ -355,6 +360,9 @@ def _prepare(request, *, work, env, deadline, runner=None):
     The durable Terraform state and binding must always be retained.
     """
     validate(request)
+    if request['target']['provider'] == 'ncp':
+        from infrastructure.providers.ncp.runtime import prepare_storage
+        return prepare_storage(request)
     safe = variables(request)
     provider = request['target']['provider']
     storage = request['runtime']['storage']
