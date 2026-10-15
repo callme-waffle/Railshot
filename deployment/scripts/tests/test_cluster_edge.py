@@ -84,6 +84,18 @@ class ClusterEdgeTests(unittest.TestCase):
         self.write()
         self.runner = Runner(self)
 
+    def test_sts_rotation_preserves_explicit_role_binding(self):
+        self.config['credential_binding'] = {'account_id': '123456789012', 'role_arn': 'arn:aws:iam::123456789012:role/railshot', 'credential_ref': 'customer-a', 'policy_revision': 'v1'}
+        credentials = self.root / 'cloud-credentials.json'
+        edge.durable_write(credentials, edge.encoded({'AWS_ACCESS_KEY_ID': 'session-a', 'AWS_SECRET_ACCESS_KEY': 'private-a', 'AWS_SESSION_TOKEN': 'token-a'}))
+        self.write()
+        first = edge.validate(self.request)['binding_sha256']
+        edge.durable_write(credentials, edge.encoded({'AWS_ACCESS_KEY_ID': 'session-b', 'AWS_SECRET_ACCESS_KEY': 'private-b', 'AWS_SESSION_TOKEN': 'token-b'}))
+        self.assertEqual(first, edge.validate(self.request)['binding_sha256'])
+        self.config['credential_binding']['role_arn'] = 'arn:aws:iam::123456789012:role/other'
+        self.write()
+        self.assertNotEqual(first, edge.validate(self.request)['binding_sha256'])
+
     @staticmethod
     def node(role, index):
         return {'id': role, 'resource_id': 'arn:aws:ec2:ap-northeast-2:123456789012:instance/i-' + str(index) * 17,
@@ -254,7 +266,8 @@ class ClusterEdgeTests(unittest.TestCase):
         self.assertNotIn('private-fixture', json.dumps(prepared))
         old = prepared['binding_sha256']
         edge.durable_write(self.root / 'cloud-credentials.json', edge.encoded({'AWS_ACCESS_KEY_ID': 'key-new', 'AWS_SECRET_ACCESS_KEY': 'changed-secret'}))
-        self.assertNotEqual(edge.validate(self.request)['binding_sha256'], old)
+        self.assertEqual(edge.validate(self.request)['binding_sha256'], old)
+        self.assertEqual(edge.NativeRunner(edge.validate(self.request), time.monotonic() + 60, env=original).env['AWS_SECRET_ACCESS_KEY'], 'changed-secret')
 
     def test_gcp_explicit_adc_and_openstack_application_auth_scope(self):
         config = dict(self.config, provider='gcp', account_id='railshot-project', region='asia-northeast3')
@@ -330,6 +343,20 @@ class ClusterEdgeTests(unittest.TestCase):
         self.assertEqual({row['availability_zone'] for row in prepared['values']['compute_nodes'].values()},
                          {'asia-northeast3-b', 'asia-northeast3-c'})
         before = prepared['binding_sha256']
+        credentials = self.root / 'cloud-credentials.json'
+        adc = edge.private_json(credentials)
+        adc['private_key'] = '-----BEGIN PRIVATE KEY-----rotated-fixture-----END PRIVATE KEY-----'
+        edge.durable_write(credentials, edge.encoded(adc))
+        self.assertEqual(edge.validate(self.request)['binding_sha256'], before)
+        adc['client_email'] = 'another@railshot-project.iam.gserviceaccount.com'
+        edge.durable_write(credentials, edge.encoded(adc))
+        self.assertNotEqual(edge.validate(self.request)['binding_sha256'], before)
+        self.config['credential_binding'] = {'account_id': '123456789012', 'role_arn': 'arn:aws:iam::123456789012:role/railshot', 'credential_ref': 'customer-a', 'policy_revision': 'v1'}
+        self.write()
+        with self.assertRaisesRegex(edge.EdgeError, 'CREDENTIAL_BINDING_INVALID'):
+            edge.validate(self.request)
+        self.config.pop('credential_binding'); self.write()
+        before = edge.validate(self.request)['binding_sha256']
         dns_authority = edge.private_json(self.root / 'dns.json')
         dns_authority['zone_id'] = 'b' * 32
         edge.durable_write(self.root / 'dns.json', edge.encoded(dns_authority))

@@ -102,6 +102,27 @@ class Cloud:
 
 
 class ProfileTests(unittest.TestCase):
+    def test_aws_instance_profile_is_control_only_and_has_no_static_secret(self):
+        req = request()
+        req['inventory']['control_plane'] = [{'id': 'control'}]
+        aws = req['runtime']['storage']['aws']
+        aws.pop('controller_credentials_secret')
+        aws.update(identity_mode='instance_profile', controller_node='control')
+        cfg = storage.variables(req)['railshot_storage']
+        cfg['backend_descriptor'] = {**cfg['binding'], 'filesystem_id': aws['filesystem_id']}
+        values, _ = installer.render(cfg)
+        control = values['controller']
+        self.assertTrue(control['hostNetwork'])
+        self.assertEqual(control['nodeSelector'], {'kubernetes.io/hostname': 'control'})
+        self.assertEqual(control['tags'], {'railshot-cluster': 'demo'})
+        self.assertFalse(any('secretKeyRef' in str(row) for row in control['env']))
+        self.assertEqual(control['replicaCount'], 1)
+        class NeverSecrets:
+            def get(self, *args): raise AssertionError('Static secret must not be read')
+        installer.ensure_secrets(NeverSecrets(), cfg)
+        aws['controller_node'] = 'compute-a'
+        with self.assertRaises(storage.StorageError): storage.validate(req)
+
     def test_provider_contracts_and_private_variable_mapping(self):
         for provider in storage.BACKENDS:
             req = request(provider)
@@ -156,7 +177,10 @@ class ProfileTests(unittest.TestCase):
         if req['target']['provider'] == 'aws':
             cred.write_text(json.dumps({'AWS_ACCESS_KEY_ID': 'access-private', 'AWS_SECRET_ACCESS_KEY': 'secret-private'}))
         else:
-            cred.write_text(json.dumps({'type': 'service_account', 'project_id': 'railshot-project'}))
+            cred.write_text(json.dumps({'type': 'service_account', 'project_id': 'railshot-project',
+                'client_email': 'fixture@railshot-project.iam.gserviceaccount.com',
+                'private_key': '-----BEGIN PRIVATE KEY-----fixture-----END PRIVATE KEY-----',
+                'token_uri': 'https://oauth2.googleapis.com/token'}))
         cred.chmod(0o600); cfg['credentials_file'] = str(cred)
         return storage.prepare(req, work=directory, env={'PATH': '/usr/bin', 'UNSAFE_CREDENTIAL': 'drop'}, deadline=time.monotonic() + 300, runner=cloud)
 

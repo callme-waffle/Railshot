@@ -20,12 +20,15 @@ import { json, apiError, accepted } from './http/response.js';
 import { jsonInput, pagination, page, requestKey } from './http/request.js';
 import { uploadedSource, sourceArchive } from './http/source.js';
 import { createOpenStackRoutes, isRegistrationRoute, isTokenClaimRoute } from './http/openstack.js';
+import { isControlPlaneRoute, serveControlPlane } from './http/control-plane.js';
+import { createControlPlane } from './control-plane.js';
 import { isDashboardRoute, serveDashboard } from './http/dashboard.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'dashboard');
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/src/control-environments.js', ['src/control-environments.js', 'text/javascript; charset=utf-8']],
   ['/src/api.js', ['src/api.js', 'text/javascript; charset=utf-8']],
   ['/src/openstack-installer.js', ['src/openstack-installer.js', 'text/javascript; charset=utf-8']],
   ['/src/deployment-history.js', ['src/deployment-history.js', 'text/javascript; charset=utf-8']],
@@ -66,7 +69,7 @@ function configuredDeploymentService(env = process.env) {
 export function createAppServer({ sourceLoader = fetchPublicGithubSource, access = apiAccessConfig(),
   service = configuredDeploymentService(),
   stateDirectory = process.env.RAILSHOT_STATE_DIR || join(homedir(), '.local', 'state', 'railshot'),
-  deployPublished, environmentAdapter, applicationAdapter, personalAdapter, observeMetrics, observeLogs, observeTraffic, classifyFailure, product, pollInterval,
+  deployPublished, environmentAdapter, applicationAdapter, personalAdapter, controlPlane, observeMetrics, observeLogs, observeTraffic, classifyFailure, product, pollInterval,
   maxConcurrentDeployments = Number(process.env.RAILSHOT_MAX_CONCURRENT_DEPLOYMENTS ?? 3),
   target = { provider: process.env.RAILSHOT_TARGET_PROVIDER }, providerTargets, releaseLeaseMs = 120_000,
 } = {}) {
@@ -90,6 +93,10 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
     const { createPersonalAdapter } = await import('./personal-adapter.js');
     const personal = personalAdapter || (process.env.RAILSHOT_PERSONAL_CONFIG ? await createPersonalAdapter({ configPath: process.env.RAILSHOT_PERSONAL_CONFIG, stateDirectory: join(stateDirectory, 'personal'), service, base: applications }) : undefined);
     if (personal?.application) applications = personal.application;
+    const control = controlPlane || (process.env.RAILSHOT_CONTROL_CONFIG ? await createControlPlane({
+      configPath: process.env.RAILSHOT_CONTROL_CONFIG, stateDirectory: join(stateDirectory, 'control-requests'), base: applications, service,
+    }) : undefined);
+    if (control?.application) applications = control.application;
     const { createMetricsObserver } = await import('./metrics.js');
     const observer = observeMetrics || createMetricsObserver({
       configPath: process.env.RAILSHOT_OBSERVER_PRODUCT_FILE || process.env.RAILSHOT_OBSERVER_CONFIG,
@@ -97,7 +104,7 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
     const selections = providerTargets ?? (process.env.RAILSHOT_PROVIDER_TARGETS === undefined ? undefined : JSON.parse(process.env.RAILSHOT_PROVIDER_TARGETS));
     const { createAppLogsObserver } = await import('./logs.js');
     const logs = observeLogs || createAppLogsObserver({ configPath: process.env.RAILSHOT_CD_CONFIG });
-    return createProductService({ observeMetrics: observer, observeLogs: logs, classifyFailure: classifier, service, target, providerTargets: selections, directory: stateDirectory, deployPublished: cd, environmentAdapter: environment, applicationAdapter: applications, personalAdapter: personal, pollInterval, maxConcurrentDeployments });
+    return createProductService({ observeMetrics: observer, observeLogs: logs, classifyFailure: classifier, service, target, providerTargets: selections, directory: stateDirectory, deployPublished: cd, environmentAdapter: environment, applicationAdapter: applications, personalAdapter: personal, controlPlane: control, pollInterval, maxConcurrentDeployments });
   });
   // Hold initialization errors until a request can receive a safe 503; never leak private config paths.
   let productInitialized = false;
@@ -126,7 +133,7 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
       if (request.method === 'GET' && ['/healthz', '/readyz'].includes(url.pathname)) {
         // Liveness remains local; readiness also requires usable durable state and operator config.
         const configured = !shuttingDown && productInitialized
-          && Boolean(product || service?.targetId || environmentAdapter || process.env.RAILSHOT_PROFILES_FILE);
+          && Boolean(product || service?.targetId || environmentAdapter || process.env.RAILSHOT_PROFILES_FILE || process.env.RAILSHOT_CONTROL_CONFIG);
         json(response, url.pathname === '/readyz' && !configured ? 503 : 200, { ok: true, configured, ...(!access.remote && { target_id: service?.targetId || null }) }); return;
       }
       if (url.pathname === '/internal/deployments/resume' && request.method === 'POST') {
@@ -210,7 +217,7 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
           return;
         }
         const accountCookiePresent = (request.headers.cookie || '').includes(`${ACCOUNT_COOKIE}=`);
-        const accountTargetRoute = accountCookiePresent && /^\/api\/v1\/targets(?:\/|$)/.test(url.pathname);
+        const accountTargetRoute = accountCookiePresent && (/^\/api\/v1\/targets(?:\/|$)/.test(url.pathname) || isControlPlaneRoute(url.pathname));
         if (!clientRoute && !prerequisiteRoute && !accountRoute && !publicConnectionRoute && !accountTargetRoute && !access.publicDemo && !allowsToken(request.headers.authorization, access.token)) {
           response.setHeader('www-authenticate', 'Bearer');
           throw new ServiceError('API authentication required', 401);
@@ -285,11 +292,19 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
         const scoped = !clientRoute && (access.remote || access.publicDemo || dashboardRoute || registrationRoute || (request.headers.cookie || '').includes(`${SESSION_COOKIE}=`) || (request.headers.cookie || '').includes(`${OWNER_COOKIE}=`) || /^\/api\/v1\/(owners|recoveries)$/.test(url.pathname));
         const session = scoped ? products.dashboard.session(cookieToken(request.headers.cookie)) : null;
         const owner = clientRoute ? null : products.dashboard?.owner?.(ownerToken(request.headers.cookie));
-        const account = clientRoute ? null : products.dashboard.accounts.session(accountCookieToken(request.headers.cookie));
-        const sessionId = owner?.session_id ?? session?.id ?? null;
+        const account = clientRoute ? null : products.dashboard?.accounts?.session(accountCookieToken(request.headers.cookie));
+        const legacySessionId = owner?.session_id ?? session?.id ?? null;
+        const accountOwner = account ? `account:${account.id}` : null;
+        const resourceId = /^\/api\/v1\/(?:applications|deployments|operations|plans|targets)\/([A-Za-z0-9._-]+)/.exec(url.pathname)?.[1];
+        const sessionId = accountOwner && products.isAccountResource?.(resourceId) ? accountOwner : legacySessionId;
         if (session?.token) response.setHeader('Set-Cookie', sessionCookie(session.token, access.remote));
         response.setHeader('Vary', 'Cookie');
         if (versioned) {
+          if (isControlPlaneRoute(url.pathname)) {
+            if (request.method !== 'GET' && account && request.headers['x-railshot-csrf'] !== account.csrf_token)
+              throw new ServiceError('CSRF 자격을 확인하세요.', 403);
+            await serveControlPlane(request, response, url, products.controlPlane, accountOwner || legacySessionId, products.assertEnvironmentRemovable); return;
+          }
           const method = (allowed) => { if (!allowed.includes(request.method)) { const error = new ServiceError('지원하지 않는 메서드입니다.', 405); error.allow = allowed.join(', '); throw error; } };
           const claimRoute = /^\/api\/v1\/enrollments\/([A-Za-z0-9._-]+)\/claims$/.exec(url.pathname);
           const personalRoute = /^\/api\/v1\/targets(?:\/([A-Za-z0-9._-]+))?(?:\/(enrollments|heartbeats|receipts|runtimes|vaults|applications|instances|plans|operations|reconciliations))?$/.exec(url.pathname);
@@ -327,7 +342,14 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
               for (const key of ['scope', 'provider']) if (params.has(key)) { if (params.getAll(key).length !== 1 || params.get(key) !== (key === 'scope' ? 'owned' : 'openstack')) throw new ServiceError('조회 조건이 잘못되었습니다.', 422); params.delete(key); }
               json(response, 200, page(products.personal.list(ownerId), params)); return;
             }
-            if (!child) { method(['GET']); json(response, 200, products.personal.get(id, ownerId)); return; }
+            if (!child) {
+              method(['GET']);
+              if (products.controlPlane?.isEnvironment(id)) {
+                await products.controlPlane.get(accountOwner || legacySessionId, id);
+                json(response, 200, products.controlPlane.targets(accountOwner || legacySessionId).find((row) => row.id === id)); return;
+              }
+              json(response, 200, products.personal.get(id, ownerId)); return;
+            }
             method(['applications', 'instances'].includes(child) ? ['GET'] : ['POST']);
             if (child === 'instances') { json(response, 200, { items: await products.personal.instances(id, ownerId), next_marker: null }); return; }
             if (child === 'applications') { json(response, 200, { items: products.personal.applications(id, ownerId), next_marker: null }); return; }
@@ -367,7 +389,7 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
             // targetId=null for cloud providers. Keep its review/start flow compatible.
             const targetId = url.searchParams.get('target_id') ?? url.searchParams.get('targetId');
             if (targetId !== null && !(selection.environment === 'cloud' && targetId === 'null')) selection.target_id = targetId;
-            json(response, 200, products.resolveApplication(selection, sessionId)); return;
+            json(response, 200, products.resolveApplication(selection, accountOwner && products.controlPlane?.isEnvironment(selection.target_id) ? accountOwner : sessionId)); return;
           }
           const updateRoute = /^\/api\/v1\/applications\/([A-Za-z0-9._-]+)\/updates$/.exec(url.pathname);
           if (updateRoute) {
@@ -490,14 +512,14 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
           if (!methods.includes(request.method)) { const error = new ServiceError('지원하지 않는 메서드입니다.', 405); error.allow = methods.join(', '); throw error; }
           if (kind === 'applications') {
             if (id && [...url.searchParams].length) throw new ServiceError('지원하지 않는 조회 조건입니다.', 422);
-            json(response, 200, id ? products.getApplication(id, sessionId) : page(products.applications(sessionId), url.searchParams)); return;
+            json(response, 200, id ? products.getApplication(id, sessionId) : page([...products.applications(sessionId), ...(accountOwner && accountOwner !== sessionId ? products.applications(accountOwner) : [])], url.searchParams)); return;
           }
           if (['targets', 'profiles'].includes(kind)) {
-            json(response, 200, page(products ? await products[kind](sessionId) : [], url.searchParams)); return;
+            json(response, 200, page(products ? [...await products[kind](sessionId), ...(kind === 'targets' && accountOwner && accountOwner !== sessionId ? products.controlPlane?.targets(accountOwner) || [] : [])] : [], url.searchParams)); return;
           }
           if (!id && request.method === 'GET') {
-            json(response, 200, kind === 'plans' ? page(products.list(kind, sessionId), url.searchParams)
-              : products.list(kind, sessionId, pagination(url.searchParams))); return;
+            json(response, 200, kind === 'plans' ? page(products.list(kind, sessionId, undefined, accountOwner), url.searchParams)
+              : products.list(kind, sessionId, pagination(url.searchParams), accountOwner)); return;
           }
           const recordView = kind === 'deployments' && id && request.method === 'GET'
             && [...url.searchParams].length === 1 && url.searchParams.get('view') === 'record';
@@ -513,7 +535,7 @@ export function createAppServer({ sourceLoader = fetchPublicGithubSource, access
           }
           if (kind === 'deployments') {
             const key = requestKey(request);
-            accepted(response, kind, await products.createDeployment(await uploadedSource(request, true, true), key, sourceLoader, sessionId), requestId); return;
+            accepted(response, kind, await products.createDeployment(await uploadedSource(request, true, true), key, sourceLoader, sessionId, accountOwner), requestId); return;
           }
           if (kind === 'plans') {
             const plan = await products.createPlan(await jsonInput(request), sessionId);

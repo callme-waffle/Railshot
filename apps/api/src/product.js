@@ -74,7 +74,7 @@ function checkFree(state, sessionId = null, except = null) {
     { retryable: blocker.status !== 'unknown', admission });
 }
 
-export async function createProductService({ service, directory, target, providerTargets, deployPublished, environmentAdapter, applicationAdapter, personalAdapter, classifyFailure, observeMetrics = createMetricsObserver(), observeLogs, pollInterval = 5000, unknownGraceMs = 60_000, maxConcurrentDeployments = 3, maxOperations = 100, maxSourceBytes = 512 * 1024 * 1024 }) {
+export async function createProductService({ service, directory, target, providerTargets, deployPublished, environmentAdapter, applicationAdapter, personalAdapter, controlPlane, classifyFailure, observeMetrics = createMetricsObserver(), observeLogs, pollInterval = 5000, unknownGraceMs = 60_000, maxConcurrentDeployments = 3, maxOperations = 100, maxSourceBytes = 512 * 1024 * 1024 }) {
   const targetId = target?.id || service?.targetId;
   if (targetId && !TARGET_ID.test(targetId)) throw invalid('등록된 대상 ID가 잘못되었습니다.');
   const selections = new Map(target?.provider && targetId ? [[target.provider, targetId]] : []);
@@ -128,7 +128,7 @@ export async function createProductService({ service, directory, target, provide
   const writeSource = serialWriter(), writeInfrastructure = serialWriter();
   const sharedTargets = new Set(service?.targetIds || (service?.targetId ? [service.targetId] : []));
   const scopeKey = (kind, key, sessionId) => `${sessionId ? sessionId + ':' : ''}${kind}:${key}`;
-  const owns = (value, sessionId) => value && (store.dashboard.isOwnerSession(value.session_id)
+  const owns = (value, sessionId) => value && ((value.session_id?.startsWith('account:') || store.dashboard.isOwnerSession(value.session_id))
     ? Boolean(sessionId && value.session_id === sessionId) : !sessionId || value.session_id === sessionId);
   function applicationFor(state, id, sessionId, exactOwner = false) {
     const application = Object.hasOwn(state.applications, id) ? state.applications[id] : null;
@@ -139,7 +139,7 @@ export async function createProductService({ service, directory, target, provide
   }
   function lifecycleAvailable(state, application, action, cancelling = null) {
     checkUncertainResource(state, application, cancelling, action === 'delete');
-    personal.writable(state, application.environment_target_id, application.session_id);
+    writable(state, application.environment_target_id, application.session_id);
     if (!['planLifecycle', 'verifyLifecyclePlan', 'applyLifecycle'].every((name) => typeof applicationAdapter?.[name] === 'function')) throw unavailable();
     const versions = applicationVersions(state, application);
     if (action !== 'delete' && versions.latest && !versions.current)
@@ -194,7 +194,7 @@ export async function createProductService({ service, directory, target, provide
     return { id, cdTarget, available };
   }
   function deploymentOptions() {
-    return [['cloud', 'aws', '클라우드 · AWS'], ['cloud', 'gcp', '클라우드 · Google Cloud'], ['onprem', 'openstack', '온프레미스 · OpenStack'], ['onprem', 'proxmox', '온프레미스 · Proxmox']].map(([environment, provider, label]) => {
+    return [['cloud', 'aws', '클라우드 · AWS'], ['cloud', 'gcp', '클라우드 · Google Cloud'], ['cloud', 'ncp', '클라우드 · NAVER Cloud'], ['onprem', 'openstack', '온프레미스 · OpenStack'], ['onprem', 'proxmox', '온프레미스 · Proxmox']].map(([environment, provider, label]) => {
       const { cdTarget, available } = providerSelection(provider);
       return { id: `${environment}-${provider}`, environment, provider, label, available,
         message: available ? `소스 검사부터 앱 배포와 URL 확인까지 진행합니다.${cdTarget?.applicationName ? ` 등록된 앱 ${cdTarget.applicationName}의 소스를 갱신합니다.` : ''}`
@@ -206,9 +206,14 @@ export async function createProductService({ service, directory, target, provide
     if (input.app !== undefined || input.target_id !== undefined || input.plan_id !== undefined) throw invalid('환경 선택과 직접 대상·계획 지정을 함께 사용할 수 없습니다.');
     const { environment, provider, target_id: personalId } = input.deployment_selection;
     if (personalId !== undefined) {
-      if (environment !== 'onprem' || provider !== 'openstack') throw invalid('개인 대상은 OpenStack 환경에서만 선택할 수 있습니다.');
-      personal.get(personalId, sessionId);
-      personal.writable(store.read(), personalId, sessionId);
+      if (controlPlane?.isEnvironment(personalId)) {
+        const selected = controlPlane.targets(sessionId).find((row) => row.id === personalId && row.provider === provider && row.environment === environment);
+        if (!selected) throw new ProductError(404, 'NOT_FOUND', '환경을 찾을 수 없습니다.');
+      } else {
+        if (environment !== 'onprem' || provider !== 'openstack') throw invalid('개인 대상의 환경 종류를 확인하세요.');
+        personal.get(personalId, sessionId);
+      }
+      writable(store.read(), personalId, sessionId);
       if (input.expected_target_id !== undefined && input.expected_target_id !== personalId)
         throw new ProductError(409, 'DEPLOYMENT_TARGET_CHANGED', '검토한 배포 대상이 현재 환경과 다릅니다. 선택 내용을 다시 확인하세요.');
       let app;
@@ -356,7 +361,7 @@ export async function createProductService({ service, directory, target, provide
             .sort((a, b) => a.queue.sequence - b.queue.sequence)[0];
           if (!next) return null;
           try {
-            personal.writable(state, next.environment_target_id || next.target_id, next.session_id);
+            writable(state, next.environment_target_id || next.target_id, next.session_id);
             checkUncertainResource(state, next, next.id);
           }
           catch (error) {
@@ -439,9 +444,9 @@ export async function createProductService({ service, directory, target, provide
   }
   async function reserve(kind, input, key, materialize, sessionId = null) {
     function authorizeTarget(state) {
-      personal.writable(state, input.environment_target_id || input.target_id, sessionId);
+      writable(state, input.environment_target_id || input.target_id, sessionId, input.app);
       const linked = Object.values(state.applications).find((app) => app.target_id === input.target_id);
-      if (linked) personal.writable(state, linked.environment_target_id, sessionId);
+      if (linked) writable(state, linked.environment_target_id, sessionId);
     }
     authorizeTarget(store.read());
     validateInput(input);
@@ -726,7 +731,7 @@ export async function createProductService({ service, directory, target, provide
           if (record.kind === 'builds') { await update(record.id, { status: 'succeeded', stage: 'ci' }); return; }
           if (!resume || !record.cd?.deployed) await update(record.id, { stage: 'cd', cd: { state: 'running', revision: null, deployed: false } });
           if (deletionRequested(record.id)) return;
-          personal.writable(store.read(), record.environment_target_id || record.target_id, record.session_id);
+          writable(store.read(), record.environment_target_id || record.target_id, record.session_id);
           const deploy = record.application_id ? (args) => applicationAdapter.deployPublished(store.read().applications[record.application_id], args)
             : record.environment_id ? (args) => environmentAdapter.deployPublished(record.environment_id, args) : deployPublished;
           const result = await writeInfrastructure(() => deploy({ deploymentId: record.id, app: record.app, targetId: record.target_id,
@@ -786,7 +791,7 @@ export async function createProductService({ service, directory, target, provide
   }
   function readyApplication(state, id, sessionId) {
     const application = applicationFor(state, id, sessionId);
-    personal.writable(state, application.environment_target_id, sessionId);
+    writable(state, application.environment_target_id, sessionId);
     if (application.status !== 'ready' || applicationVersions(state, application).state === 'unverified')
       throw new ProductError(409, 'APPLICATION_RECONCILE_REQUIRED', '앱 등록 또는 현재 배포 버전을 먼저 확인해야 합니다.');
     if (!service || typeof applicationAdapter?.deployPublished !== 'function') throw unavailable();
@@ -896,6 +901,10 @@ export async function createProductService({ service, directory, target, provide
     if (!accepted.replay) void pump();
     return publicRecord(accepted.record);
   }
+  function writable(state, id, owner, app) {
+    personal.writable(state, id, owner);
+    controlPlane?.writable(id, owner, app);
+  }
   const personal = createPersonalEnvironments({ store, adapter: personalAdapter, applicationAdapter, launch, publicApplication });
   await personal.restore();
   async function runDeployment(record) {
@@ -992,6 +1001,14 @@ export async function createProductService({ service, directory, target, provide
       launch(() => generateApplicationPlan(record));
   }
   let releasePaused = false;
+  await controlPlane?.setRestoreGuard?.((id, owner) => {
+    if (!controlPlane.owns(id, owner)) throw new ProductError(404, 'NOT_FOUND', '환경을 찾을 수 없습니다.');
+    const state = store.read();
+    if (Object.values(state.applications).some((app) => app.environment_target_id === id && !['stopped', 'deleted'].includes(app.status))
+        || Object.values(state.operations).some((operation) => (operation.environment_target_id === id || operation.target_id === id)
+          && ['queued', 'running', 'unknown'].includes(operation.status)))
+      throw new ProductError(409, 'RESTORE_APPLICATIONS_ACTIVE', '데이터 복구 전에 앱과 진행 작업을 중지하세요.');
+  });
   const queueTimer = setInterval(pump, Math.min(pollInterval, 1000));
   queueTimer.unref();
   void pump();
@@ -1001,7 +1018,20 @@ export async function createProductService({ service, directory, target, provide
       return !workers.size && !pumping;
     },
     resumeAfterRelease() { releasePaused = false; void pump(); },
-    dashboard: store.dashboard, personal,
+    dashboard: store.dashboard, personal, controlPlane,
+    isAccountResource(id) {
+      if (controlPlane?.isEnvironment(id)) return true;
+      const state = store.read();
+      return Boolean((state.applications[id] || state.operations[id] || state.plans[id])?.session_id?.startsWith('account:'));
+    },
+    assertEnvironmentRemovable(id, owner) {
+      if (!controlPlane?.owns(id, owner)) throw new ProductError(404, 'NOT_FOUND', '환경을 찾을 수 없습니다.');
+      const state = store.read();
+      if (Object.values(state.applications).some((app) => app.environment_target_id === id && app.status !== 'deleted')
+          || Object.values(state.operations).some((operation) => (operation.environment_target_id === id || operation.target_id === id)
+            && ['queued', 'running', 'unknown'].includes(operation.status)))
+        throw new ProductError(409, 'ENVIRONMENT_IN_USE', '앱과 진행 중인 작업을 먼저 정리하세요.');
+    },
     executeOpenStack: (targetId, request, ownerSessionId) => personal.execute(targetId, request, ownerSessionId),
     registrations: store.registrations,
     createUpdate, startUpdate,
@@ -1161,9 +1191,9 @@ export async function createProductService({ service, directory, target, provide
       if (!owns(record, sessionId) || !['application-lifecycle', 'target-lifecycle'].includes(record.kind)) throw new ProductError(404, 'NOT_FOUND', '작업을 찾을 수 없습니다.');
       return publicRecord(record);
     },
-    list(kind, sessionId, pagination) {
-      if (kind === 'plans') return Object.values(store.read().plans).filter((row) => owns(row, sessionId) && !['application-lifecycle', 'target-lifecycle'].includes(row.kind)).reverse().map((row) => structuredClone(row.public));
-      const { records, hasMore, total } = store.operationPage(kind, sessionId, pagination);
+    list(kind, sessionId, pagination, accountOwner = null) {
+      if (kind === 'plans') return Object.values(store.read().plans).filter((row) => (owns(row, sessionId) || accountOwner && owns(row, accountOwner)) && !['application-lifecycle', 'target-lifecycle'].includes(row.kind)).reverse().map((row) => structuredClone(row.public));
+      const { records, hasMore, total } = store.operationPage(kind, accountOwner ? [sessionId, accountOwner] : sessionId, pagination);
       const items = records.map((row) => ({ id: kind === 'builds' ? String(row.ci.run_id) : row.id, kind, status: row.status,
         ...Object.fromEntries(['app', 'application_id', 'environment_target_id', 'target_id', 'stage', 'created_at', 'updated_at'].filter((key) => row[key] !== undefined).map((key) => [key, row[key]])) }));
       return { items, next_marker: hasMore ? items.at(-1).id : null, total };
@@ -1177,7 +1207,7 @@ export async function createProductService({ service, directory, target, provide
         const id = operation.kind === 'environments' ? operation.runtime_target_id : operation.environment?.runtime_target_id;
         if (registeredEnvironment(state, id, sessionId)) ids.add(id);
       }
-      return [...ids].filter((id) => !state.personal.targets[id]).map((id) => {
+      return [...ids].filter((id) => !state.personal.targets[id] && !controlPlane?.isEnvironment(id)).map((id) => {
         const staticTarget = deployPublished?.targets?.[id];
         const staticAvailable = Boolean(deployPublished && (!deployPublished.targets || staticTarget));
         const registered = staticAvailable ? staticTarget : registeredEnvironment(state, id, sessionId);
@@ -1190,13 +1220,14 @@ export async function createProductService({ service, directory, target, provide
           capabilities: { ci_submission: Boolean(service), application_deployment: available,
             database_configuration: !staticAvailable && registered?.database_configuration === true },
           runtime: { status: 'unknown', observed_at: null }, blockers: available ? [] : ['CD_ADAPTER_NOT_CONFIGURED'] };
-      }).concat(personal.list(sessionId));
+      }).concat(personal.list(sessionId), controlPlane?.targets(sessionId) || []);
     },
     async getTargetObservation(id, sessionId = null) {
       const target = TARGET_ID.test(id) && this.targets(sessionId).find((item) => item.id === id);
       if (!target) throw new ProductError(404, 'NOT_FOUND', '등록된 대상을 찾을 수 없습니다.');
-      let observation = await observeMetrics({ target_id: id, app: target.application_name ?? null });
-      if (target.scope === 'owned') observation = personal.observation(id, sessionId, observation);
+      const selected = { target_id: id, app: target.application_name ?? null };
+      let observation = await (controlPlane?.observeMetrics ? controlPlane.observeMetrics(selected, observeMetrics) : observeMetrics(selected));
+      if (target.scope === 'owned' && !controlPlane?.isEnvironment(id)) observation = personal.observation(id, sessionId, observation);
       const health = observation.metrics.runtime_healthz ?? { state: 'not_configured', observed_at: null };
       return { ...observation, environment_id: target.environment_id ?? null,
         runtime: { status: health.state === 'ready' ? (health.value === 1 ? 'healthy' : 'unhealthy') : 'unknown',
@@ -1217,9 +1248,10 @@ export async function createProductService({ service, directory, target, provide
       }
       return service.status(id, binding.target_id);
     },
-    async createDeployment(input, key, materialize, sessionId = null) {
+    async createDeployment(input, key, materialize, sessionId = null, accountOwner = null) {
+      if (accountOwner && controlPlane?.isEnvironment(input.target_id || input.deployment_selection?.target_id)) sessionId = accountOwner;
       input = resolveSelection(input, sessionId);
-      personal.writable(store.read(), input.target_id, sessionId);
+      writable(store.read(), input.target_id, sessionId, input.app);
       if (!input.plan_id && applicationAdapter?.targets?.[input.target_id]) {
         const application = applicationAdapter.describe(input.target_id, input.app);
         input = { ...input, environment_target_id: input.target_id, target_id: application.target_id };
@@ -1260,7 +1292,7 @@ export async function createProductService({ service, directory, target, provide
       const record = await store.transaction((state) => {
         const operation = Object.hasOwn(state.operations, id) ? state.operations[id] : null;
         const application = operation?.application_id && state.applications[operation.application_id];
-        if (application) personal.writable(state, application.environment_target_id, sessionId);
+        if (application) writable(state, application.environment_target_id, sessionId);
         // Unlike the legacy maintenance reads, resume always requires an exact cookie-session owner.
         if (!sessionId || operation?.kind !== 'deployments' || operation.session_id !== sessionId
             || !application || application.session_id !== sessionId) {
@@ -1322,7 +1354,7 @@ export async function createProductService({ service, directory, target, provide
           }
         } catch { /* Keep the recorded failure when read-only diagnostics are unavailable. */ }
       }
-      return { ...record, observation: await observeMetrics(record) };
+      return { ...record, observation: await (controlPlane?.observeMetrics ? controlPlane.observeMetrics(record, observeMetrics) : observeMetrics(record)) };
     },
     getDeploymentDiagnostics: diagnostics.get,
     classifyDeployment: diagnostics.classify,
@@ -1432,6 +1464,7 @@ export async function createProductService({ service, directory, target, provide
       await pumping;
       await Promise.allSettled(workers);
       await diagnostics.close();
+      await controlPlane?.close();
       await Promise.allSettled(telemetryTasks.values());
       await store.close();
     },

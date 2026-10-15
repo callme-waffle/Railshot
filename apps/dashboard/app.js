@@ -1,3 +1,4 @@
+import { createEnvironmentManagement } from './src/control-environments.js';
 import { openInsights } from './src/insights.js';
 import { createHistoryDetail, filterHistory } from './src/deployment-history.js';
 import { APP_NAME, APP_NAME_MESSAGE, sourceAppName } from '../../contracts/application.mjs';
@@ -27,7 +28,7 @@ function showView(name) {
   if (sessionReady && name === 'history') { loadHistory(); loadApplications(); }
   if (sessionReady && ['monitor', 'deploy'].includes(name)) loadEnvironments();
   else stopEnvironmentPolling();
-  if (sessionReady && name === 'personal') { loadOwnerInfo(); loadOwnedTargets(); }
+  if (sessionReady && name === 'personal') { loadOwnerInfo(); loadOwnedTargets(); controlManagement.refresh(); }
   else { stopOwnedTargetPolling(); stopRuntimeReconciliationPolling(); }
   if (sessionReady && name === 'monitor' && consoleTab === 'app') refreshLogs();
   if (sessionReady && name === 'monitor' && consoleTab === 'work') refreshEvents();
@@ -52,6 +53,19 @@ const error = document.querySelector('#form-error');
 const provider = document.querySelector('#provider');
 const providerField = document.querySelector('#provider-field');
 const cloudProvider = document.querySelector('#cloud-provider');
+const controlTarget = document.querySelector('#control-target');
+let controlEnvironments = [];
+const controlManagement = createEnvironmentManagement(request, (rows) => { controlEnvironments = rows; renderControlTargets(); updateSelection(); });
+function renderControlTargets() {
+  const environment = document.querySelector('[name=environment]:checked').value;
+  const providerKind = environment === 'onprem' ? 'openstack' : cloudProvider.value;
+  const previous = controlTarget.value;
+  const rows = controlEnvironments.filter((row) => row.spec.provider === providerKind && row.status !== 'deleted');
+  controlTarget.replaceChildren(new Option('기존 기본 배포환경', ''), ...rows.map((row) => new Option(`${row.spec.name} · ${row.status}`, row.id)));
+  if (rows.some((row) => row.id === previous)) controlTarget.value = previous;
+  document.querySelector('#control-target-field').hidden = rows.length === 0;
+}
+controlTarget.addEventListener('change', () => updateSelection());
 const deploymentDatabase = document.querySelector('#deployment-database');
 const deployButton = document.querySelector('#deploy-button');
 const requestError = document.querySelector('#request-error');
@@ -176,18 +190,20 @@ function environmentLabel(row) {
 function activeRun() { return current && (current.status === 'unknown' || !terminal.has(current.status)); }
 function deploymentSelection() {
   const environment = document.querySelector('[name="environment"]:checked').value;
-  const targetId = environment === 'onprem' && provider.value && provider.value !== '__new_openstack__' ? provider.value : null;
+  const targetId = controlTarget.value || (environment === 'onprem' && provider.value && provider.value !== '__new_openstack__' ? provider.value : null);
   return { environment, provider: environment === 'cloud' ? cloudProvider.value : 'openstack', targetId,
-    registerNew: environment === 'onprem' && provider.value === '__new_openstack__' };
+    registerNew: !controlTarget.value && environment === 'onprem' && provider.value === '__new_openstack__' };
 }
 function selectedOption() {
   const selected = deploymentSelection();
+  const common = controlEnvironments.find((row) => row.id === selected.targetId);
+  if (common) return { ...common, label: common.spec.name, available: common.deployable };
   if (selected.environment === 'onprem') return selected.targetId ? ownedTargets.find((item) => item.id === selected.targetId) : null;
   return deploymentOptions.find((item) => item.environment === selected.environment && item.provider === selected.provider);
 }
 function selectedProfiles() {
   const selected = deploymentSelection();
-  return selected.environment === 'cloud' ? profiles.filter((item) => item.provider === selected.provider && item.deployment_supported) : [];
+  return !selected.targetId && selected.environment === 'cloud' ? profiles.filter((item) => item.provider === selected.provider && item.deployment_supported) : [];
 }
 function selectedProfile() { const matches = selectedProfiles(); return matches.length === 1 ? matches[0] : null; }
 function planCost(plan) {
@@ -221,8 +237,8 @@ function updateSelection() {
   const targetReady = target?.status === 'ready' && target.deployable === true;
   let connectionStatus;
   if (selected.registerNew) connectionStatus = '새 OpenStack 환경을 등록한 뒤 배포할 수 있습니다.';
-  else if (ownedTargetError && selected.environment === 'onprem') connectionStatus = `등록 환경 조회 실패: ${ownedTargetError}`;
-  else if (selected.environment === 'onprem' && selected.targetId) connectionStatus = targetReady
+  else if (ownedTargetError && selected.environment === 'onprem' && !controlTarget.value) connectionStatus = `등록 환경 조회 실패: ${ownedTargetError}`;
+  else if (selected.targetId) connectionStatus = targetReady
     ? `${target.label || target.id} 환경에 배포합니다.`
     : `${target?.label || selected.targetId} 환경은 ${targetStatusLabel(target?.status)} 상태라 아직 배포할 수 없습니다.`;
   else if (connectionError) connectionStatus = connectionError;
@@ -236,7 +252,7 @@ function updateSelection() {
   invalidateReview();
   savePreferences({ environment: selected.environment, provider: selected.environment === 'cloud' ? selected.provider : '' });
 }
-function editSelection() { selectionEdited = true; updateSelection(); }
+function editSelection() { selectionEdited = true; renderControlTargets(); updateSelection(); }
 document.querySelectorAll('[name="environment"]').forEach((input) => input.addEventListener('change', editSelection));
 provider.addEventListener('change', editSelection);
 cloudProvider.addEventListener('change', editSelection);
@@ -526,8 +542,8 @@ document.querySelector('#deploy-form').addEventListener('submit', async (event) 
   else if (selectedSource.kind === 'archive' && !archive.files[0].name.toLowerCase().endsWith('.zip')) error.textContent = 'ZIP 파일만 업로드할 수 있습니다.';
   else if (selected.environment === 'onprem' && selected.registerNew) error.textContent = '새 OpenStack 환경을 등록한 뒤 배포할 수 있습니다.';
   else if (selected.environment === 'onprem' && !selected.targetId) error.textContent = '배포할 등록 OpenStack 환경을 선택하세요.';
-  else if (selected.environment === 'onprem' && (ownedTargetError || option?.status !== 'ready' || option?.deployable !== true)) error.textContent = document.querySelector('#connection-status').textContent;
-  else if (selected.environment === 'cloud' && (connectionError || selectedProfiles().length > 1 || (profile ? !profile.supported : !option?.available))) error.textContent = connectionError || (profile || selectedProfiles().length > 1 ? document.querySelector('#connection-status').textContent : option?.message) || '실행 가능한 인프라가 아직 연결되지 않았습니다.';
+  else if (selected.environment === 'onprem' && ((!controlTarget.value && ownedTargetError) || option?.status !== 'ready' || option?.deployable !== true)) error.textContent = document.querySelector('#connection-status').textContent;
+  else if (selected.environment === 'cloud' && ((!selected.targetId && connectionError) || selectedProfiles().length > 1 || (profile ? !profile.supported : !option?.available))) error.textContent = connectionError || (profile || selectedProfiles().length > 1 ? document.querySelector('#connection-status').textContent : option?.message) || '실행 가능한 인프라가 아직 연결되지 않았습니다.';
   else {
     invalidateReview();
     const generation = reviewGeneration, source = selectedSource;
@@ -2099,6 +2115,7 @@ async function initializeDashboard() {
     sessionReady = true;
     if (selectionEdited) savePreferences(deploymentSelection());
     if (!Object.hasOwn(views, saved.view)) savePreferences({ view: 'deploy' });
+    await controlManagement.refresh();
     await Promise.allSettled([loadApplications(), loadHistory().catch(showHistoryError), loadOwnedTargets()]);
     renderLifecycleOperation();
     if (!views.personal.hidden) loadOwnerInfo();

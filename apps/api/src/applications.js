@@ -11,6 +11,7 @@ import { lifecycleActions, lifecycleId, lifecycleHash, lifecycleResources, lifec
 const REGISTER = fileURLToPath(new URL('../../../deployment/scripts/applications.py', import.meta.url));
 const FINALIZE = fileURLToPath(new URL('../../../deployment/scripts/application_routes.py', import.meta.url));
 const LIFECYCLE = fileURLToPath(new URL('../../../deployment/scripts/application_lifecycle.py', import.meta.url));
+const ACCOUNT_ACTION = fileURLToPath(new URL('../../../deployment/scripts/environment_action.py', import.meta.url));
 const hash = (value) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const fail = (code, status = 409, unknown = false) => new EnvironmentError(code, status, unknown);
 
@@ -22,14 +23,25 @@ export async function createApplicationAdapter({ configPath, ciIdentity, loadPub
       || typeof loadPublished !== 'function') throw fail('APPLICATION_CONFIGURATION_INVALID', 503);
   await privateDirectory(config.state_dir);
   const fingerprint = hash(config);
+  async function runAction(script, requestPath, options) {
+    const request = await privateJson(requestPath, { maxBytes: 14_000_000 });
+    const profile = config.environments[request.environment_id];
+    if (['aws', 'gcp'].includes(profile?.provider) && profile.ingress?.[`${profile.provider}_authority_file`]) {
+      const action = script === REGISTER ? 'registration' : script === FINALIZE ? 'routes' : 'lifecycle';
+      return runner(python, [ACCOUNT_ACTION, '--action', action, '--config', configPath, '--request', requestPath], options);
+    }
+    return runner(python, [script, '--config', configPath, '--request', requestPath], options);
+  }
   const targets = Object.fromEntries(Object.entries(config.environments).map(([id, value]) => {
-    if (!TARGET_ID.test(id) || !['aws', 'gcp', 'openstack'].includes(value.provider)
+    if (!TARGET_ID.test(id) || !['aws', 'gcp', 'ncp', 'openstack'].includes(value.provider)
         || !TENANT_NAME.test(value.tenant || '')) throw fail('APPLICATION_CONFIGURATION_INVALID', 503);
     if (!ciIdentity || value.tenant !== ciIdentity.tenant || value.source_repository !== ciIdentity.sourceRepository)
       throw fail('APPLICATION_CI_CONFIGURATION_MISMATCH', 503);
     const routeFiles = ['edge_config_file', 'dns_config_file',
       ...(value.provider === 'openstack' ? ['tunnel_config_file'] : [])];
-    const automaticDelivery = routeFiles.every((key) => isAbsolute(value.ingress?.[key] || ''));
+    const automaticDelivery = routeFiles.every((key) => isAbsolute(value.ingress?.[key] || ''))
+      || value.provider === 'ncp' && isAbsolute(value.ingress?.ncp_route_config_file || '')
+      || ['cluster_edge_config_file', 'cluster_edge_state_dir', 'cluster_file', ...(value.provider === 'aws' ? [] : ['dns_config_file'])].every((key) => isAbsolute(value.ingress?.[key] || ''));
     return [id, Object.freeze({ provider: value.provider, tenant: value.tenant, deploymentScope: 'environment', automaticDelivery })];
   }));
   function describe(environmentId, app) {
@@ -60,7 +72,7 @@ export async function createApplicationAdapter({ configPath, ciIdentity, loadPub
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     await savePrivate(request, { version: 1, application_id: application.id, environment_id: application.environment_target_id,
       app: application.app, ...payload });
-    const result = await runner(python, [LIFECYCLE, '--config', configPath, '--request', request], { mutation, timeout: mutation ? 1_800_000 : 600_000 });
+    const result = await runAction(LIFECYCLE, request, { mutation, timeout: mutation ? 1_800_000 : 600_000 });
     await savePrivate(join(run, payload.phase + '-receipt.json'), result);
     return result;
   }
@@ -151,7 +163,7 @@ export async function createApplicationAdapter({ configPath, ciIdentity, loadPub
       await privateDirectory(home);
       const request = join(home, 'request.json');
       await savePrivate(request, { environment_id: application.environment_target_id, app: application.app, application_id: application.id });
-      const result = resultStatus(await runner(python, [REGISTER, '--config', configPath, '--request', request],
+      const result = resultStatus(await runAction(REGISTER, request,
         { mutation: true, timeout: 600_000 }), application);
       if (result.status !== 'succeeded') throw fail(result.error?.code || 'APPLICATION_REGISTRATION_FAILED', 502, result.status === 'unknown');
       return { ...application, status: 'ready', namespace: result.namespace, node_port: result.node_port,
@@ -175,7 +187,7 @@ export async function createApplicationAdapter({ configPath, ciIdentity, loadPub
       if (exists) {
         if (hash(await privateJson(request, { maxBytes: 14_000_000 })) !== hash(payload)) throw fail('APPLICATION_PUBLICATION_MISMATCH');
       } else await savePrivate(request, payload);
-      const result = resultStatus(await runner(python, [FINALIZE, '--config', configPath, '--request', request],
+      const result = resultStatus(await runAction(FINALIZE, request,
         { mutation: true, timeout: 1_800_000 }), application);
       if (result.status !== 'succeeded') throw fail(result.error?.code || 'APPLICATION_PUBLIC_ROUTE_UNVERIFIED', 502, result.status === 'unknown');
       const deploy = createCdAdapter({ configPath: join(run, 'cd.json'), loadPublished, python });

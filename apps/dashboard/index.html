@@ -100,7 +100,12 @@
                 <select id="cloud-provider">
                   <option value="aws">AWS</option>
                   <option value="gcp">Google Cloud</option>
+                  <option value="ncp">NAVER Cloud</option>
                 </select>
+              </div>
+              <div class="provider-field" id="control-target-field" hidden>
+                <label class="field-label" for="control-target">생성한 배포환경</label>
+                <select id="control-target"><option value="">기존 기본 배포환경</option></select>
               </div>
               <div class="provider-field" id="provider-field" hidden>
                 <label class="field-label" for="provider">인프라 종류</label>
@@ -239,6 +244,20 @@
               <form id="environment-recover-form" class="inline-form"><label class="field-label" for="environment-recovery-input">복구 키</label><input id="environment-recovery-input" autocomplete="off" required /><button id="environment-recover-submit" class="secondary-button" type="submit">관리권 복구</button></form>
               <p id="environment-recover-message" class="field-note" role="status"></p>
             </details>
+          </section>
+          <section class="panel" id="control-environments" aria-labelledby="control-environments-title">
+            <h2 id="control-environments-title">공통 배포환경 생성·관리</h2>
+            <p class="field-note">AWS·GCP·NCP·OpenStack의 연결된 계정에 Kubernetes 3노드와 선택한 PostgreSQL VM을 생성합니다.</p>
+            <form class="inline-form">
+              <label>계정 <select name="account" required></select></label>
+              <label>환경 이름 <input name="name" pattern="[a-z][a-z0-9-]{1,38}[a-z0-9]" required /></label>
+              <label>사용 범위 <select name="scope"><option value="shared">여러 앱 공유</option><option value="dedicated">앱 전용</option></select></label>
+              <label>전용 앱 이름 <input name="application" pattern="[a-z][a-z0-9-]{1,28}[a-z0-9]" /></label>
+              <label>데이터베이스 <select name="database"><option value="none">없음</option><option value="standalone">별도 VM PostgreSQL · 백업/복구</option></select></label>
+              <button type="submit" class="primary-button">환경 계획 생성</button>
+            </form>
+            <button type="button" data-refresh class="secondary-button">계정·환경 새로고침</button>
+            <p data-message role="status"></p><ul data-environments class="saved-list"></ul>
           </section>
           <section class="panel environment-register" aria-labelledby="environment-register-title">
             <div class="review-heading"><div><h2 id="environment-register-title">OpenStack 환경 새 등록</h2><p class="field-note">환경을 등록하면 현재 브라우저에 관리 권한이 연결됩니다. 설치 명령은 OpenStack 제어 연결을 확인한 뒤 앱을 실행할 별도 가상 머신을 선택하거나 새로 만들도록 안내합니다. 선택한 가상 머신에 정상 K3s(가벼운 쿠버네티스)가 있으면 재사용하고, 없으면 기존 Ansible 자동 설치로 준비합니다. 중앙 서버가 배포 연결까지 검증해야 앱을 배포할 수 있습니다. OpenStack 비밀번호는 이 화면이나 명령에 넣지 않습니다.</p></div></div>

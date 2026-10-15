@@ -69,6 +69,44 @@ async function deploymentProgress(api, deploymentId, since) {
 }
 
 export const tools = {
+  list_environment_accounts: {
+    title: '배포환경 계정 조회', description: '현재 소유자에게 등록된 사용자 계정·Railshot 관리 계정과 허용 리전을 조회합니다. 비밀값은 반환하지 않습니다.',
+    schema: z.object({}).strict(), readOnly: true, run: (api) => api.environmentAccounts(),
+  },
+  list_environments: {
+    title: '공통 배포환경 조회', description: 'AWS·GCP·NCP·OpenStack 환경과 관측된 준비 상태를 조회합니다. 설정 완료와 앱 HTTP 검증을 구분합니다.',
+    schema: z.object({}).strict(), readOnly: true, run: (api) => api.environments(),
+  },
+  get_environment: {
+    title: '환경 작업 상태 조회', description: '환경 생성·운영·삭제의 저장된 작업과 준비 근거를 조회합니다.',
+    schema: z.object({ environment_id: resourceId }).strict(), readOnly: true,
+    run: (api, { environment_id }) => api.environment(environment_id),
+  },
+  plan_environment: {
+    title: '공통 배포환경 계획', description: '등록 계정에 kubeadm 3노드와 선택 DB의 계획을 만듭니다. 자원을 생성하지 않습니다.',
+    schema: z.object({ idempotency_key: resourceId, spec: z.object({ version: z.literal(1), name: z.string().regex(/^[a-z][a-z0-9-]{1,38}[a-z0-9]$/),
+      provider: z.enum(['aws', 'gcp', 'ncp', 'openstack']), account_id: resourceId, region: resourceId,
+      scope: z.enum(['shared', 'dedicated']), application_name: z.string().regex(/^[a-z][a-z0-9-]{1,28}[a-z0-9]$/).optional(),
+      runtime: z.object({ kind: z.literal('kubeadm'), control_planes: z.literal(1), workers: z.literal(2) }).strict(),
+      database: z.object({ mode: z.enum(['none', 'standalone']) }).strict(),
+    }).strict() }).strict(), readOnly: false,
+    run: (api, { spec, idempotency_key }) => api.planEnvironment(spec, idempotency_key),
+  },
+  apply_environment: {
+    title: '환경 계획 실행', description: '사용자가 승인한 환경 계획을 실행합니다. 유료 자원이 생성될 수 있으며 접수는 인수 완료가 아닙니다. 응답 뒤 get_environment로 조회하세요.',
+    schema: z.object({ environment_id: resourceId, idempotency_key: resourceId }).strict(), readOnly: false,
+    run: (api, { environment_id, idempotency_key }) => api.applyEnvironment(environment_id, idempotency_key),
+  },
+  reconcile_environment: {
+    title: '환경 실제 상태 재확인', description: '중단된 실행을 반복하지 않고 공급자 실제 상태를 읽어 저장된 결과와 조정합니다.',
+    schema: z.object({ environment_id: resourceId }).strict(), readOnly: false,
+    run: (api, { environment_id }) => api.reconcileEnvironment(environment_id),
+  },
+  delete_environment: {
+    title: '배포환경 삭제', description: '사용자가 삭제를 요청한 환경을 정리합니다. 앱과 진행 중인 작업이 있으면 차단하며 보존된 데이터와 잔여 자원을 구분합니다.',
+    schema: z.object({ environment_id: resourceId, idempotency_key: resourceId }).strict(), readOnly: false,
+    run: (api, { environment_id, idempotency_key }) => api.deleteEnvironment(environment_id, idempotency_key),
+  },
   list_options: {
     title: '배포 환경 선택지 조회',
     description: '사용 가능한 클라우드 및 온프레미스 배포 환경과 미지원 사유를 조회합니다.',

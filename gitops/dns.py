@@ -287,6 +287,23 @@ def remove_application(config, application_id, hostname, expected):
     require(not application_snapshot(config, application_id, hostname), 'DNS_DELETE_UNVERIFIED')
 
 
+def reconcile_application_deletions(config, application_id, hostname):
+    """Observe exact prior DELETE IDs; recover local state without a DNS mutation."""
+    for path in sorted(Path(config['state_dir']).glob('*.json')):
+        if not re.fullmatch(r'[a-f0-9]{64}\.json', path.name):
+            continue
+        row = private_json(path); request = row.get('request', {})
+        if request.get('application_id') != application_id or row.get('phase') != 'deleting':
+            continue
+        request_at(config, request)
+        require(row.get('config_sha256') == config['_sha256'] and
+                request.get('application_hostname', request['hostname']) == hostname,
+                'DNS_APPLICATION_BINDING_CHANGED')
+        found = owned_record(records_at(config, request['hostname']), request)
+        require(found is None or found['id'] == row.get('receipt', {}).get('record_id'), 'DNS_APPLICATION_RECORD_CHANGED')
+        save(str(path), {**row, 'phase': 'verified' if found else 'deleted'})
+
+
 def ensure(config_path, request):
     """Ensure an owned record. Existing intents reconcile read-only, never POST again.
 

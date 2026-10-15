@@ -42,6 +42,17 @@ class RegistrationTests(unittest.TestCase):
         health.start()
         self.addCleanup(health.stop)
 
+    def test_kubeadm_collects_all_three_bound_nodes_and_control_cluster_metrics(self):
+        descriptor = {**self.descriptor, 'profile': 'kubeadm-1c2w', 'provider_kind': 'aws',
+            'addresses': {**self.descriptor['addresses'], 'public': '8.8.4.1', 'metrics': '8.8.4.1'},
+            'management_endpoint': 'https://8.8.4.1:6443', 'node_metrics_addresses': ['8.8.4.1', '8.8.4.2', '8.8.4.3']}
+        row, _ = registration_row(self.config, self.request, descriptor)
+        jobs = {job['job_name']: job for job in scrape_config([row])['scrape_configs']}
+        self.assertEqual(jobs['node']['static_configs'], [{'targets': ['8.8.4.1:30910', '8.8.4.2:30910', '8.8.4.3:30910']}])
+        self.assertEqual(jobs['cluster']['static_configs'], [{'targets': ['8.8.4.1:30911']}])
+        with self.assertRaises(Exception):
+            merge_rows([row], {**row, 'node_instances': ['8.8.8.8:30910']})
+
     def test_optional_traffic_registration_is_app_bound_and_idempotent(self):
         base, _ = registration_row(self.config, self.request, self.descriptor)
         row, _ = registration_row(self.config, {**self.request, 'traffic_port': 30940}, self.descriptor)

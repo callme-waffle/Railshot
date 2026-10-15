@@ -22,7 +22,7 @@ export function createToolServer(api, { publicOrigin = process.env.RAILSHOT_PUBL
       { ...config, _meta: { ui: { resourceUri: uri } } }, callback) : server.registerTool.bind(server);
     register(name, {
       title: tool.title, description: tool.description, inputSchema: tool.schema,
-      annotations: { readOnlyHint: tool.readOnly, destructiveHint: false, idempotentHint: tool.readOnly, openWorldHint: false },
+      annotations: { readOnlyHint: tool.readOnly, destructiveHint: name === 'delete_environment', idempotentHint: tool.readOnly, openWorldHint: false },
     }, async (args) => {
       try {
         const value = await call(name, args);

@@ -60,7 +60,7 @@ export function createApiClient({ baseUrl = process.env.RAILSHOT_API_URL || 'htt
     const token = apiToken(env);
     const cookie = session ?? await savedSession(sessionPath, directory);
     const headers = { ...(token ? { authorization: `Bearer ${token}` } : {}), ...(cookie ? { cookie: `${sessionCookie}=${cookie}` } : {}),
-      ...(key ? { 'Idempotency-Key': key } : {}) };
+      ...(key ? { 'Idempotency-Key': key } : {}), ...(typeof body === 'string' ? { 'Content-Type': 'application/json' } : {}) };
     const response = await fetchImpl(new URL(path, base), {
       method, headers, body, redirect: 'error', signal: AbortSignal.timeout(30000),
     });
@@ -98,6 +98,13 @@ export function createApiClient({ baseUrl = process.env.RAILSHOT_API_URL || 'htt
     return result;
   }
   return {
+    environmentAccounts: () => request('/api/v1/tenancies'),
+    environments: () => request('/api/v1/clusters'),
+    environment: (id) => request(`/api/v1/clusters/${encodeURIComponent(id)}`),
+    planEnvironment: (spec, key) => request('/api/v1/clusters', { method: 'POST', body: JSON.stringify(spec), key }),
+    applyEnvironment: (id, key) => request(`/api/v1/clusters/${encodeURIComponent(id)}/operations`, { method: 'POST', body: JSON.stringify({ action: 'apply' }), key }),
+    reconcileEnvironment: (id) => request(`/api/v1/clusters/${encodeURIComponent(id)}/operations`, { method: 'POST', body: JSON.stringify({ action: 'reconcile' }) }),
+    deleteEnvironment: (id, key) => request(`/api/v1/clusters/${encodeURIComponent(id)}`, { method: 'DELETE', key }),
     options: () => request('/api/v1/options'),
     targets: () => request('/api/v1/targets'),
     deployment: (id) => request(`/api/v1/deployments/${encodeURIComponent(id)}`),

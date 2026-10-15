@@ -66,7 +66,7 @@ def metrics_host(descriptor, node_ip):
     address = descriptor['addresses'].get('metrics', node_ip)
     if descriptor.get('provider_kind') == 'openstack':
         return address
-    if descriptor.get('provider_kind') == 'gcp' and ('metrics' in descriptor['addresses'] or descriptor.get('management_endpoint')):
+    if descriptor.get('provider_kind') in ('aws', 'gcp', 'ncp') and ('metrics' in descriptor['addresses'] or descriptor.get('management_endpoint')):
         public = ipaddress.IPv4Address(descriptor['addresses'].get('public', ''))
         require(public.is_global and not public.is_multicast and address == str(public)
                 and descriptor.get('management_endpoint') == f'https://{public}:6443')
@@ -93,6 +93,8 @@ def registration_row(config, request, descriptor):
     traffic_port = request.get('traffic_port')
     require(traffic_port is None or app_fields and type(traffic_port) is int and 30000 <= traffic_port <= 32767)
     return {'target_id': request['target_id'], **{key: request[key] for key in app_fields},
+            **({'node_instances': [f"{address}:{config['node_metrics_port']}" for address in descriptor['node_metrics_addresses']]}
+               if descriptor.get('profile') == 'kubeadm-1c2w' else {}),
             **({'application_id': application_id} if application_id else {}),
             **({'node_ip': request['node_ip']} if metrics_address != request['node_ip'] else {}),
             'prometheus_url': config['prometheus_url'], 'node_instance': f"{metrics_address}:{config['node_metrics_port']}",
@@ -104,7 +106,7 @@ def registration_row(config, request, descriptor):
 def merge_rows(rows, row):
     require(isinstance(rows, list) and len(rows) <= 100)
     target = [item for item in rows if item['target_id'] == row['target_id']]
-    physical = ('resource_id', 'prometheus_url', 'node_instance', 'cluster_instance', 'node_ip')
+    physical = ('resource_id', 'prometheus_url', 'node_instance', 'cluster_instance', 'node_ip', 'node_instances')
     require(all(all(item.get(key) == row.get(key) for key in physical) for item in target))
     existing = [item for item in target if item.get('app') == row.get('app')]
     if existing:
@@ -136,7 +138,7 @@ def scrape_config(rows):
     jobs = []
     for job in result['scrape_configs']:
         key = {'node': 'node_instance', 'cluster': 'cluster_instance', 'http': 'probe_url'}[job['job_name']]
-        addresses = sorted({row[key] for row in rows if row.get(key)})
+        addresses = sorted({address for row in rows for address in row.get('node_instances', [row[key]])}) if key == 'node_instance' else sorted({row[key] for row in rows if row.get(key)})
         if addresses:
             job['static_configs'] = [{'targets': addresses}]
             jobs.append(job)
@@ -349,12 +351,14 @@ def commit_row(config, row, before_commit):
         rows = merge_rows(rows, node_row)
         durable_write(desired, json.dumps({'version': 1, 'targets': rows}).encode())
         binding = before_commit()
-        blackbox({row['target_id']: binding})
-        require(binding['server_name'] == row.get('node_ip', row['node_instance'].split(':')[0]))
+        if binding is not None:
+            blackbox({row['target_id']: binding})
+            require(binding['server_name'] == row.get('node_ip', row['node_instance'].split(':')[0]))
         bindings_path = state / 'runtime-healthz.json'
         bindings = read_private(bindings_path)['targets'] if bindings_path.exists() else {}
-        bindings[row['target_id']] = binding
-        node_row['healthz_url'] = binding['healthz_url']
+        if binding is not None:
+            bindings[row['target_id']] = binding
+            node_row['healthz_url'] = binding['healthz_url']
         rows = merge_rows(rows, node_row)
         durable_write(bindings_path, json.dumps({'version': 1, 'targets': bindings}).encode())
         durable_write(desired, json.dumps({'version': 1, 'targets': rows}).encode())
@@ -422,8 +426,9 @@ def api_exchange(config, *, request=None, descriptor=None, health_binding=None):
     payload = {'version': 1, 'action': 'read' if request is None else 'commit',
                'config_file': binding['config_file'], 'collector': collector_route(config)}
     if request is not None:
-        blackbox({request['target_id']: health_binding})
-        require(health_binding['server_name'] == request['node_ip'])
+        if health_binding is not None:
+            blackbox({request['target_id']: health_binding})
+            require(health_binding['server_name'] == request['node_ip'])
         payload.update(request=request, descriptor=descriptor, health_binding=health_binding)
     command = ['kubectl', '--context', binding['context'], '--request-timeout=420s', '-n', 'railshot-system',
                'exec', '-i', before['name'], '-c', 'api', '--', '/opt/railshot-python/bin/python3',
@@ -439,7 +444,7 @@ def api_exchange(config, *, request=None, descriptor=None, health_binding=None):
         row, _ = registration_row(config, request, descriptor)
         require(merge_rows(product['targets'], row) == product['targets'])
         nodes = [item for item in product['targets'] if item['target_id'] == row['target_id'] and not item.get('app')]
-        require(len(nodes) == 1 and nodes[0].get('healthz_url') == health_binding['healthz_url'])
+        require(len(nodes) == 1 and (health_binding is None or nodes[0].get('healthz_url') == health_binding['healthz_url']))
     return product
 
 
@@ -464,8 +469,9 @@ def api_request(payload):
     else:
         row, _ = registration_row(config, payload['request'], payload['descriptor'])
         binding = payload['health_binding']
-        blackbox({row['target_id']: binding})
-        require(binding['server_name'] == payload['request']['node_ip'])
+        if binding is not None:
+            blackbox({row['target_id']: binding})
+            require(binding['server_name'] == payload['request']['node_ip'])
         result = commit_row(config, row, lambda: binding)
     return {'status': 'succeeded', 'product': result}
 
@@ -484,22 +490,32 @@ def register(config, request, output):
     def apply_exporters():
         save()  # Record an uncertain outcome before the first mutation.
         from runtime_health import configure_runtime_healthz
-        binding = configure_runtime_healthz(runtime, descriptor, ansible, native)
-        blackbox({row['target_id']: binding})
-        require(binding['server_name'] == request['node_ip'])
-        receipt['steps'].append('runtime_healthz_configured'); save()
+        kubeadm = runtime.get('runtime', {}).get('profile') == 'kubeadm-1c2w'
+        # kubeadm keeps its existing API authentication boundary. Its native health
+        # remains separately observed by the installer; metrics use scoped exporters.
+        binding = None if kubeadm else configure_runtime_healthz(runtime, descriptor, ansible, native)
+        if binding is not None:
+            blackbox({row['target_id']: binding})
+            require(binding['server_name'] == request['node_ip'])
+            receipt['steps'].append('runtime_healthz_configured'); save()
         labels = {'app.kubernetes.io/managed-by': 'railshot-observer', 'railshot.io/observer': config['owner']}
         with runtime_kubectl(runtime) as kube:
             cilium = kube('kube-system', 'get', 'pods', '-l', 'k8s-app=cilium', '-o', 'json')['items']
             cilium = [pod for pod in cilium if not pod['metadata'].get('deletionTimestamp')]
-            require(len(cilium) == 1 and any(condition.get('type') == 'Ready' and condition.get('status') == 'True'
-                                           for condition in cilium[0].get('status', {}).get('conditions', [])))
+            require(len(cilium) == (3 if kubeadm else 1) and (not kubeadm or len({pod['spec']['nodeName'] for pod in cilium}) == 3)
+                    and all(any(condition.get('type') == 'Ready' and condition.get('status') == 'True'
+                                for condition in pod.get('status', {}).get('conditions', [])) for pod in cilium))
             services = kube('default', 'get', 'services', '-A', '-o', 'json')['items']
             for service in services:
                 if any(port.get('nodePort') in (config['node_metrics_port'], config['cluster_metrics_port']) for port in service['spec']['ports']):
                     require(service['metadata'].get('namespace') == NAMESPACE and
                             all(service['metadata'].get('labels', {}).get(k) == v for k, v in labels.items()))
             for document in cluster(rendering)['items']:
+                if kubeadm and document['kind'] in ('Deployment', 'DaemonSet'):
+                    pod = document['spec']['template']['spec']
+                    pod['tolerations'] = [{'key': 'node-role.kubernetes.io/control-plane', 'operator': 'Exists', 'effect': 'NoSchedule'}]
+                    if document['kind'] == 'Deployment':
+                        pod['nodeSelector']['node-role.kubernetes.io/control-plane'] = ''
                 meta = document['metadata']; meta.setdefault('labels', {}).update(labels)
                 namespace = meta.get('namespace', 'default')
                 existing = kube(namespace, 'get', document['kind'], meta['name'], '--ignore-not-found', '-o', 'json')
@@ -507,7 +523,8 @@ def register(config, request, output):
                     require(not existing['metadata'].get('ownerReferences') and all(existing['metadata'].get('labels', {}).get(k) == v for k, v in labels.items()))
                 kube(namespace, 'apply', '--server-side', '--field-manager=railshot-observer', '-f', '-', '-o', 'json', document=document)
                 if document['kind'] == 'CiliumClusterwideNetworkPolicy':
-                    wait_network_policy(kube, cilium[0], document)
+                    for pod in cilium:
+                        wait_network_policy(kube, pod, document)
         receipt['steps'].append('exporters_applied'); save()
         return binding
     if 'api_registrar' in config:
