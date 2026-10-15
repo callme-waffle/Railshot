@@ -39,6 +39,18 @@ def encoded(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), allow_nan=False).encode()
 
 
+def registration_target(cluster_path, request):
+    """Use verified management NICs for Argo/metrics; keep runtime IPs as TLS identities."""
+    nodes = request['inventory']['control_plane'] + request['inventory']['workers']
+    addresses = {node['id']: node['ssh']['connect_host'] for node in nodes}
+    require(all(any(ipaddress.IPv4Address(value) in ipaddress.IPv4Network(cidr)
+                    for cidr in ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
+                for value in addresses.values()), 'ONPREM_MANAGEMENT_ADDRESS_INVALID')
+    return {'profile': 'kubeadm-1c2w', 'cluster_file': str(cluster_path), 'purpose': 'runtime',
+            'management_endpoint': 'https://' + addresses[nodes[0]['id']] + ':6443',
+            'metrics_endpoints': addresses}
+
+
 def private_file(value, *, json_value=True):
     path = Path(value)
     require(path.is_absolute() and path.resolve() == path, 'ONPREM_PRIVATE_PATH_INVALID')
@@ -82,7 +94,9 @@ def save(path, value):
 
 def normalize(row):
     require(isinstance(row, dict), 'ONPREM_RESPONSE_INVALID')
-    return {key.lower().replace(' ', '_'): value for key, value in row.items()}
+    result={key.lower().replace(' ', '_'): value for key, value in row.items()}
+    if 'os-vol-tenant-attr:tenant_id' in result:result.setdefault('project_id',result['os-vol-tenant-attr:tenant_id'])
+    return result
 
 
 def identifier(value):
@@ -141,13 +155,17 @@ def validate_config(config, *, check_files=True):
         if value is not None:
             try:
                 network = ipaddress.IPv4Network(value, strict=True)
-                require(network.prefixlen > 0 and (field != 'network.cidr' or network.is_private and 16 <= network.prefixlen <= 27))
+                require(network.prefixlen > 0 and (field != 'network.cidr' or network.is_private and 16 <= network.prefixlen <= 27 and not any(network.overlaps(ipaddress.IPv4Network(c)) for c in ('10.244.0.0/16','10.96.0.0/12'))))
             except (ValueError, TypeError, ProviderError):
                 errors.append('ONPREM_INVALID_' + field.upper().replace('.', '_'))
     zones = lookup('nodes.availability_zones')
     if zones is not None and (not isinstance(zones, list) or len(zones) != 3
                              or any(not isinstance(z, str) or not IDENT.fullmatch(z) for z in zones)):
         errors.append('ONPREM_THREE_NODE_ZONES_REQUIRED')
+    if config.get('database') is not None:
+        for field in ('database.flavor_id','database.volume_type','database.volume_zone','database.config_file'):
+            if not lookup(field):missing.append(field)
+        if type(lookup('database.size_gib')) is not int or not 10<=lookup('database.size_gib')<=16384:errors.append('ONPREM_DATABASE_VOLUME_SIZE_INVALID')
     if lookup('nodes.ssh.user') == 'root':
         errors.append('ONPREM_NONROOT_GUEST_USER_REQUIRED')
     for field in ('credentials_file', 'remote_config_file', 'nodes.ssh.identity_file', 'nodes.ssh.known_hosts_file',
@@ -180,6 +198,12 @@ def validate_config(config, *, check_files=True):
             require(isinstance(content, dict) and content, 'ONPREM_CONFIG_OBJECT_REQUIRED')
             for key in schemas.get(field, ()):
                 require(key in content and content[key] not in (None, '', []), 'ONPREM_NESTED_FIELDS_REQUIRED')
+            if field == 'database.config_file':
+                sys.path.insert(0,str(ROOT/'infrastructure/ansible'))
+                try:standalone=importlib.import_module('standalone')
+                except ImportError:raise ProviderError('ONPREM_DATABASE_RUNTIME_REQUIRED') from None
+                require(standalone.validate_config(content).get('valid') is True,'ONPREM_DATABASE_CONFIG_INVALID')
+                return  # Shared validator checks PEM/text/JSON references by their own types.
             if field == 'storage_template_file':
                 ceph = content.get('cephfs', {})
                 require(all(ceph.get(k) for k in ('cluster_id', 'monitors', 'fs_name', 'subvolume_group', 'secret_files')),
@@ -325,7 +349,7 @@ class Adapter:
         cidr = ipaddress.IPv4Network(network['cidr'], strict=True)
         management = ipaddress.IPv4Network(network['management_cidr'], strict=True)
         require(cidr.is_private and not cidr.is_loopback and 16 <= cidr.prefixlen <= 27
-                and management.prefixlen > 0, 'ONPREM_NETWORK_PROFILE_INVALID')
+                and management.prefixlen > 0 and not any(cidr.overlaps(ipaddress.IPv4Network(c)) for c in ('10.244.0.0/16','10.96.0.0/12')), 'ONPREM_NETWORK_PROFILE_INVALID')
         identifier(network['external_network_id'])
         identifier(network['management_network_id'])
         for key in ('storage_template_file', 'edge_template_file', 'application_template_file'):
@@ -338,6 +362,9 @@ class Adapter:
             require(isinstance(cfg.get('database'), dict), 'ONPREM_DATABASE_PROFILE_REQUIRED')
             identifier(cfg['database']['flavor_id'])
             private_file(cfg['database']['config_file'])
+            identifier(cfg['database']['volume_type'])
+            identifier(cfg['database']['volume_zone'])
+            require(type(cfg['database'].get('size_gib')) is int and 10<=cfg['database']['size_gib']<=16384,'ONPREM_DATABASE_VOLUME_SIZE_INVALID')
         return cfg
 
     def _cli(self, context):
@@ -426,6 +453,7 @@ class Adapter:
 
     def plan(self, spec, context):
         cfg = self._profile(context)
+        require(validate_config(cfg)['valid'],'ONPREM_PROFILE_INCOMPLETE')
         cli = self._cli(context); self._scope(cli)
         image = normalize(cli.run(['image', 'show', cfg['nodes']['image_id']]))
         require(str(image.get('status')).lower() == 'active' and (image.get('owner') == cfg['project_id']
@@ -433,6 +461,9 @@ class Adapter:
         flavor = normalize(cli.run(['flavor', 'show', cfg['nodes']['flavor_id']]))
         require(int(flavor.get('vcpus', 0)) >= 2 and int(flavor.get('ram', 0)) >= 2048
                 and int(flavor.get('disk', 0)) >= 20, 'ONPREM_FLAVOR_TOO_SMALL')
+        if spec['database']['mode']=='standalone':
+            database_flavor=normalize(cli.run(['flavor','show',cfg['database']['flavor_id']]))
+            require(int(database_flavor.get('vcpus',0))>=2 and int(database_flavor.get('ram',0))>=2048 and int(database_flavor.get('disk',0))>=20 and int(database_flavor.get('ephemeral',0))==0,'ONPREM_DATABASE_FLAVOR_INVALID')
         management = normalize(cli.run(['network', 'show', cfg['network']['management_network_id']]))
         require(management.get('project_id') == cfg['project_id'] or management.get('shared') is True, 'ONPREM_MANAGEMENT_NETWORK_MISMATCH')
         external = normalize(cli.run(['network', 'show', cfg['network']['external_network_id']]))
@@ -455,6 +486,14 @@ class Adapter:
 
     def _provision(self, cli, home, state, context):
         cfg = self.config; name = context['environment_id']; network = cfg['network']; nodes = cfg['nodes']
+        app = private_file(cfg['application_template_file'])
+        require(len(app['environments']) == 1, 'ONPREM_APPLICATION_BINDING_MISMATCH')
+        profile = next(iter(app['environments'].values()))
+        observer = private_file(profile['ingress']['observability_config_file'])
+        source = ipaddress.IPv4Network(observer.get('observer_source_cidr', observer['observer_ip'] + '/32'), strict=True)
+        require(source.prefixlen > 0, 'ONPREM_OBSERVER_SOURCE_INVALID')
+        require(all(type(observer[field]) is int and 30000 <= observer[field] <= 32767 for field in ('node_metrics_port', 'cluster_metrics_port'))
+                and observer['node_metrics_port'] != observer['cluster_metrics_port'], 'ONPREM_OBSERVER_PORT_INVALID')
         create = lambda key, kind, args: self._once(cli, home, state, key, kind, args)['id']
         net = create('network', 'network', ['network', 'create', '--description', 'Railshot ' + name, name])
         cidr = ipaddress.IPv4Network(network['cidr'])
@@ -472,6 +511,11 @@ class Adapter:
         for port in ('22', '6443'):
             create('management-' + port, 'security group rule', ['security', 'group', 'rule', 'create', '--ingress', '--ethertype', 'IPv4',
                     '--protocol', 'tcp', '--dst-port', port, '--remote-ip', network['management_cidr'], group])
+        for field in ('node_metrics_port', 'cluster_metrics_port'):
+            port = observer[field]
+            require(type(port) is int and 30000 <= port <= 32767, 'ONPREM_OBSERVER_PORT_INVALID')
+            create('observer-' + field, 'security group rule', ['security', 'group', 'rule', 'create', '--ingress', '--ethertype', 'IPv4',
+                    '--protocol', 'tcp', '--dst-port', str(port), '--remote-ip', str(source), group])
         for protocol in ('tcp', 'udp', 'icmp'):
             create('cluster-' + protocol, 'security group rule', ['security', 'group', 'rule', 'create', '--ingress', '--ethertype', 'IPv4',
                     '--protocol', protocol, '--remote-group', group, group])
@@ -482,7 +526,8 @@ class Adapter:
         names = ['control', 'worker-a', 'worker-b'] + (['database'] if context['spec']['database']['mode'] == 'standalone' else [])
         for index, role in enumerate(names):
             vm_name = name + '-' + role
-            port = create('port-' + role, 'port', ['port', 'create', '--network', net, '--security-group', group, vm_name])
+            fixed=['--fixed-ip','subnet='+subnet+',ip-address='+str(ipaddress.IPv4Network(network['cidr']).network_address+14)] if role=='database' else []
+            port = create('port-' + role, 'port', ['port', 'create', '--network', net, '--security-group', group, *fixed, vm_name])
             observed_port = self._read(cli, 'port', port)
             require(observed_port.get('network_id') == net and observed_port.get('security_group_ids', observed_port.get('security_groups')) == [group],
                     'ONPREM_PORT_BINDING_MISMATCH')
@@ -513,6 +558,7 @@ class Adapter:
                     and addresses[0].get('subnet_id') == subnet, 'ONPREM_PORT_BINDING_MISMATCH')
             address = str(ipaddress.IPv4Address(addresses[0]['ip_address']))
             require(ipaddress.IPv4Address(address) in ipaddress.IPv4Network(network['cidr']), 'ONPREM_ADDRESS_MISMATCH')
+            require(role!='database' or address==str(ipaddress.IPv4Network(network['cidr']).network_address+14),'ONPREM_DATABASE_ADDRESS_CHANGED')
             snapshot = {'id': server, 'project_id': cfg['project_id'], 'status': 'ACTIVE', 'region': cfg['region'],
                 'availability_zone': zone, 'addresses': [{'network': net, 'address': address, 'version': 4}]}
             file = home / (role + '-server.json'); save(file, snapshot)
@@ -613,11 +659,14 @@ class Adapter:
         save(home / 'state.json', state)
         require(result.get('status') == 'succeeded', 'ONPREM_RUNTIME_NOT_READY')
         registry_path = home / 'registry.json'
-        save(registry_path, {'version': 1, 'targets': {name: {'profile': 'kubeadm-1c2w', 'cluster_file': str(cluster_path), 'purpose': 'runtime'}}})
+        save(registry_path, {'version': 1, 'targets': {name: registration_target(cluster_path, request)}})
         substitutions['registry_file'] = str(registry_path)
         app = render(private_file(cfg['application_template_file']), substitutions)
         app['environments'][name]['ingress'].update(cluster_edge_config_file=str(edge_path),
             cluster_edge_state_dir=str(home / 'runtime' / 'cluster-edge' / name), cluster_file=str(cluster_path))
+        if context['spec']['database']['mode']=='standalone':
+            standalone=importlib.import_module('standalone')
+            app['environments'][name]['ingress']['standalone_database']=standalone.application_bundle(private_file(str(home/'database-node.json')),cfg['database']['config_file'],context)
         app_path = home / 'applications.json'; save(app_path, app)
         sys.path.insert(0, str(ROOT / 'deployment/scripts'))
         applications = importlib.import_module('applications')
@@ -638,13 +687,38 @@ class Adapter:
         state['application_binding_receipt_path'] = binding['application_binding_receipt_path']
         save(home / 'state.json', state)
 
+    def _database_volume(self,cli,home,state,context):
+        if context['spec']['database']['mode']=='none':return
+        cfg=self.config['database'];node=state['snapshots']['database']
+        volume=self._once(cli,home,state,'database-volume','volume',['volume','create','--size',str(cfg['size_gib']),
+            '--type',cfg['volume_type'],'--availability-zone',cfg['volume_zone'],
+            '--property','railshot.environment='+context['environment_id'],'--property','railshot.owner='+context['owner_id'],
+            '--property','railshot.role=database',context['environment_id']+'-pg-data'])['id']
+        row=self._read(cli,'volume',volume);properties=row.get('properties',{})
+        require(properties.get('railshot.environment')==context['environment_id'] and properties.get('railshot.owner')==context['owner_id']
+            and properties.get('railshot.role')=='database' and int(row.get('size',0))==cfg['size_gib']
+            and row.get('encrypted') is True and row.get('volume_type',row.get('type'))==cfg['volume_type'],'ONPREM_DATABASE_VOLUME_CHANGED')
+        attachments=row.get('attachments',[])
+        if not attachments:
+            self._wait(cli,'volume',volume,'available')
+            self._once(cli,home,state,'database-volume-attach',None,['server','add','volume',node['id'],volume],result=False)
+        row=self._wait(cli,'volume',volume,'in-use');attachments=row.get('attachments',[])
+        require(len(attachments)==1 and attachments[0].get('server_id')==node['id'] and attachments[0].get('volume_id',volume)==volume
+            and re.fullmatch(r'/dev/(?:xvd|vd|sd)[b-z]',attachments[0].get('device','')),'ONPREM_DATABASE_ATTACHMENT_CHANGED')
+        server=self._read(cli,'server',node['id']);attached=server.get('volumes_attached',server.get('os_extended_volumes:volumes_attached',[]))
+        require(len(attached)==1 and attached[0].get('id')==volume,'ONPREM_DATABASE_VOLUME_SET_CHANGED')
+        state['database_disk']={'resource_id':volume,'device':attachments[0]['device'],'mount_path':'/var/lib/postgresql'}
+        save(home/'state.json',state)
+        from .onprem_volume import prepare
+        prepare(home,state,{'private_ipv4':node['addresses'][0]['address'],'ssh':state['ssh']['database'],'data_disk':state['database_disk']})
+
     def _database(self, home, state, context, action='install'):
         if context['spec']['database']['mode'] == 'none':
             return
         node = state['snapshots']['database']
         descriptor = {'version': 1, 'provider': 'openstack', 'environment_id': context['environment_id'],
             'account_id': context['account_id'], 'project_id': self.config['project_id'], 'region': self.config['region'],
-            'resource_id': node['id'], 'private_ipv4': node['addresses'][0]['address'], 'ssh': state['ssh']['database']}
+            'resource_id': node['id'], 'private_ipv4': node['addresses'][0]['address'], 'ssh': state['ssh']['database'], 'data_disk':state['database_disk']}
         file = home / 'database-node.json'; save(file, descriptor)
         # The shared standalone runtime owns PostgreSQL, backup and restore.
         sys.path.insert(0, str(ROOT / 'infrastructure/ansible'))
@@ -654,22 +728,24 @@ class Adapter:
         state['readiness']['database'] = result.get('ready') is True
         state['database_result'] = {key: result[key] for key in ('status', 'ready', 'binding_file') if key in result}
         save(home / 'state.json', state)
+        require(result.get('status')=='succeeded' and result.get('ready') is True,'ONPREM_DATABASE_NOT_READY')
 
     def apply(self, spec, context):
         self.plan(spec, context)
         cli = self._cli(context); self._scope(cli)
         with self._state(context) as (home, state):
             members = self._provision(cli, home, state, context)
-            self._runtime(home, state, context, members)
+            self._database_volume(cli,home,state,context)
             self._database(home, state, context)
+            self._runtime(home, state, context, members)
             state['status'] = 'succeeded'
             save(home / 'state.json', state)
             return self._result(state)
 
     def _result(self, state):
         result = {key: copy.deepcopy(state[key]) for key in ('status', 'readiness', 'resources')}
-        for key in ('application_config_path', 'application_binding_receipt_path', 'residuals', 'retained_resources'):
-            if state.get(key):
+        for key in ('application_config_path', 'application_binding_receipt_path', 'residuals', 'retained_resources', 'deleted'):
+            if key in state:
                 result[key] = copy.deepcopy(state[key])
         return result
 
@@ -745,7 +821,7 @@ class Adapter:
         if action in ('backup', 'restore'):
             with self._state(context) as (home, state):
                 require(state.get('snapshots', {}).get('database'), 'ONPREM_DATABASE_NOT_PROVISIONED')
-                self._database(home, state, context, action)
+                self._database(home, state, context, operation)
                 return self._result(state)
         if action in ('refresh', 'verify'):
             return self.describe(context)
@@ -795,9 +871,8 @@ class Adapter:
             require(receipt.get('status') == 'succeeded' and receipt.get('environment_id') == context['environment_id']
                     and receipt.get('data_policy') == 'retain', 'ONPREM_RUNTIME_REVOCATION_REQUIRED')
             state['teardown_receipt'] = receipt
-            # PostgreSQL data currently resides on its VM root disk. Preserve
-            # that VM and its entire network dependency chain until the shared
-            # DB runtime supplies an explicit retained-data receipt.
+            # Keep the separate encrypted data volume and stopped PG VM plus
+            # network dependencies for controlled recovery. Never erase data.
             retain_database = 'database' in state.get('snapshots', {})
             if retain_database:
                 database = state['snapshots']['database']
@@ -840,6 +915,7 @@ class Adapter:
                 resource['status'] = 'deleted'; save(home / 'state.json', state)
             state['retained_resources'] = retained + receipt.get('retained_resources', [])
             state['residuals'] = []
+            state['deleted'] = True
             state['readiness'] = {key: False for key in READINESS}
             state['status'] = 'succeeded'
             save(home / 'state.json', state)

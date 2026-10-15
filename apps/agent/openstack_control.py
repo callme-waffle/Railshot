@@ -37,7 +37,7 @@ CREATES = {
     'keypair': set(),
 }
 BOOLEAN_FLAGS = {'--ingress', '--egress'}
-FIELDS = {'id', 'name', 'status', 'owner', 'project_id', 'tenant_id', 'user_id', 'addresses', 'networks', 'image', 'flavor',
+FIELDS = {'id', 'name', 'status', 'owner', 'project_id', 'tenant_id', 'os-vol-tenant-attr:tenant_id', 'user_id', 'addresses', 'networks', 'image', 'flavor',
           'size', 'volume_type', 'availability_zone', 'availability_zone_state', 'zone_name', 'zone_state',
           'network_id', 'subnet_id', 'subnets', 'cidr', 'gateway_ip', 'ip_version', 'allocation_pools',
           'dns_nameservers', 'fixed_ips', 'fixed_ip_addresses', 'mac_address', 'device_id', 'device_owner', 'admin_state_up',
@@ -107,6 +107,9 @@ def parse(argv):
     if resource == 'router' and verb in ('add', 'remove'):
         require(len(rest) == 3 and rest[0] == 'subnet' and all(IDENT.fullmatch(x) for x in rest[1:]))
         return resource, verb
+    if resource == 'server' and verb == 'add':
+        require(len(rest)==3 and rest[0]=='volume' and all(IDENT.fullmatch(x) for x in rest[1:]))
+        return resource,verb
     if resource == 'server' and verb in ('start', 'stop'):
         require(len(rest) == 1 and IDENT.fullmatch(rest[0]))
         return resource, verb
@@ -172,7 +175,7 @@ def save(path, value):
 def require_project(cli, resource, reference, project_id, shared=False):
     require(isinstance(reference, str) and IDENT.fullmatch(reference))
     observed = cli.run(resource.split() + ['show', reference])
-    project = observed.get('project_id', observed.get('tenant_id'))
+    project = observed.get('project_id', observed.get('tenant_id',observed.get('os-vol-tenant-attr:tenant_id')))
     require(project == project_id or shared and observed.get('shared') is True)
     return observed
 
@@ -186,6 +189,13 @@ def validate_references(cli, resource, argv, project_id):
         if flag in references:
             require_project(cli, references[flag], argv[index + 1], project_id,
                             shared=flag == '--network' and resource in ('server', 'port'))
+        if resource=='port' and flag=='--fixed-ip':
+            parts=dict(item.split('=',1) for item in argv[index+1].split(','))
+            require(set(parts)=={'subnet','ip-address'})
+            subnet=require_project(cli,'subnet',parts['subnet'],project_id)
+            import ipaddress
+            address=ipaddress.IPv4Address(parts['ip-address'])
+            require(address in ipaddress.IPv4Network(subnet['cidr']) and '--network' in argv and subnet['network_id']==argv[argv.index('--network')+1])
         if flag == '--nic':
             parts = dict(item.split('=', 1) for item in argv[index + 1].split(','))
             require(set(parts) <= {'net-id', 'port-id', 'v4-fixed-ip', 'v6-fixed-ip'}
@@ -199,7 +209,7 @@ def validate_references(cli, resource, argv, project_id):
     if resource == 'floating ip':
         # Floating-IP pools are normally shared external provider networks.
         observed = cli.run(['network', 'show', argv[-1]])
-        require(observed.get('project_id', observed.get('tenant_id')) == project_id
+        require(observed.get('project_id', observed.get('tenant_id',observed.get('os-vol-tenant-attr:tenant_id'))) == project_id
                 or observed.get('router:external') is True)
 
 
@@ -238,7 +248,7 @@ def execute(request, config, cli, home=HOME, secrets=()):
             scoped += ['--absolute']
         result = cli.run(scoped)
         if isinstance(result, dict):
-            project = result.get('project_id', result.get('tenant_id'))
+            project = result.get('project_id', result.get('tenant_id',result.get('os-vol-tenant-attr:tenant_id')))
             require(project == config['project_id'] or resource in ('image', 'flavor', 'keypair', 'limits', 'quota')
                     or resource == 'network' and (result.get('shared') is True or result.get('router:external') is True))
         return sanitize(result, secrets)
@@ -256,7 +266,17 @@ def execute(request, config, cli, home=HOME, secrets=()):
             return prior['result']
         owned_path = home / 'resources.json'
         owned = load(owned_path, {})
-        if verb in ('set', 'add', 'remove'):
+        if resource=='server' and verb=='add':
+            server_id,volume_id=argv[-2:]
+            for kind,ident in (('server',server_id),('volume',volume_id)):
+                record=owned.get(kind+':'+ident)
+                require(record and record['target_id']==config['target_id'] and not record.get('removed'))
+            server=require_project(cli,'server',server_id,config['project_id'])
+            volume=require_project(cli,'volume',volume_id,config['project_id'])
+            require(server.get('status')=='ACTIVE' and volume.get('status')=='available' and not volume.get('attachments'))
+            a,b=server.get('properties',{}),volume.get('properties',{})
+            require(a.get('railshot.environment') and a.get('railshot.owner') and all(a.get(k)==b.get(k) for k in ('railshot.environment','railshot.owner')) and b.get('railshot.role')=='database')
+        if resource=='router' and verb in ('set', 'add', 'remove'):
             router_id = argv[-1] if verb == 'set' else argv[-2]
             record = owned.get('router:' + router_id)
             require(record and record['target_id'] == config['target_id'] and not record.get('removed'))
@@ -280,7 +300,7 @@ def execute(request, config, cli, home=HOME, secrets=()):
             if resource in ('server', 'volume'):
                 require(request['params'].get('delete_data') is True)
             observed = cli.run(resource.split() + ['show', argv[-1]])
-            project = observed.get('project_id', observed.get('tenant_id'))
+            project = observed.get('project_id', observed.get('tenant_id',observed.get('os-vol-tenant-attr:tenant_id')))
             require(resource == 'keypair' or project == config['project_id'])
             if resource == 'keypair':
                 require(record.get('identity') == keypair_identity(observed))
@@ -323,6 +343,9 @@ def execute(request, config, cli, home=HOME, secrets=()):
             cli.run(argv, json_output=False)
             observed = require_project(cli, 'server', argv[-1], config['project_id'])
             result = {'id': argv[-1], 'status': observed.get('status')}
+        elif resource=='server' and verb=='add':
+            cli.run(argv,json_output=False)
+            result={'id':volume_id,'status':'attaching'}
         elif verb in ('set', 'add', 'remove'):
             cli.run(argv, json_output=False)
             result = {'id': router_id, 'status': 'configured'}

@@ -1001,6 +1001,14 @@ export async function createProductService({ service, directory, target, provide
       launch(() => generateApplicationPlan(record));
   }
   let releasePaused = false;
+  await controlPlane?.setRestoreGuard?.((id, owner) => {
+    if (!controlPlane.owns(id, owner)) throw new ProductError(404, 'NOT_FOUND', '환경을 찾을 수 없습니다.');
+    const state = store.read();
+    if (Object.values(state.applications).some((app) => app.environment_target_id === id && !['stopped', 'deleted'].includes(app.status))
+        || Object.values(state.operations).some((operation) => (operation.environment_target_id === id || operation.target_id === id)
+          && ['queued', 'running', 'unknown'].includes(operation.status)))
+      throw new ProductError(409, 'RESTORE_APPLICATIONS_ACTIVE', '데이터 복구 전에 앱과 진행 작업을 중지하세요.');
+  });
   const queueTimer = setInterval(pump, Math.min(pollInterval, 1000));
   queueTimer.unref();
   void pump();
@@ -1183,9 +1191,9 @@ export async function createProductService({ service, directory, target, provide
       if (!owns(record, sessionId) || !['application-lifecycle', 'target-lifecycle'].includes(record.kind)) throw new ProductError(404, 'NOT_FOUND', '작업을 찾을 수 없습니다.');
       return publicRecord(record);
     },
-    list(kind, sessionId, pagination) {
-      if (kind === 'plans') return Object.values(store.read().plans).filter((row) => owns(row, sessionId) && !['application-lifecycle', 'target-lifecycle'].includes(row.kind)).reverse().map((row) => structuredClone(row.public));
-      const { records, hasMore, total } = store.operationPage(kind, sessionId, pagination);
+    list(kind, sessionId, pagination, accountOwner = null) {
+      if (kind === 'plans') return Object.values(store.read().plans).filter((row) => (owns(row, sessionId) || accountOwner && owns(row, accountOwner)) && !['application-lifecycle', 'target-lifecycle'].includes(row.kind)).reverse().map((row) => structuredClone(row.public));
+      const { records, hasMore, total } = store.operationPage(kind, accountOwner ? [sessionId, accountOwner] : sessionId, pagination);
       const items = records.map((row) => ({ id: kind === 'builds' ? String(row.ci.run_id) : row.id, kind, status: row.status,
         ...Object.fromEntries(['app', 'application_id', 'environment_target_id', 'target_id', 'stage', 'created_at', 'updated_at'].filter((key) => row[key] !== undefined).map((key) => [key, row[key]])) }));
       return { items, next_marker: hasMore ? items.at(-1).id : null, total };
@@ -1217,7 +1225,8 @@ export async function createProductService({ service, directory, target, provide
     async getTargetObservation(id, sessionId = null) {
       const target = TARGET_ID.test(id) && this.targets(sessionId).find((item) => item.id === id);
       if (!target) throw new ProductError(404, 'NOT_FOUND', '등록된 대상을 찾을 수 없습니다.');
-      let observation = await observeMetrics({ target_id: id, app: target.application_name ?? null });
+      const selected = { target_id: id, app: target.application_name ?? null };
+      let observation = await (controlPlane?.observeMetrics ? controlPlane.observeMetrics(selected, observeMetrics) : observeMetrics(selected));
       if (target.scope === 'owned' && !controlPlane?.isEnvironment(id)) observation = personal.observation(id, sessionId, observation);
       const health = observation.metrics.runtime_healthz ?? { state: 'not_configured', observed_at: null };
       return { ...observation, environment_id: target.environment_id ?? null,
@@ -1345,7 +1354,7 @@ export async function createProductService({ service, directory, target, provide
           }
         } catch { /* Keep the recorded failure when read-only diagnostics are unavailable. */ }
       }
-      return { ...record, observation: await observeMetrics(record) };
+      return { ...record, observation: await (controlPlane?.observeMetrics ? controlPlane.observeMetrics(record, observeMetrics) : observeMetrics(record)) };
     },
     getDeploymentDiagnostics: diagnostics.get,
     classifyDeployment: diagnostics.classify,

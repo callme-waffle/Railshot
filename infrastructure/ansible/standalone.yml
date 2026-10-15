@@ -1,0 +1,56 @@
+---
+- name: Operate the approved standalone PostgreSQL host
+  hosts: standalone_database
+  gather_facts: false
+  become: true
+  any_errors_fatal: true
+  tasks:
+    - name: Allocate private fixed-runner workspace
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: railshot-standalone-
+      register: standalone_work
+    - name: Execute the trusted guest operation
+      block:
+        - name: Copy fixed database executors
+          ansible.builtin.copy:
+            src: '{{ item }}'
+            dest: '{{ standalone_work.path }}/{{ item }}'
+            owner: root
+            mode: '0600'
+          loop: [standalone_guest.py, application_database.py]
+        - name: Copy private approved guest input
+          ansible.builtin.copy:
+            src: '{{ railshot_standalone_input }}'
+            dest: '{{ standalone_work.path }}/input.json'
+            owner: root
+            mode: '0600'
+          no_log: true
+        - name: Execute database operation and SQL verification
+          ansible.builtin.command:
+            argv:
+              - python3
+              - '{{ standalone_work.path }}/standalone_guest.py'
+              - '{{ standalone_work.path }}/input.json'
+              - '{{ standalone_work.path }}/receipt.json'
+          changed_when: true
+          no_log: true
+        - name: Fetch the nonce-bound verified receipt
+          ansible.builtin.fetch:
+            src: '{{ standalone_work.path }}/receipt.json'
+            dest: '{{ railshot_standalone_receipt }}'
+            flat: true
+          no_log: true
+        - name: Protect the local receipt before controller validation
+          ansible.builtin.file:
+            path: '{{ railshot_standalone_receipt }}'
+            mode: '0600'
+          delegate_to: localhost
+          become: false
+          no_log: true
+      always:
+        - name: Remove private guest workspace
+          ansible.builtin.file:
+            path: '{{ standalone_work.path }}'
+            state: absent
+          no_log: true

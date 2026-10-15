@@ -37,7 +37,9 @@
         "dns_config_file": "/etc/railshot/private/onprem/dns.json",
         "cluster_edge_config_file": "generated",
         "cluster_edge_state_dir": "generated",
-        "cluster_file": "generated"
+        "cluster_file": "generated",
+        "observability_config_file": "/etc/railshot/private/onprem/observability.json",
+        "ci_credentials_file": "/etc/railshot/private/onprem/ci-credentials.json"
       }
     }
   }

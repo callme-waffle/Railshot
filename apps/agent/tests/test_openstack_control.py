@@ -281,3 +281,42 @@ def test_server_power_requires_exact_owned_resource(tmp_path, action):
         control.execute(request(['server',action,'vm1']),CONFIG,Cloud(),tmp_path)
     for argv in (['server',action,'vm1','vm2'], ['server',action,'--all']):
         with pytest.raises(control.ProtocolError):control.decode(json.dumps(request(argv)).encode())
+
+
+@pytest.mark.parametrize('argv',[
+    ['server','add','volume','--device','/dev/vda','server1','volume1'],
+    ['server','add','port','server1','port1'],['server','remove','volume','server1','volume1'],
+    ['server','add','volume','server1','--all']])
+def test_volume_attach_has_no_generic_network_or_device_escape(argv):
+    with pytest.raises(control.ProtocolError):control.parse(argv)
+
+
+def test_volume_attach_requires_both_native_and_target_ownership_and_replays_once(tmp_path):
+    tmp_path.chmod(0o700)
+    class Cloud:
+        def __init__(self):self.attaches=0;self.project='project1'
+        def run(self,argv,**kwargs):
+            if argv==['token','issue']:return {'project_id':'project1','id':'secret-token'}
+            if argv==['server','show','server1']:return {'id':'server1','project_id':'project1','status':'ACTIVE','properties':{'railshot.environment':'env-one','railshot.owner':'owner'}}
+            if argv==['volume','show','volume1']:return {'id':'volume1','project_id':self.project,'status':'available','attachments':[],
+                'properties':{'railshot.environment':'env-one','railshot.owner':'owner','railshot.role':'database'}}
+            if argv==['server','add','volume','server1','volume1']:self.attaches+=1;return None
+            raise AssertionError(argv)
+    cloud=Cloud();owned={'server:server1':{'target_id':CONFIG['target_id']},'volume:volume1':{'target_id':'foreign'}}
+    control.save(tmp_path/'resources.json',owned);job=request(['server','add','volume','server1','volume1'])
+    with pytest.raises(control.ProtocolError):control.execute(job,CONFIG,cloud,tmp_path)
+    owned['volume:volume1']['target_id']=CONFIG['target_id'];control.save(tmp_path/'resources.json',owned);cloud.project='foreign'
+    with pytest.raises(control.ProtocolError):control.execute(job,CONFIG,cloud,tmp_path)
+    cloud.project='project1';result=control.execute(job,CONFIG,cloud,tmp_path)
+    assert result=={'id':'volume1','status':'attaching'}
+    assert control.execute(job,CONFIG,cloud,tmp_path)==result and cloud.attaches==1
+
+
+@pytest.mark.parametrize('network,project,address',[('other','project1','10.80.0.14'),('network1','foreign','10.80.0.14'),('network1','project1','10.81.0.14')])
+def test_fixed_ip_requires_same_project_network_and_subnet(network,project,address):
+    class Cloud:
+        def run(self,argv):
+            if argv[:2]==['network','show']:return {'project_id':'project1'}
+            if argv[:2]==['subnet','show']:return {'project_id':project,'network_id':network,'cidr':'10.80.0.0/24'}
+            raise AssertionError(argv)
+    with pytest.raises(control.ProtocolError):control.validate_references(Cloud(),'port',['port','create','--network','network1','--fixed-ip','subnet=subnet1,ip-address='+address,'pg-port'],'project1')

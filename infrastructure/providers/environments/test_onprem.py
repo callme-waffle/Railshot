@@ -28,6 +28,10 @@ class Native:
             del self.rows[kind, argv[-1]]; return None
         if verb in ('start', 'stop'):
             self.rows[kind, argv[-1]]['status'] = 'ACTIVE' if verb == 'start' else 'SHUTOFF'; return None
+        if kind=='server' and verb=='add' and argv[2]=='volume':
+            server,volume=argv[-2:];self.rows['volume',volume].update(status='in-use',attachments=[{'server_id':server,'volume_id':volume,'device':'/dev/vdb'}])
+            self.rows['server',server]['volumes_attached']=[{'id':volume}]
+            return None
         if verb in ('add', 'set', 'remove'):
             return None
         if verb == 'create':
@@ -41,6 +45,11 @@ class Native:
                 row.update(network_id=net, security_group_ids=[argv[argv.index('--security-group') + 1]],
                     fixed_ips=[{'subnet_id': next((i for (k, i) in self.rows if k == 'subnet'), 'subnet'),
                                 'ip_address': ('10.9.0.' if net == 'management' else '10.8.0.') + str(16 + self.counter)}])
+            if kind=='port' and '--fixed-ip' in argv:
+                fixed=dict(x.split('=',1) for x in argv[argv.index('--fixed-ip')+1].split(','));row['fixed_ips']=[{'subnet_id':fixed['subnet'],'ip_address':fixed['ip-address']}]
+            if kind=='volume':
+                row.update(status='available',size=int(argv[argv.index('--size')+1]),volume_type=argv[argv.index('--type')+1],encrypted=True,attachments=[])
+                row['properties']={argv[i+1].split('=',1)[0]:argv[i+1].split('=',1)[1] for i in range(len(argv)) if argv[i]=='--property'}
             if kind == 'server':
                 row['properties'] = {argv[i+1].split('=',1)[0]:argv[i+1].split('=',1)[1] for i in range(len(argv)) if argv[i] == '--property'}
                 for i, arg in enumerate(argv):
@@ -62,6 +71,12 @@ class OnpremTests(unittest.TestCase):
             'network':{'cidr':'10.8.0.0/24','management_cidr':'10.9.0.1/32','management_network_id':'management','external_network_id':'external'},
             'nodes':{'image_id':'image','flavor_id':'flavor','availability_zones':['a','b','c'],
                 'public_key_file':str(self.key),'ssh':{'user':'ubuntu','identity_file':str(self.home/'private')}}}
+
+        observer = self.home / 'observer.json'
+        save(observer, {'observer_ip': '10.9.0.2', 'node_metrics_port': 30100, 'cluster_metrics_port': 30101})
+        template = self.home / 'applications.json'
+        save(template, {'environments': {'${environment_id}': {'ingress': {'observability_config_file': str(observer)}}}})
+        self.config['application_template_file'] = str(template)
 
     def test_read_only_connection_profile_does_not_require_a_spec(self):
         adapter = Adapter(self.config)
@@ -106,6 +121,9 @@ class OnpremTests(unittest.TestCase):
             self.assertEqual(len(creates),3)
             self.assertTrue(all(x.count('--nic')==2 and '--user-data' in x for x in creates))
             self.assertFalse(any('0.0.0.0/0' in x for x in cli.calls))
+            metrics = [x for x in cli.calls if '--dst-port' in x and x[x.index('--dst-port') + 1] in ('30100', '30101')]
+            self.assertEqual(len(metrics), 2)
+            self.assertTrue(all(x[x.index('--remote-ip') + 1] == '10.9.0.2/32' for x in metrics))
             before=len(creates)
             adapter._provision(cli,home,state,self.context)
             self.assertEqual(len([x for x in cli.calls if x[:2]==['server','create']]),before)
@@ -156,7 +174,112 @@ class OnpremTests(unittest.TestCase):
         self.assertEqual(len([row for (kind,_),row in cli.rows.items() if kind=='server']),1)
         self.assertTrue(any(row['kind']=='network' for row in result['retained_resources']))
         self.assertEqual(result['status'],'succeeded')
-        self.assertNotIn('residuals',result)
+        self.assertEqual(result['residuals'],[])
+        self.assertTrue(result['deleted'])
+
+    def test_cinder_volume_is_owned_attached_retained_and_never_adopts_foreign_disk(self):
+        from infrastructure.providers.environments import onprem_volume
+        context=copy.deepcopy(self.context);context['spec']['database']['mode']='standalone'
+        config={**self.config,'database':{'flavor_id':'db-flavor','size_gib':100,'volume_type':'encrypted','volume_zone':'nova'}}
+        adapter=Adapter(config);cli=Native(context)
+        with adapter._state(context) as (home,state),patch.object(adapter,'_console_key',return_value='ssh-ed25519 HOSTKEY'),patch.object(onprem_volume,'prepare') as prepare:
+            adapter._provision(cli,home,state,context);adapter._database_volume(cli,home,state,context)
+            disk=state['database_disk'];self.assertEqual(disk['device'],'/dev/vdb')
+            self.assertEqual(prepare.call_args.args[2]['data_disk'],disk)
+            adapter._database_volume(cli,home,state,context)
+            self.assertEqual(len([a for a in cli.calls if a[:2]==['volume','create']]),1)
+            self.assertEqual(len([a for a in cli.calls if a[:3]==['server','add','volume']]),1)
+            cli.rows['volume',disk['resource_id']]['attachments'][0]['server_id']='foreign'
+            with self.assertRaisesRegex(ProviderError,'ATTACHMENT_CHANGED'):adapter._database_volume(cli,home,state,context)
+            cli.rows['volume',disk['resource_id']]['attachments'][0]['server_id']=state['snapshots']['database']['id']
+            state['application_config_path']='private-apps.json';save(home/'state.json',state)
+        runtime=types.ModuleType('infrastructure.providers.environments.runtime')
+        runtime.teardown=lambda *args:{'status':'succeeded','environment_id':'env-one','data_policy':'retain'}
+        with patch.dict('sys.modules',{'infrastructure.providers.environments.runtime':runtime}),patch.object(adapter,'_cli',return_value=cli):result=adapter.delete(context)
+        self.assertTrue(any(row['kind']=='volume' and row['id']==disk['resource_id'] for row in result['retained_resources']))
+        self.assertEqual(cli.rows['volume',disk['resource_id']]['status'],'in-use')
+        self.assertFalse(any(a[:2]==['volume','delete'] for a in cli.calls))
+
+    def test_private_management_registration_matches_common_and_keeps_tls_identity(self):
+        from infrastructure.providers.environments import runtime
+        from infrastructure.providers.environments.onprem import registration_target
+        import environment
+        nodes = [{'id': str(i), 'resource_id': 'vm-' + str(i), 'private_ipv4': '10.8.0.' + str(i),
+                  'ssh': {'connect_host': '10.9.0.' + str(i)}} for i in (1, 2, 3)]
+        request = {'target': {'provider': 'openstack'}, 'inventory': {'control_plane': nodes[:1], 'workers': nodes[1:]}}
+        selected = registration_target(self.home / 'cluster.json', request)
+        resource = {'addresses': {'private': nodes[0]['private_ipv4']}}
+        environment.cluster_management(selected, {'members': nodes}, request, resource)
+        self.assertEqual(resource['management_endpoint'], 'https://10.9.0.1:6443')
+        self.assertEqual(resource['addresses']['private'], '10.8.0.1')
+        self.assertEqual(resource['node_metrics_addresses'], ['10.9.0.1', '10.9.0.2', '10.9.0.3'])
+        nodes[0]['ssh']['connect_host'] = '8.8.8.8'
+        with self.assertRaisesRegex(ProviderError, 'MANAGEMENT_ADDRESS'):
+            registration_target(self.home / 'cluster.json', request)
+
+    def test_actual_common_teardown_receipt_precedes_every_native_delete(self):
+        from infrastructure.providers.environments import runtime
+        import applications
+        adapter = Adapter(self.config); cli = Native(self.context)
+        config = {'environments': {'env-one': {}}, 'registry_file': str(self.home / 'registry.json'), 'state_dir': str(self.home / 'apps-state')}
+        with adapter._state(self.context) as (home, state), patch.object(adapter, '_console_key', return_value='ssh-ed25519 HOSTKEY'):
+            adapter._provision(cli, home, state, self.context)
+            state['application_config_path'] = str(self.home / 'apps.json'); save(home / 'state.json', state)
+        home = runtime.private_dir(self.home / 'bootstrap/env-one')
+        save(home / 'binding.json', {key: self.context[key] for key in ('environment_id', 'owner_id', 'account_id')} |
+             {'application_config_hash': runtime.digest(config)})
+        with patch.object(adapter, '_cli', return_value=cli), patch.object(applications, 'load_config', return_value=config):
+            with self.assertRaises((FileNotFoundError, ProviderError)):
+                adapter.delete(self.context)
+            self.assertFalse(any('delete' in call or 'stop' in call for call in cli.calls))
+            home = runtime.private_dir(self.home / 'bootstrap/env-one')
+            save(home / 'binding.json', {key: self.context[key] for key in ('environment_id', 'owner_id', 'account_id')} |
+                 {'application_config_hash': runtime.digest(config)})
+            save(home / 'teardown.json', {'status': 'succeeded', 'environment_id': 'env-one', 'data_policy': 'retain', 'retained_resources': []})
+            result = adapter.delete(self.context)
+        self.assertTrue(result['deleted']); self.assertFalse(cli.rows)
+
+    def test_pg_native_descriptor_runs_shared_installer_and_binds_app_to_fixed_tls_ip(self):
+        from contextlib import nullcontext
+        from infrastructure.providers.environments import runtime
+        import standalone
+        import standalone_binding
+        context = copy.deepcopy(self.context); context['spec']['database']['mode'] = 'standalone'
+        for name in ('ca', 'cert', 'tls-key', 'password', 'private'):
+            path = self.home / name; path.write_text('-----BEGIN CERTIFICATE-----\n' + 'x' * 32); path.chmod(0o600)
+        (self.home / 'password').write_text('test-probe-password-32-characters')
+        config = {'version': 1, 'client_cidrs': ['10.8.0.0/24'],
+                  'tls': {'ca_file': str(self.home / 'ca'), 'certificate_file': str(self.home / 'cert'), 'key_file': str(self.home / 'tls-key'), 'server_name': 'db.internal.example'},
+                  'probe_password_file': str(self.home / 'password'),
+                  'backup': {'type': 's3', 'bucket': 'approved-bucket', 'prefix': '/postgres', 'retention_full': 2, 'identity': 'instance', 'endpoint': 's3.example.com', 'region': 'region1'}}
+        save(self.home / 'postgres.json', config)
+        adapter = Adapter({**self.config, 'database': {'flavor_id': 'db', 'config_file': str(self.home / 'postgres.json')}})
+        cli = Native(context); original = standalone.run; calls = []
+        def runner(argv, *_):
+            variables = standalone.read(argv[-1][1:]); guest = standalone.read(variables['railshot_standalone_input'])
+            calls.append(guest)
+            standalone.save(Path(variables['railshot_standalone_receipt']), {'nonce': guest['nonce'], 'environment_id': guest['environment_id'],
+                'resource_id': guest['resource_id'], 'ready': True, 'system_identifier': '1234567890123456789', 'action': 'install',
+                'backup': {'backup_id': '20261015-120000F', 'system_identifier': '1234567890123456789', 'proof': 'a' * 64}})
+            return 0
+        def execute(**kwargs):
+            result = original(**kwargs, runner=runner)
+            self.assertTrue(result.get('ready'), result.get('error'))
+            return result
+        with adapter._state(context) as (home, state), patch.object(adapter, '_console_key', return_value='ssh-ed25519 HOSTKEY'):
+            adapter._provision(cli, home, state, context)
+            state['database_disk'] = {'resource_id': 'volume-owned', 'device': '/dev/vdb', 'mount_path': '/var/lib/postgresql'}
+            with patch.object(standalone, 'run', side_effect=execute), patch.object(standalone.shutil, 'which', return_value='/usr/bin/ansible-playbook'), patch.object(standalone.ansible, 'forwarded_port', return_value=nullcontext(None)):
+                adapter._database(home, state, context)
+            self.assertTrue(state['readiness']['database'])
+            self.assertEqual(calls[0]['private_ipv4'], '10.8.0.14')
+            self.assertEqual(calls[0]['data_disk'], state['database_disk'])
+            node = private_file(str(home / 'database-node.json'))
+            self.assertTrue(node['ssh']['connect_host'].startswith('10.9.0.'))
+            bundle = standalone.application_bundle(node, str(self.home / 'postgres.json'), context)
+            prepared = standalone_binding.prepare({'ingress': {'standalone_database': bundle}}, 'env-one', 'app-' + 'a' * 24, self.home)
+            self.assertEqual(prepared['binding']['host'], '10.8.0.14')
+            self.assertEqual(prepared['binding']['sslmode'], 'verify-full')
 
     def test_templates_do_not_expand_embedded_expressions(self):
         self.assertEqual(render({'${id}':'${node}'},{'id':'one','node':{'id':1}}),{'one':{'id':1}})
@@ -206,4 +329,31 @@ class OnpremTests(unittest.TestCase):
         with patch('subprocess.run',return_value=result),self.assertRaisesRegex(ProviderError,'PROJECT_MISMATCH'):
             cli.run(['network','show','n'])
 
-if __name__=='__main__': unittest.main()
+
+
+
+class DataDiskSafetyTests(unittest.TestCase):
+    def test_existing_or_root_disk_cannot_be_formatted(self):
+        from infrastructure.providers.environments import onprem_volume
+        node={'private_ipv4':'10.80.0.14','ssh':{'known_hosts_file':'/private/hosts','identity_file':'/private/key','user':'railshot','connect_host':'10.90.0.14'},'data_disk':{'resource_id':'volume1','device':'/dev/vdb','mount_path':'/var/lib/postgresql'}}
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(onprem_volume.subprocess,'run',return_value=types.SimpleNamespace(returncode=0,stdout=json.dumps({'disk':{'fstype':'ext4'},'mount':[]}).encode())) as run:
+                with self.assertRaisesRegex(ProviderError,'NOT_BLANK'):onprem_volume.prepare(Path(directory),{'steps':{}},node)
+                self.assertEqual(run.call_count,1);self.assertNotIn('mkfs',run.call_args.kwargs['input'].decode())
+            node['data_disk']['device']='/dev/vda'
+            with patch.object(onprem_volume.subprocess,'run') as run,self.assertRaisesRegex(ProviderError,'DEVICE_UNPROVEN'):onprem_volume.prepare(Path(directory),{'steps':{}},node)
+            run.assert_not_called()
+
+    def test_lost_format_reply_is_durable_unknown_and_never_replayed(self):
+        from infrastructure.providers.environments import onprem_volume
+        node={'private_ipv4':'10.80.0.14','ssh':{'known_hosts_file':'/private/hosts','identity_file':'/private/key','user':'railshot','connect_host':'10.90.0.14'},'data_disk':{'resource_id':'volume1','device':'/dev/vdb','mount_path':'/var/lib/postgresql'}}
+        probe=types.SimpleNamespace(returncode=0,stdout=json.dumps({'disk':{'fstype':None},'mount':[]}).encode())
+        with tempfile.TemporaryDirectory() as directory:
+            home=Path(directory);state={'steps':{}}
+            def interrupted(*args,**kwargs):
+                self.assertEqual(private_file(str(home/'state.json'))['steps']['database-format']['status'],'unknown')
+                raise subprocess.TimeoutExpired(args[0],180)
+            with patch.object(onprem_volume.subprocess,'run',side_effect=[probe,subprocess.TimeoutExpired('ssh',180)]),self.assertRaises(subprocess.TimeoutExpired):onprem_volume.prepare(home,state,node)
+            self.assertEqual(private_file(str(home/'state.json'))['steps']['database-format']['status'],'unknown')
+            with patch.object(onprem_volume.subprocess,'run',return_value=probe) as run,self.assertRaisesRegex(ProviderError,'RECONCILIATION'):onprem_volume.prepare(home,state,node)
+            self.assertEqual(run.call_count,1)
