@@ -74,7 +74,7 @@ def load_config(config_path):
     for name, profile in config['environments'].items():
         require(isinstance(name, str) and re.fullmatch(ENVIRONMENT, name))
         require(exact(profile, ('provider', 'tenant', 'source_repository', 'pull_secret_file', 'target', 'ingress')))
-        require(profile['provider'] in ('aws', 'gcp', 'openstack') and isinstance(profile['tenant'], str)
+        require(profile['provider'] in ('aws', 'gcp', 'openstack', 'ncp') and isinstance(profile['tenant'], str)
                 and re.fullmatch(r'[a-z0-9]{1,20}', profile['tenant']))
         require(isinstance(profile['source_repository'], str) and re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', profile['source_repository']))
         absolute(profile['pull_secret_file'])
@@ -140,6 +140,8 @@ def _inputs(config, request):
     # The validated SSM reference joins AWS ARN/raw instance-ID aliases without a cloud lookup.
     resource = native['inventory']['control_plane'][0]['ssh']['transport_ref'] if profile['provider'] == 'aws' else descriptor['resource_id']
     physical = {'provider': profile['provider'], 'resource_id': resource}
+    if profile['provider'] == 'ncp':
+        physical['member_no'] = native['target']['account_id']
     if profile['provider'] == 'openstack':
         physical['project_id'] = (native['target']['account_id'] if selected.get('profile') == 'kubeadm-1c2w'
                                   else selected['project_id'])
