@@ -8,7 +8,7 @@ import stat
 import sys
 
 
-def configure(binding, connect, sql):
+def configure(binding, connect, sql, *, ca_file="/etc/patroni/tls/postgres-ca.crt"):
     database = binding['database']
     owner, runtime = binding['migration']['username'], binding['runtime']['username']
     if (binding['version'] != 1 or binding['sslmode'] != 'verify-full' or binding['port'] != 5432
@@ -62,7 +62,7 @@ def configure(binding, connect, sql):
     for credential in (binding['migration'], binding['runtime']):
         with closing(connect(dbname=database, user=credential['username'], password=credential['password'],
                 host=binding['host'], port=5432, sslmode='verify-full',
-                sslrootcert='/etc/patroni/tls/postgres-ca.crt', connect_timeout=10,
+                sslrootcert=ca_file, connect_timeout=10,
                 options='-c statement_timeout=10000')) as connection, connection:
             with connection.cursor() as cursor:
                 cursor.execute('SELECT current_user, current_database(), ssl FROM pg_stat_ssl WHERE pid=pg_backend_pid()')

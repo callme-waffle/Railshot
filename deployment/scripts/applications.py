@@ -14,6 +14,7 @@ import stat
 import sys
 
 import environment as runtime
+import standalone_binding
 from service_name import service_name
 
 APP = r'[a-z][a-z0-9-]{1,28}[a-z0-9]'
@@ -208,10 +209,12 @@ def register(config_path, request):
                     try:
                         runtime.grant_control_objects(cd, registered, app_id, environment_id=env_id)
                         with runtime.runtime_kubectl(native) as kube:
-                            role = next(d for d in runtime.runtime_documents(registered['target'], app_id, pull, None) if d['kind'] == 'Role')
+                            database = standalone_binding.prepare(profile, env_id, app_id, home)
+                            db_binding = database['binding'] if database else None
+                            role = next(d for d in runtime.runtime_documents(registered['target'], app_id, pull, db_binding) if d['kind'] == 'Role')
                             runtime.owned_apply(kube, role)
                             control = lambda ns, *args, **kwargs: runtime.argo.kubectl(cd['context'], ns, *args, **kwargs)
-                            runtime.owned_apply(control, runtime.application_project(registered, app_id))
+                            runtime.owned_apply(control, runtime.application_project(registered, app_id, db_binding))
                             record['runtime_permissions_version'] = 2
                             record['cluster_registration'] = runtime.share_application_cluster(kube, cd, registered, env_id)
                         record['steps'].append('cluster')
@@ -252,6 +255,9 @@ def register(config_path, request):
                           'argocd_namespace': 'argocd', 'cluster_server': endpoint, 'node_port': port,
                           'path': 'gitops/applications/' + app + '/' + app_id,
                           'image_pull_secret': {'namespace': app_id, 'name': 'ghcr-pull'}}
+                database = standalone_binding.prepare(profile, env_id, app_id, home)
+                db_binding = database['binding'] if database else None
+                if database: target['database'] = database['target']
                 registered = {'app': app, 'tenant': profile['tenant'], 'target': target}
                 cd = {**config['cd'], 'targets': {app_id: registered}}
                 runtime.preflight_renewal(cd, registered, app_id)
@@ -264,7 +270,7 @@ def register(config_path, request):
                           'environment_sha256': digest(authority), 'target': target, 'stage': 'reserved', 'steps': [],
                           'deployment_supported': False}
                 # Read-only ownership check precedes the mutation intent and any permission grants.
-                documents = runtime.runtime_documents(target, app_id, pull, None)
+                documents = runtime.runtime_documents(target, app_id, pull, db_binding)
                 existing = kube(app_id, 'get', 'Namespace', app_id, '--ignore-not-found', '-o', 'json')
                 require(not existing or (not existing['metadata'].get('ownerReferences') and all(
                     existing['metadata'].get('labels', {}).get(key) == value for key, value in documents[0]['metadata']['labels'].items())), 'APPLICATION_NAMESPACE_CONFLICT')
@@ -278,12 +284,13 @@ def register(config_path, request):
                     return value
                 mutation_started = True
                 try:
+                    if database: step('database', lambda: standalone_binding.install(database))
                     step('namespace', lambda: [runtime.owned_apply(kube, document) for document in documents])
                     step('permissions', lambda: runtime.grant_control_objects(cd, registered, app_id, environment_id=env_id))
                     tls = {'tls_server_name': descriptor['addresses']['private']} if (
                         profile['provider'] == 'openstack' and native['inventory']['control_plane'][0]['ssh'].get('connect_host')
                         or descriptor.get('management_endpoint')) else {}
-                    renewal, expiry = step('argo', lambda: runtime.register_argo(kube, cd, registered, app_id, app_id, None, **tls))
+                    renewal, expiry = step('argo', lambda: runtime.register_argo(kube, cd, registered, app_id, app_id, db_binding, **tls))
                     step('credentials', lambda: runtime.install_renewal(cd, renewal))
                     record['cluster_registration'] = step('cluster', lambda: runtime.share_application_cluster(kube, cd, registered, env_id))
                     step('ci', lambda: runtime.bind_ci(profile, registered, app_id))
