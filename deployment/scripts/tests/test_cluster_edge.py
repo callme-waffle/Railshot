@@ -343,6 +343,20 @@ class ClusterEdgeTests(unittest.TestCase):
         self.assertEqual({row['availability_zone'] for row in prepared['values']['compute_nodes'].values()},
                          {'asia-northeast3-b', 'asia-northeast3-c'})
         before = prepared['binding_sha256']
+        credentials = self.root / 'cloud-credentials.json'
+        adc = edge.private_json(credentials)
+        adc['private_key'] = '-----BEGIN PRIVATE KEY-----rotated-fixture-----END PRIVATE KEY-----'
+        edge.durable_write(credentials, edge.encoded(adc))
+        self.assertEqual(edge.validate(self.request)['binding_sha256'], before)
+        adc['client_email'] = 'another@railshot-project.iam.gserviceaccount.com'
+        edge.durable_write(credentials, edge.encoded(adc))
+        self.assertNotEqual(edge.validate(self.request)['binding_sha256'], before)
+        self.config['credential_binding'] = {'account_id': '123456789012', 'role_arn': 'arn:aws:iam::123456789012:role/railshot', 'credential_ref': 'customer-a', 'policy_revision': 'v1'}
+        self.write()
+        with self.assertRaisesRegex(edge.EdgeError, 'CREDENTIAL_BINDING_INVALID'):
+            edge.validate(self.request)
+        self.config.pop('credential_binding'); self.write()
+        before = edge.validate(self.request)['binding_sha256']
         dns_authority = edge.private_json(self.root / 'dns.json')
         dns_authority['zone_id'] = 'b' * 32
         edge.durable_write(self.root / 'dns.json', edge.encoded(dns_authority))

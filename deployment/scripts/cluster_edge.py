@@ -123,11 +123,12 @@ def cloud_auth(config):
                 all(isinstance(value, str) and value and '\x00' not in value for value in credential.values()),
                 'CLUSTER_EDGE_CREDENTIAL_INVALID')
     elif config['provider'] == 'gcp':
-        require(credential.get('type') == 'service_account' and credential.get('project_id') == config['account_id'] and
-                isinstance(credential.get('client_email'), str) and
-                re.fullmatch(r'[a-z0-9-]+@' + re.escape(config['account_id']) + r'\.iam\.gserviceaccount\.com', credential['client_email']) and
-                isinstance(credential.get('private_key'), str) and '-----BEGIN PRIVATE KEY-----' in credential['private_key'] and
-                credential.get('token_uri') == 'https://oauth2.googleapis.com/token', 'CLUSTER_EDGE_CREDENTIAL_INVALID')
+        sys.path.insert(0, str(ROOT))
+        from infrastructure.ansible.cloud_credentials import gcp_credential_identity
+        try:
+            gcp_credential_identity(credential, config['credentials_file'], config['account_id'])
+        except ValueError as error:
+            raise EdgeError('CLUSTER_EDGE_CREDENTIAL_INVALID') from error
     else:
         allowed = {'OS_AUTH_URL', 'OS_PROJECT_ID', 'OS_REGION_NAME', 'OS_USERNAME', 'OS_PASSWORD',
                    'OS_USER_DOMAIN_NAME', 'OS_USER_DOMAIN_ID', 'OS_APPLICATION_CREDENTIAL_ID',
@@ -167,6 +168,7 @@ def credential_env(config, original):
     elif config['provider'] == 'gcp':
         env.update(GOOGLE_APPLICATION_CREDENTIALS=config['credentials_file'], CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=config['credentials_file'],
                    CLOUDSDK_CORE_PROJECT=config['account_id'])
+        if original.get('CLOUDSDK_CONFIG'): env['CLOUDSDK_CONFIG'] = original['CLOUDSDK_CONFIG']
     else:
         env.update(credential)
         env.update(OS_PROJECT_ID=config['account_id'], OS_REGION_NAME=config['region'],
@@ -177,6 +179,10 @@ def credential_env(config, original):
 
 
 def validate(request):
+    if request.get('target', {}).get('provider') == 'ncp':
+        sys.path.insert(0, str(ROOT))
+        from infrastructure.providers.ncp.edge import validate_cluster
+        return validate_cluster(request)
     """Bind private provider authority to the core's validated 3-node inventory."""
     target, inventory = request['target'], request['inventory']
     require(request['runtime'].get('profile') == 'kubeadm-1c2w', 'CLUSTER_EDGE_PROFILE_REQUIRED')
@@ -242,6 +248,11 @@ def validate(request):
         # Rotating STS session bytes are not durable authority. The configured role,
         # account and policy remain bound; the AWS account is observed at execution.
         authority_hashes['provider_credentials'] = digest(binding)
+    # GCP binds the refreshable credential identity independently of AWS STS.
+    # The AWS-only binding check above still rejects cross-provider role inputs.
+    if config['provider'] == 'gcp':
+        from infrastructure.ansible.cloud_credentials import gcp_credential_identity
+        authority_hashes['provider_credentials'] = digest(gcp_credential_identity(credential, config['credentials_file'], config['account_id']))
     for provider, key in (('aws', 'account_id'), ('gcp', 'project_id')):
         if config.get(provider + '_authority_file'):
             require(config['provider'] == provider, 'CLUSTER_EDGE_CREDENTIAL_INVALID')
@@ -726,6 +737,9 @@ def provision(request, *, state_dir, runner=None, deadline=None, env=None, kube=
     runner is an injected command/DNS/Tunnel transport for offline contract tests.
     No credentials or provider command output is returned to callers.
     """
+    if request.get('target', {}).get('provider') == 'ncp':
+        from infrastructure.providers.ncp.edge import provision_cluster
+        return provision_cluster(request, expected_binding_sha256=expected_binding_sha256, deadline=deadline)
     require(deadline is None or time.monotonic() < deadline, 'CLUSTER_EDGE_DEADLINE_EXCEEDED')
     prepared = validate(request)
     require(expected_binding_sha256 is None or expected_binding_sha256 == prepared['binding_sha256'], 'CLUSTER_EDGE_SCOPE_CHANGED')

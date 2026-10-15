@@ -108,8 +108,9 @@ def validate(request):
                 connect = ipaddress.IPv4Address(node['ssh']['connect_host'])
             except ipaddress.AddressValueError as exc:
                 raise ContractError('ssh: invalid relay IPv4 address') from exc
-            if (request['target']['provider'] != 'openstack' or reference is not None
-                    or not any(connect in network for network in PRIVATE)):
+            allowed = (request['target']['provider'] == 'openstack' and any(connect in network for network in PRIVATE)
+                       or request['target']['provider'] == 'ncp' and connect.is_global)
+            if not allowed or reference is not None:
                 raise ContractError('ssh: relay requires an OpenStack RFC1918 address without transport_ref')
         if reference is not None:
             kind, *parts = transport_parts(reference)
