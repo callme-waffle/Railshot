@@ -50,4 +50,3 @@ def gcp_credential_identity(data, path, project, expected_service_account=None):
     if not re.fullmatch(r'[a-z][a-z0-9-]{4,28}[a-z0-9]@' + re.escape(project) + r'\.iam\.gserviceaccount\.com', email) or expected_service_account and email != expected_service_account:
         raise CredentialError('GCP_SERVICE_ACCOUNT_SCOPE_MISMATCH')
     return identity
-
