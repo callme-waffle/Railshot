@@ -84,6 +84,18 @@ class ClusterEdgeTests(unittest.TestCase):
         self.write()
         self.runner = Runner(self)
 
+    def test_sts_rotation_preserves_explicit_role_binding(self):
+        self.config['credential_binding'] = {'account_id': '123456789012', 'role_arn': 'arn:aws:iam::123456789012:role/railshot', 'credential_ref': 'customer-a', 'policy_revision': 'v1'}
+        credentials = self.root / 'cloud-credentials.json'
+        edge.durable_write(credentials, edge.encoded({'AWS_ACCESS_KEY_ID': 'session-a', 'AWS_SECRET_ACCESS_KEY': 'private-a', 'AWS_SESSION_TOKEN': 'token-a'}))
+        self.write()
+        first = edge.validate(self.request)['binding_sha256']
+        edge.durable_write(credentials, edge.encoded({'AWS_ACCESS_KEY_ID': 'session-b', 'AWS_SECRET_ACCESS_KEY': 'private-b', 'AWS_SESSION_TOKEN': 'token-b'}))
+        self.assertEqual(first, edge.validate(self.request)['binding_sha256'])
+        self.config['credential_binding']['role_arn'] = 'arn:aws:iam::123456789012:role/other'
+        self.write()
+        self.assertNotEqual(first, edge.validate(self.request)['binding_sha256'])
+
     @staticmethod
     def node(role, index):
         return {'id': role, 'resource_id': 'arn:aws:ec2:ap-northeast-2:123456789012:instance/i-' + str(index) * 17,

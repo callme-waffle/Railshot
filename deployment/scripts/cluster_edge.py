@@ -183,7 +183,7 @@ def validate(request):
     config = private_json(request['runtime']['edge'])
     fields = {'version', 'cluster_id', 'provider', 'account_id', 'region', 'variables_file', 'worker_bindings', 'credentials_file'}
     require(isinstance(config, dict) and fields <= set(config) <= fields |
-            {'dns_config_file', 'tunnel', 'timeout_seconds'} and type(config['version']) is int and config['version'] == 1,
+            {'dns_config_file', 'tunnel', 'timeout_seconds', 'credential_binding'} and type(config['version']) is int and config['version'] == 1,
             'CLUSTER_EDGE_CONFIG_INVALID')
     require(config['provider'] in PROVIDERS and
             (config['cluster_id'], config['provider'], config['account_id'], config['region']) ==
@@ -231,6 +231,17 @@ def validate(request):
             require(re.fullmatch(UUID, binding['subnet_id']), 'CLUSTER_EDGE_COMPUTE_BINDING_MISMATCH')
     credential = cloud_auth(config)
     authority_hashes = {'provider_credentials': digest(credential)}
+    if 'credential_binding' in config:
+        binding = config['credential_binding']
+        require(config['provider'] == 'aws' and isinstance(binding, dict) and
+                set(binding) == {'account_id', 'role_arn', 'credential_ref', 'policy_revision'} and
+                binding['account_id'] == config['account_id'] and
+                isinstance(binding['role_arn'], str) and re.fullmatch(r'arn:aws:iam::' + re.escape(config['account_id']) + r':role/[A-Za-z0-9_+=,.@/-]+', binding['role_arn']) and
+                all(isinstance(binding[k], str) and binding[k] for k in ('credential_ref', 'policy_revision')) and
+                'AWS_SESSION_TOKEN' in credential, 'CLUSTER_EDGE_CREDENTIAL_BINDING_INVALID')
+        # Rotating STS session bytes are not durable authority. The configured role,
+        # account and policy remain bound; the AWS account is observed at execution.
+        authority_hashes['provider_credentials'] = digest(binding)
     if credential.get('OS_CACERT'):
         authority_hashes['provider_ca'] = hashlib.sha256(Path(credential['OS_CACERT']).read_bytes()).hexdigest()
     values = render_values(config, values, workers)
@@ -744,6 +755,11 @@ def provision(request, *, state_dir, runner=None, deadline=None, env=None, kube=
         if config['provider'] == 'aws' and isinstance(executor, NativeRunner):
             caller = json.loads(executor(['aws', 'sts', 'get-caller-identity', '--output', 'json', '--no-cli-pager'], cwd=root))
             require(caller.get('Account') == config['account_id'], 'CLUSTER_EDGE_SCOPE_MISMATCH')
+            if config.get('credential_binding'):
+                role_name = config['credential_binding']['role_arn'].rsplit('/', 1)[1]
+                require(isinstance(caller.get('Arn'), str) and caller['Arn'].startswith(
+                    'arn:aws:sts::' + config['account_id'] + ':assumed-role/' + role_name + '/'),
+                    'CLUSTER_EDGE_CREDENTIAL_ROLE_MISMATCH')
         if config['provider'] == 'openstack':
             token = json.loads(executor(['openstack', 'token', 'issue', '-f', 'json'], cwd=root))
             require(token.get('project_id') == config['account_id'], 'CLUSTER_EDGE_SCOPE_MISMATCH')
