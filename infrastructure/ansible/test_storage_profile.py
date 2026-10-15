@@ -156,7 +156,10 @@ class ProfileTests(unittest.TestCase):
         if req['target']['provider'] == 'aws':
             cred.write_text(json.dumps({'AWS_ACCESS_KEY_ID': 'access-private', 'AWS_SECRET_ACCESS_KEY': 'secret-private'}))
         else:
-            cred.write_text(json.dumps({'type': 'service_account', 'project_id': 'railshot-project'}))
+            cred.write_text(json.dumps({'type': 'service_account', 'project_id': 'railshot-project',
+                'client_email': 'fixture@railshot-project.iam.gserviceaccount.com',
+                'private_key': '-----BEGIN PRIVATE KEY-----fixture-----END PRIVATE KEY-----',
+                'token_uri': 'https://oauth2.googleapis.com/token'}))
         cred.chmod(0o600); cfg['credentials_file'] = str(cred)
         return storage.prepare(req, work=directory, env={'PATH': '/usr/bin', 'UNSAFE_CREDENTIAL': 'drop'}, deadline=time.monotonic() + 300, runner=cloud)
 

@@ -15,6 +15,7 @@ import re
 import signal
 import stat
 import subprocess
+import sys
 import time
 
 HERE = Path(__file__).resolve().parent
@@ -234,13 +235,19 @@ def _cloud_env(storage, provider, original):
                    AWS_PAGER='', AWS_CONFIG_FILE='/dev/null', AWS_SHARED_CREDENTIALS_FILE='/dev/null',
                    AWS_EC2_METADATA_DISABLED='true', TF_IN_AUTOMATION='1')
     else:
-        if data.get('type') != 'service_account' or data.get('project_id') != storage['binding']['account_id']:
-            raise StorageError('GCP credential project must match cluster project')
+        sys.path.insert(0, str(ROOT))
+        from infrastructure.providers.gcp.auth import credential_identity
+        try:
+            credential_identity(str(credential), storage['binding']['account_id'])
+        except ValueError as error:
+            raise StorageError('GCP credential project/identity must match cluster project') from error
         # ADC is read by Terraform; REST observations use a short-lived token from
         # the same service account via gcloud with its isolated configuration.
         env.update(GOOGLE_APPLICATION_CREDENTIALS=str(credential),
                    CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=str(credential),
                    CLOUDSDK_CORE_PROJECT=storage['binding']['account_id'], TF_IN_AUTOMATION='1')
+        if original.get('CLOUDSDK_CONFIG'):
+            env['CLOUDSDK_CONFIG'] = original['CLOUDSDK_CONFIG']
     return env
 
 
