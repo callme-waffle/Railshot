@@ -26,6 +26,7 @@ validate는 cloud API를 호출하지 않으며 live 검증 성공을 반환하�
 | 입력 | 준비할 값 |
 |---|---|
 | registry account ID | Railshot 연결 별칭. AWS 12자리 계정 번호와 별개 |
+| `runtime_permissions_boundary_arn` | 같은 계정의 `arn:aws:iam::<account_id>:policy/railshot-environment-runtime-boundary`. 운영자가 먼저 만들고 provisioner에는 boundary 수정/삭제 권한을 주지 않음 |
 | `adapter.account_id` | 실제 AWS 12자리 계정 번호 |
 | `auth.mode` | 고객 계정 `customer_role`, Railshot 계정 `managed_role` |
 | `auth.role_arn` | 위 AWS 계정에 있는 정확한 provisioning role ARN |
@@ -147,3 +148,11 @@ runtime 3개 VM에는 EIP를 할당하며 예산 파일의 `elastic_ip_count: 3`
 DB는 첫 subnet의 +14 고정 주소를 사용한다(기본 `10.72.0.14`). 미리 준비하는 PostgreSQL 서버 인증서에는 이 IP SAN이 필요하다. VM readback 주소가 다르면 설치하지 않는다. DB VM은 EIP 없이 SSM과 별도 역할을 사용한다. `database:none` 입력에서는 `database_config_file`을 빈 문자열로 두고, standalone을 선택할 때 생성된 `postgres-config.json`을 완성한 후 해당 private 경로를 설정한다.
 
 오프라인 validate는 실제 앱 schema, GHCR 자격 형태, Route53 zone/domain/route, CI token 파일, observer 설정·포트·허용 source 일치, DB 선택 시 TLS/backup 입력, 예산 승인·만료를 확인한다. 네이티브 API 호출이나 live 준비 완료를 의미하지 않는다. bootstrap 중간 실패로 공통 binding receipt가 없는 경우 안전한 teardown 권한을 입증할 때까지 unknown cleanup으로 남긴다.
+
+## Runtime IAM boundary prerequisite
+
+`aws-network` creates `env-<24 hex>-control`, `-worker`, and (when enabled) `-database` roles with the required `runtime_permissions_boundary_arn`. The adapter rejects a missing, foreign-account, or differently named boundary before credential loading; Terraform also checks the account. The boundary is administrator-managed and is a maximum, not an attached permission grant. Keep the existing SSM attachment, parameter-read deny, control-only EFS inline policy and database-only bucket/prefix inline policy. Provisioner `CreateRole` must require this exact boundary; `PutRolePolicy` is restricted to these bounded runtime roles; `PassRole` is limited to EC2. Do not grant the provisioner boundary policy editing or removal. An existing deployment lacking a boundary requires a separately reviewed administrator migration; do not relax the condition to adopt it.
+
+The administrator must add the exact existing backup bucket and environment prefix to the boundary before PostgreSQL backup/restore. The base boundary must not grant arbitrary bucket access. Supply the existing Route53 zone/domain separately. Policy JSON and local transport tests do not establish live IAM acceptance or a billing cap; the approved test cost remains below USD 10 and retained EBS/EFS can continue charging after teardown.
+
+Boundary follow-up local validation: AWS Python adapter/common dispatcher 27 tests passed; the new `boundary.tftest.hcl` mock-provider plan checks passed 3/3. The existing network mock-plan suite still fails on computed ingress / null and collection comparison assertions, so the full Terraform suite is not reported as passing. No real AWS policy or resource mutation was executed.

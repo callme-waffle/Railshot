@@ -1,5 +1,6 @@
 mock_provider "aws" {}
 variables {
+  runtime_permissions_boundary_arn = "arn:aws:iam::123456789012:policy/railshot-environment-runtime-boundary"
   management_source_cidrs = ["8.8.8.8/32"]
   observer_source_cidrs = ["8.8.4.4/32"]
   metrics_ports = [30910, 30081]

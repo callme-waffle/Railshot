@@ -200,6 +200,27 @@ class PortContractTests(unittest.TestCase):
         self.assertIsNone(template['files']['aws-budget.json']['max_cost_usd'])
         self.assertFalse(validate_config(template['adapter'])['valid'])
 
+    def test_missing_foreign_and_unapproved_runtime_boundary_fail_before_credentials(self):
+        from infrastructure.providers.aws.config import config_template, validate_config, require_config
+        config = config_template(Path(self.tmp.name))['adapter']
+        self.assertIn('runtime_permissions_boundary_arn', validate_config(config)['missing'])
+        config['account_id'] = ACCOUNT
+        for boundary in ('', 'arn:aws:iam::999999999999:policy/railshot-environment-runtime-boundary',
+                         'arn:aws:iam::' + ACCOUNT + ':policy/AdministratorAccess'):
+            config['runtime_permissions_boundary_arn'] = boundary
+            with self.subTest(boundary=boundary), patch('infrastructure.providers.aws.config.Session') as session:
+                with self.assertRaisesRegex(AwsError, 'AWS_RUNTIME_BOUNDARY_INVALID'): require_config(config)
+                session.assert_not_called()
+
+    def test_network_passes_boundary_to_terraform(self):
+        boundary = 'arn:aws:iam::' + ACCOUNT + ':policy/railshot-environment-runtime-boundary'
+        self.adapter.config.update(runtime_permissions_boundary_arn=boundary, application_template_file='template',
+                                   management_source_cidrs=['8.8.8.8/32'], observer_source_cidrs=['8.8.4.4/32'])
+        native = Mock(); native.apply.return_value = {'network': {'vpc_id': 'vpc-test'}}
+        with patch.object(self.adapter, '_spec', return_value=['ap-northeast-2a', 'ap-northeast-2c']), patch.object(self.adapter, '_tf', return_value=native), patch('infrastructure.providers.aws.adapter.private_json', side_effect=[{'profile': {'ingress': {'observability_config_file': 'observer'}}}, {'node_metrics_port': 30091, 'cluster_metrics_port': 30092}]):
+            self.adapter._network({'database': {'mode': 'none'}}, self.context, Mock())
+        self.assertEqual(native.apply.call_args.args[0]['runtime_permissions_boundary_arn'], boundary)
+
     def test_compute_alias_stays_within_existing_target_contract(self):
         from infrastructure.providers.aws.native import digest
         for role in ('control', 'compute-a', 'compute-b', 'database'):
@@ -229,7 +250,7 @@ class PortContractTests(unittest.TestCase):
         root = Path(self.tmp.name); template = config_template(root); config = template['adapter']
         for name, value in template['files'].items(): save(root / name, value)
         key = root / 'key'; key.write_text('private-fixture'); key.chmod(0o600)
-        config.update(account_id=ACCOUNT, ami_id='ami-' + 'a' * 17, ssh_identity_file=str(key), ssh_public_key='ssh-ed25519 Zml4dHVyZQ==', management_source_cidrs=['8.8.8.8/32'], observer_source_cidrs=['8.8.4.4/32'])
+        config.update(runtime_permissions_boundary_arn='arn:aws:iam::' + ACCOUNT + ':policy/railshot-environment-runtime-boundary', account_id=ACCOUNT, ami_id='ami-' + 'a' * 17, ssh_identity_file=str(key), ssh_public_key='ssh-ed25519 Zml4dHVyZQ==', management_source_cidrs=['8.8.8.8/32'], observer_source_cidrs=['8.8.4.4/32'])
         config['auth'].update(role_arn=ROLE, external_id='fixture-owner')
         save(root / 'aws-credentials.json', {'AWS_ACCESS_KEY_ID': 'fixture', 'AWS_SECRET_ACCESS_KEY': 'fixture'})
         save(root / 'aws-edge.json', {'zone_id': 'ZABCDEF', 'base_domain': 'railshot.io', 'routes': {'bootstrap': {'host': 'runtime.railshot.io', 'node_port': 30080, 'health_path': '/health', 'priority': 1}}})

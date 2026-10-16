@@ -5,6 +5,13 @@ terraform {
 variable "account_id" { type = string }
 variable "environment_id" { type = string }
 variable "owner_id" { type = string }
+variable "runtime_permissions_boundary_arn" {
+  type = string
+  validation {
+    condition     = can(regex("^arn:aws:iam::[0-9]{12}:policy/railshot-environment-runtime-boundary$", var.runtime_permissions_boundary_arn))
+    error_message = "Use the administrator-managed runtime permissions boundary."
+  }
+}
 variable "cidr" { type = string }
 variable "zones" { type = list(string) }
 variable "management_source_cidrs" { type = list(string) }
@@ -116,8 +123,15 @@ resource "aws_security_group" "database" {
   }
 }
 resource "aws_iam_role" "node" {
-  for_each           = toset(var.database_enabled ? ["control", "worker", "database"] : ["control", "worker"])
-  name               = "${var.environment_id}-${each.key}"
+  for_each             = toset(var.database_enabled ? ["control", "worker", "database"] : ["control", "worker"])
+  name                 = "${var.environment_id}-${each.key}"
+  permissions_boundary = var.runtime_permissions_boundary_arn
+  lifecycle {
+    precondition {
+      condition     = var.runtime_permissions_boundary_arn == "arn:aws:iam::${var.account_id}:policy/railshot-environment-runtime-boundary"
+      error_message = "Runtime permissions boundary must belong to the bound AWS account."
+    }
+  }
   assume_role_policy = jsonencode({ Version = "2012-10-17", Statement = [{ Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" }, Action = "sts:AssumeRole" }] })
 }
 resource "aws_iam_role_policy_attachment" "ssm" {

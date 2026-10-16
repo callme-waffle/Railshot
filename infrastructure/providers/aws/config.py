@@ -13,11 +13,14 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def require_config(config):
-    required = {'account_id', 'auth', 'ami_id', 'ssh_identity_file', 'ssh_public_key', 'edge_variables_file', 'application_template_file', 'budget_file', 'management_source_cidrs', 'observer_source_cidrs'}
+    required = {'account_id', 'auth', 'ami_id', 'ssh_identity_file', 'ssh_public_key', 'edge_variables_file', 'application_template_file', 'budget_file', 'management_source_cidrs', 'observer_source_cidrs', 'runtime_permissions_boundary_arn'}
     allowed = required | {'zones', 'vpc_cidr', 'instance_type', 'data_disk_gib', 'database_config_file'}
     if not isinstance(config, dict) or not required <= config.keys() or set(config) - allowed:
         raise AwsError('AWS_OPERATOR_PROFILE_INCOMPLETE')
     if not re.fullmatch(r'\d{12}', config['account_id']): raise AwsError('AWS_ACCOUNT_INVALID')
+    expected_boundary = 'arn:aws:iam::' + config['account_id'] + ':policy/railshot-environment-runtime-boundary'
+    if config['runtime_permissions_boundary_arn'] != expected_boundary:
+        raise AwsError('AWS_RUNTIME_BOUNDARY_INVALID')
     Session(config['auth'], config['account_id']).base()
     if not re.fullmatch(r'ami-[0-9a-f]{17}', config['ami_id']): raise AwsError('AWS_AMI_INVALID')
     if not re.fullmatch(r'(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256) [A-Za-z0-9+/]+={0,3}( [^\r\n]+)?', config['ssh_public_key']): raise AwsError('AWS_SSH_PUBLIC_KEY_INVALID')
@@ -109,7 +112,7 @@ def reserve_budget(config, spec, context):
 
 
 def validate_config(config):
-    required = ('account_id', 'auth', 'ami_id', 'ssh_identity_file', 'ssh_public_key', 'edge_variables_file', 'application_template_file', 'budget_file', 'management_source_cidrs', 'observer_source_cidrs')
+    required = ('account_id', 'auth', 'ami_id', 'ssh_identity_file', 'ssh_public_key', 'edge_variables_file', 'application_template_file', 'budget_file', 'management_source_cidrs', 'observer_source_cidrs', 'runtime_permissions_boundary_arn')
     missing = [key for key in required if not isinstance(config, dict) or not config.get(key)]
     if isinstance(config, dict) and isinstance(config.get('auth'), dict):
         missing += ['auth.' + k for k in ('mode', 'role_arn') if not config['auth'].get(k)]
@@ -124,7 +127,7 @@ def validate_config(config):
 
 def config_template(directory):
     root = Path(directory)
-    adapter = {'account_id': '', 'auth': {'mode': 'customer_role', 'role_arn': '', 'external_id': '', 'source_credentials_file': str(root / 'aws-credentials.json')},
+    adapter = {'account_id': '', 'runtime_permissions_boundary_arn': '', 'auth': {'mode': 'customer_role', 'role_arn': '', 'external_id': '', 'source_credentials_file': str(root / 'aws-credentials.json')},
         'ami_id': '', 'zones': ['ap-northeast-2a', 'ap-northeast-2c'], 'vpc_cidr': '10.72.0.0/16', 'instance_type': 't3.large',
         'data_disk_gib': 100, 'ssh_identity_file': '', 'ssh_public_key': '', 'management_source_cidrs': [], 'observer_source_cidrs': [], 'edge_variables_file': str(root / 'aws-edge.json'),
         'application_template_file': str(root / 'application-template.json'), 'budget_file': str(root / 'aws-budget.json'), 'database_config_file': ''}

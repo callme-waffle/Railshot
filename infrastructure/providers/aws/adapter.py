@@ -95,6 +95,7 @@ class Adapter:
         observer = private_json(template['profile']['ingress']['observability_config_file'])
         variables.update(management_source_cidrs=self.config['management_source_cidrs'], observer_source_cidrs=self.config['observer_source_cidrs'],
             metrics_ports=[observer['node_metrics_port'], observer['cluster_metrics_port']])
+        variables['runtime_permissions_boundary_arn'] = self.config['runtime_permissions_boundary_arn']
         variables['database_enabled'] = spec['database']['mode'] == 'standalone'
         variables['database_backup'] = None
         if variables['database_enabled']:
